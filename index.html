@@ -3243,12 +3243,12 @@ window.scannerFacture = async (input) => {
       try {
         const ligneIdx = a.ligneIndex !== undefined ? parseInt(a.ligneIndex) : idx;
         // Photo toujours à gauche, hauteur divisée équitablement
-        const margeHaut = 0.09;
-        const hauteurLigne = 0.17;
-        const rx = 0.01;
-        const rw = 0.13;
+        const margeHaut = 0.213;
+        const hauteurLigne = 0.199;
+        const rx = 0.0;
+        const rw = 0.15;
         const ry = margeHaut + ligneIdx * hauteurLigne;
-        const rh = 0.08;
+        const rh = 0.046;
         photo = await decouperMiniatureRelative(imgDataUrl, rx, ry, rw, rh);
       } catch(e) { photo = ""; }
       return {
