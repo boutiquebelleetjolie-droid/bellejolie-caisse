@@ -3173,7 +3173,7 @@ window.scannerFacture = async (input) => {
     const GEMINI_KEY = "AQ.Ab8RN6IrfEXHmL3rr6QbrMzRv8k-KdAxWudBKXCbPsXXXrobJg";
 
     // Appel direct API Gemini avec fetch
-    const prompt = 'Tu analyses une facture fournisseur de mode. La page contient des articles groupés. Pour chaque couleur de chaque article: identifie le NOM de l article, la REFERENCE (numero en gras), le PRIX (après remise avec icône), la QUANTITE (format NxM), la COULEUR (nom en majuscules), et la MINIATURE PHOTO (petit carré image du vêtement à gauche du nom de couleur). Reponds UNIQUEMENT avec un tableau JSON sans texte ni markdown. Format: [{"nom":"Robe longue","ref":"72095","paHT":7.0,"qte":3,"couleur":"BEIGE","categorie":"Robes","rx":0.02,"ry":0.04,"rw":0.10,"rh":0.065}]. rx=position gauche photo/largeur image, ry=position haute photo/hauteur image, rw=largeur photo/largeur image, rh=hauteur photo/hauteur image. SOIS TRES PRECIS: mesure visuellement chaque miniature. Commence par [.';
+    const prompt = 'Tu analyses une facture fournisseur de mode. La page est organisee en blocs: reference article en gras, puis sous chaque reference une ou plusieurs lignes couleur avec une PHOTO CARREE a gauche (environ 10% de la largeur de limage). Extrais TOUS les articles. Pour chaque ligne couleur, donne les coordonnees TRES PRECISES de cette photo carree. Format JSON strict UNIQUEMENT, pas de texte: [{"nom":"Robe longue","ref":"1163-5-2012","paHT":8.00,"qte":5,"couleur":"BLEU","categorie":"Robes","rx":0.01,"ry":0.09,"rw":0.11,"rh":0.08}]. rx=position gauche/largeur totale, ry=position haute/hauteur totale, rw=largeur photo/largeur totale, rh=hauteur photo/hauteur totale. Commence DIRECTEMENT par [.';
     // Appel direct Gemini depuis https://
     // Fonction pour appeler Gemini
     const callGemini = async (parts, maxTokens=8192) => {
@@ -3838,7 +3838,7 @@ function renderProdModal() {
     : "";
 
   // Tailles
-  const taillePredefsVetement = ["34","36","38","40","42","44","46","48","50","52","TU","XS","S","M","L","XL","XXL"];
+  const taillePredefsVetement = ["34","36","38","40","42","44","46","48","50","52","54","56","TU","XS","S","M","L","XL","XXL","XXXL","XXXXL"];
   const taillePredefsChaussure = ["34","35","35.5","36","36.5","37","37.5","38","38.5","39","39.5","40","40.5","41","41.5","42","42.5","43","43.5","44","44.5","45","45.5","46","47","48"];
   const taillePredefs = f.category==="Chaussures" ? taillePredefsChaussure : taillePredefsVetement;
   const tailleHTML = taillePredefs.map(t=>{
