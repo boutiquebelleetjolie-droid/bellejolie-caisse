@@ -3173,7 +3173,7 @@ window.scannerFacture = async (input) => {
     const GEMINI_KEY = "AQ.Ab8RN6IrfEXHmL3rr6QbrMzRv8k-KdAxWudBKXCbPsXXXrobJg";
 
     // Appel direct API Gemini avec fetch
-    const prompt = 'Tu analyses une facture fournisseur de mode. La page est organisee en blocs: reference article en gras, puis sous chaque reference une ou plusieurs lignes couleur avec une PHOTO CARREE a gauche (environ 10% de la largeur de limage). Extrais TOUS les articles. Pour chaque ligne couleur, donne les coordonnees TRES PRECISES de cette photo carree. Format JSON strict UNIQUEMENT, pas de texte: [{"nom":"Robe longue","ref":"1163-5-2012","paHT":8.00,"qte":5,"couleur":"BLEU","categorie":"Robes","rx":0.01,"ry":0.09,"rw":0.11,"rh":0.08}]. rx=position gauche/largeur totale, ry=position haute/hauteur totale, rw=largeur photo/largeur totale, rh=hauteur photo/hauteur totale. Commence DIRECTEMENT par [.';
+    const prompt = 'Extrais tous les articles de cette facture fournisseur. Reponds UNIQUEMENT avec un tableau JSON sans texte. Format: [{"nom":"article","ref":"1163-5-2012","paHT":8.00,"qte":5,"couleur":"BLEU","categorie":"Robes","ligneIndex":0}]. ligneIndex = numero de la ligne couleur en commencant a 0 (0=premiere couleur, 1=deuxieme couleur...). Une ligne par couleur. Commence par [.';
     // Appel direct Gemini depuis https://
     // Fonction pour appeler Gemini
     const callGemini = async (parts, maxTokens=8192) => {
@@ -3211,18 +3211,22 @@ window.scannerFacture = async (input) => {
     }
 
 
-    // Extraire les photos depuis les coordonnées déjà retournées dans le 1er appel
+    // Calcul mathématique des positions photos (toujours même position sur ce type de facture)
     const imgDataUrl = "data:" + mediaType + ";base64," + base64;
-    const lignesAvecPhotos = await Promise.all(articles.map(async (a) => {
+    const nbArticles = articles.length;
+
+    const lignesAvecPhotos = await Promise.all(articles.map(async (a, idx) => {
       let photo = "";
       try {
-        const rx = parseFloat(a.rx || a.photoRX || 0);
-        const ry = parseFloat(a.ry || a.photoRY || 0);
-        const rw = parseFloat(a.rw || a.photoRW || 0);
-        const rh = parseFloat(a.rh || a.photoRH || 0);
-        if(rw > 0.01 && rh > 0.01) {
-          photo = await decouperMiniatureRelative(imgDataUrl, rx, ry, rw, rh);
-        }
+        const ligneIdx = a.ligneIndex !== undefined ? parseInt(a.ligneIndex) : idx;
+        // Photo toujours à gauche, hauteur divisée équitablement
+        const margeHaut = 0.03;
+        const hauteurLigne = (1 - margeHaut) / nbArticles;
+        const rx = 0.01;
+        const rw = 0.12;
+        const ry = margeHaut + ligneIdx * hauteurLigne + hauteurLigne * 0.1;
+        const rh = hauteurLigne * 0.65;
+        photo = await decouperMiniatureRelative(imgDataUrl, rx, ry, rw, rh);
       } catch(e) { photo = ""; }
       return {
         nom: a.nom || "",
@@ -3235,6 +3239,7 @@ window.scannerFacture = async (input) => {
         photo: photo,
         _prodId: null,
       };
+    }));
     }));
     // Regrouper les lignes de même référence en un seul article avec plusieurs couleurs
     const grouped = {};
