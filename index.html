@@ -2114,6 +2114,29 @@ window.ouvrirScannerCamera = async () => {
           fermerScannerCamera();
           // Chercher l'article
           if(scanAvoir(code)) { STATE.searchBC=""; render(); return; }
+          // Chercher dans les codes-barres de variantes d'abord
+          let foundVar = false;
+          for(const prod of STATE.products) {
+            const bv = prod.barcodeVariantes||{};
+            for(const [varKey, bc] of Object.entries(bv)) {
+              if(bc === code) {
+                const parts = varKey.split('_');
+                const taille = parts[0]==='_'?'':parts[0];
+                const couleur = parts.slice(1).join('_').replace(/^_/,'');
+                addToCart(prod.id, taille||null, couleur||null);
+                STATE.searchBC=""; render();
+                const flash = document.createElement("div");
+                flash.style.cssText = "position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#3b6d11;color:#fff;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600;z-index:9999;";
+                flash.textContent = "✅ " + prod.name + (taille?' T.'+taille:'') + (couleur?' '+couleur:'') + " ajouté";
+                document.body.appendChild(flash);
+                setTimeout(()=>flash.remove(), 1500);
+                foundVar = true; break;
+              }
+            }
+            if(foundVar) break;
+          }
+          if(foundVar) return;
+
           const p = STATE.products.find(x=>x.barcode===code||x.ref===code);
           if(p && (p.stock||0)>0) {
             addToCart(p.id);
@@ -2156,6 +2179,27 @@ window.bcKeyDown = e => {
   // Essayer d'abord comme avoir
   if(scanAvoir(q)) { STATE.searchBC=""; render(); return; }
   // Sinon article
+  // Chercher d'abord dans les codes-barres de variantes
+  let found = false;
+  for(const prod of STATE.products) {
+    const bv = prod.barcodeVariantes||{};
+    for(const [varKey, bc] of Object.entries(bv)) {
+      if(bc === q) {
+        // Décoder la variante depuis la clé "taille_couleur"
+        const parts = varKey.split('_');
+        const taille = parts[0]==='_'?'':parts[0];
+        const couleur = parts.slice(1).join('_').replace(/^_/,'');
+        addToCart(prod.id, taille||null, couleur||null);
+        STATE.searchBC=""; render();
+        found = true;
+        break;
+      }
+    }
+    if(found) break;
+  }
+  if(found) return;
+  
+  // Chercher par code-barre principal ou référence
   const p=STATE.products.find(x=>x.barcode===q||x.ref===q);
   if(p&&p.stock>0){addToCart(p.id);STATE.searchBC="";}
   else if(p){alert("Stock insuffisant pour : "+p.name);STATE.searchBC="";}
@@ -3592,6 +3636,18 @@ window.saveProd = () => {
   const nouveauStock = hasVariantes ? svTotal : parseInt(f.stock);
   const stockAugmente = STATE.editProdId && nouveauStock > stockActuel;
 
+  // Générer un code-barre unique par variante
+  const existingBV = existant?.barcodeVariantes || {};
+  const barcodeVariantes = {};
+  const tailles = f.tailles||[];
+  const couleurs = f.couleurs||[];
+  const colsBC = couleurs.length>0 ? couleurs : [''];
+  const rowsBC = tailles.length>0 ? tailles : [''];
+  rowsBC.forEach(t=>colsBC.forEach(c=>{
+    const key = (t||'_')+'_'+(c||'_');
+    barcodeVariantes[key] = existingBV[key] || genBC();
+  }));
+
   const prod = {
     id:             STATE.editProdId || uid("P"),
     name:           f.name.trim(),
@@ -3600,13 +3656,16 @@ window.saveProd = () => {
     stock:          nouveauStock,
     ref:            f.ref||uid("REF-"),
     barcode:        f.barcode||genBC(),
-    tailles:        f.tailles||[],
-    couleurs:       f.couleurs||[],
+    tailles:        tailles,
+    couleurs:       couleurs,
     photo:          f.photo||"",
     prixAchat:       f.prixAchat ? parseFloat(f.prixAchat) : (existant?.prixAchat||null),
     dateAjout:       existant?.dateAjout || new Date().toISOString(),
     dernierReassort: stockAugmente ? new Date().toISOString() : (existant?.dernierReassort||null),
     stockVariantes:  f.stockVariantes||{},
+    barcodeVariantes: barcodeVariantes,
+    grandeTaille:   f.grandeTaille||false,
+    createdAt:      existant?.createdAt || new Date().toISOString(),
   };
 
   if(STATE.editProdId) {
@@ -10212,7 +10271,10 @@ window.imprimerLotEtiquettes = () => {
   const videsHtml = Array(startPos).fill('<div class="etiq" style="border-color:transparent;"></div>').join("");
 
   const toutesEtiq = (videsHtml ? [videsHtml] : []).concat(etiquettes.map(({p, infos}) => {
-    const bc = miniBarcode(p.barcode||p.ref||p.id);
+    // Utiliser le code-barre de la variante si disponible
+    const varKey = (ligne.taille||'_')+'_'+(ligne.couleur||'_');
+    const bcCode = (p.barcodeVariantes||{})[varKey] || p.barcode || p.ref || p.id;
+    const bc = miniBarcode(bcCode);
     const bcImg = btoa_svg(bc);
     return `<div class="etiq">
       <div class="etiq-name">${p.name.length>26?p.name.slice(0,26)+"…":p.name}</div>
@@ -11223,6 +11285,34 @@ if(savedVendeurs) savedVendeurs.forEach((sv,i)=>{ if(VENDEURS[i]&&sv.code){VENDE
 // Migration : réécrire bj_vendeurs sans les noms pour effacer les anciens noms en mémoire
 lsSet("bj_vendeurs", VENDEURS.map(v=>({code:v.code})));
 
+// ─── MIGRATION : générer barcodeVariantes manquants ───
+(function migrationBarcodeVariantes() {
+  let changed = false;
+  STATE.products.forEach(p => {
+    if(!p.barcodeVariantes) p.barcodeVariantes = {};
+    const tailles = p.tailles||[];
+    const couleurs = p.couleurs||[];
+    const cols = couleurs.length>0 ? couleurs : [''];
+    const rows = tailles.length>0 ? tailles : [''];
+    rows.forEach(t=>cols.forEach(c=>{
+      const key = (t||'_')+'_'+(c||'_');
+      if(!p.barcodeVariantes[key]) {
+        p.barcodeVariantes[key] = genBC();
+        changed = true;
+      }
+    }));
+    // Si pas de variantes, au moins un BC principal
+    if(rows.length===1 && cols.length===1 && rows[0]==='' && cols[0]==='') {
+      const key = '_'+'_'+'_';
+      if(!p.barcodeVariantes[key]) {
+        p.barcodeVariantes[key] = p.barcode || genBC();
+        changed = true;
+      }
+    }
+  });
+  if(changed) lsSet("bj_products", STATE.products);
+})();
+
 // ─── MIGRATION : marquer les avoirs déjà utilisés dans les ventes ───
 (function migrationAvoirs() {
   let changed = false;
@@ -11283,6 +11373,27 @@ setInterval(() => {
     verifierSauvegardeAuto();
   }
 }, 3600000);
+
+
+// Migration auto : générer barcodeVariantes pour tous les articles existants
+(function() {
+  let updated = false;
+  STATE.products.forEach(p => {
+    if(!p.barcodeVariantes) p.barcodeVariantes = {};
+    const tailles = p.tailles||[];
+    const couleurs = p.couleurs||[];
+    const cols = couleurs.length>0 ? couleurs : [''];
+    const rows = tailles.length>0 ? tailles : [''];
+    rows.forEach(t=>cols.forEach(c=>{
+      const key = (t||'_')+'_'+(c||'_');
+      if(!p.barcodeVariantes[key]) {
+        p.barcodeVariantes[key] = genBC();
+        updated = true;
+      }
+    }));
+  });
+  if(updated) lsSet("bj_products", STATE.products);
+})();
 
 render();
 
