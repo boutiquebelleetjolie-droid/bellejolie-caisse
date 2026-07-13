@@ -9956,6 +9956,12 @@ window.toggleAllEtiqIds = (idsStr, checked) => {
   if(!STATE.etiqSelection) STATE.etiqSelection={};
   if(!idsStr) return;
   idsStr.split(',').forEach(id => { if(id) STATE.etiqSelection[id] = checked ? 1 : 0; });
+  // Mettre à jour visuellement toutes les cases sans render()
+  document.querySelectorAll('td input[type=checkbox]').forEach(cb => {
+    const onchg = cb.getAttribute('onchange')||'';
+    const m = onchg.match(/toggleEtiqSel\('([^']+)'/);
+    if(m) cb.checked = checked;
+  });
   render();
 };
 
