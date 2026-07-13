@@ -3331,7 +3331,8 @@ function renderStockTableau(prods, isV1) {
   else cols.push("Prix","Stock","Actions");
   let t = '<div style="overflow-x:auto;"><table style="font-size:13px;width:100%;border-collapse:collapse;">';
   t += '<thead><tr style="border-bottom:0.5px solid #e8e0e4;background:#fafafa;">';
-  t += '<th style="padding:8px 6px;width:32px;"><input type="checkbox" onchange="toggleAllEtiq(prods,this.checked)" style="cursor:pointer;"/></th>';
+  const prodIds = prods.map(p=>p.id).join(',');
+  t += '<th style="padding:8px 6px;width:32px;"><input type="checkbox" data-ids="'+prodIds+'" onchange="toggleAllEtiq(this.dataset.ids.split(this.dataset.ids?\',\':[]),this.checked)" style="cursor:pointer;"/></th>';
 cols.slice(1).forEach(h=>{
   const isSecret = ["PV TTC","PV HT","PA HT","PA TTC","Coeff","Marge"].includes(h);
   t += '<th style="text-align:left;padding:8px 6px;font-weight:500;color:'+(isSecret?"#993556":"#888")+';font-size:12px;">'+(isSecret?"🔒 "+h:h)+'</th>';
@@ -9951,9 +9952,10 @@ window.ajouterToutStockSelection = () => {
   });
 };
 
-window.toggleAllEtiq = (filtered, checked) => {
+window.toggleAllEtiq = (idsOrProds, checked) => {
   if(!STATE.etiqSelection) STATE.etiqSelection={};
-  filtered.forEach(p => { STATE.etiqSelection[p.id] = checked ? 1 : 0; });
+  const ids = Array.isArray(idsOrProds) ? idsOrProds : idsOrProds.map(p=>p.id||p);
+  ids.forEach(id => { if(id) STATE.etiqSelection[id] = checked ? 1 : 0; });
   setTimeout(render, 0);
 };
 
