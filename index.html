@@ -801,7 +801,30 @@ function renderApp() {
 }
 
 window.setTab = t => setState({tab:t});
-window.logout = () => { clearTimeout(_timerVerrouillage); _verrouille=false; lsSet("bj_vendeur",null); setState({vendeur:null,tab:"caisse",panier:[],client:null}); };
+window.logout = () => {
+  // Vérifier si le mémo du jour a été rempli
+  const aujourdhui = new Date().toISOString().slice(0,10);
+  const memoJour = (STATE.memos||[]).find(m => m.date && m.date.slice(0,10)===aujourdhui && m.texte && m.texte.trim());
+  
+  // Vérifier si le Z caisse du soir a été fait
+  const zFait = (STATE.caisseJour||[]).some(z => {
+    return z.date && z.date.slice(0,10)===aujourdhui && z.type==='cloture';
+  });
+
+  let rappels = [];
+  if(!memoJour) rappels.push("📝 Le mémo & météo du jour n'a pas été rempli");
+  if(!zFait) rappels.push("🏦 Le Z Caisse du soir n'a pas été fait");
+
+  if(rappels.length > 0) {
+    const msg = "⚠️ Avant de quitter :\n\n" + rappels.join("\n") + "\n\nVoulez-vous quand même quitter ?";
+    if(!confirm(msg)) return;
+  }
+
+  clearTimeout(_timerVerrouillage);
+  _verrouille=false;
+  lsSet("bj_vendeur",null);
+  setState({vendeur:null,tab:"caisse",panier:[],client:null});
+};
 window.showVendeurSettings = () => { STATE.vendeurForm = JSON.parse(JSON.stringify(VENDEURS)); setState({showVendeurSettings:true}); };
 
 // ─── PARAMÈTRES VENDEURS ────────────────────────────────────────
@@ -3220,12 +3243,12 @@ window.scannerFacture = async (input) => {
       try {
         const ligneIdx = a.ligneIndex !== undefined ? parseInt(a.ligneIndex) : idx;
         // Photo toujours à gauche, hauteur divisée équitablement
-        const margeHaut = 0.03;
-        const hauteurLigne = (1 - margeHaut) / nbArticles;
+        const margeHaut = 0.09;
+        const hauteurLigne = 0.17;
         const rx = 0.01;
-        const rw = 0.12;
-        const ry = margeHaut + ligneIdx * hauteurLigne + hauteurLigne * 0.1;
-        const rh = hauteurLigne * 0.65;
+        const rw = 0.13;
+        const ry = margeHaut + ligneIdx * hauteurLigne;
+        const rh = 0.08;
         photo = await decouperMiniatureRelative(imgDataUrl, rx, ry, rw, rh);
       } catch(e) { photo = ""; }
       return {
@@ -8362,6 +8385,14 @@ window.cloturerCaisse = (targetDateStr) => {
   const now=new Date();
   const targetDate=targetDateStr?new Date(targetDateStr):now;
   const dateStr=targetDate.toISOString().slice(0,10);
+
+  // Vérifier que le mémo du jour a été rempli — OBLIGATOIRE
+  const memoJour = (STATE.memos||[]).find(m => m.date && m.date.slice(0,10)===dateStr && m.texte && m.texte.trim());
+  if(!memoJour) {
+    alert("⚠️ Le mémo & météo du jour n'a pas été rempli !\n\nVous devez remplir le mémo avant de faire le Z caisse.\nAllez dans l'onglet 📝 Mémo & Météo.");
+    setState({tab:"memo"});
+    return;
+  }
   const note=document.getElementById("z-note")?.value||"";
   const ventesJour=STATE.ventes.filter(v=>{if(v.test||v.annulee)return false;return new Date(v.date).toDateString()===targetDate.toDateString();});
   const caTTC=ventesJour.reduce((s,v)=>s+v.total,0);
