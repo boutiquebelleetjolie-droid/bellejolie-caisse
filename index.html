@@ -3131,33 +3131,35 @@ window.scannerFacture = async (input) => {
     const mediaType = file.type || "image/jpeg";
     const GEMINI_KEY = "AQ.Ab8RN6IrfEXHmL3rr6QbrMzRv8k-KdAxWudBKXCbPsXXXrobJg";
 
-    // Appel direct API Gemini avec fetch
-    const prompt = 'Extrais tous les articles de cette facture fournisseur. Reponds UNIQUEMENT avec un tableau JSON sans texte. Format: [{"nom":"article","ref":"1163-5-2012","paHT":8.00,"qte":5,"couleur":"BLEU","categorie":"Robes","ligneIndex":0}]. ligneIndex = numero de la ligne couleur en commencant a 0 (0=premiere couleur, 1=deuxieme couleur...). Une ligne par couleur. Commence par [.';
-    // Appel direct Gemini depuis https://
-    // Fonction pour appeler Gemini
-    const callGemini = async (parts, maxTokens=8192) => {
+    const callGemini = async (parts, maxTokens) => {
       const MODELS = ["gemini-2.5-flash","gemini-2.5-pro","gemini-2.0-flash","gemini-2.0-flash-001","gemini-2.0-flash-lite-001"];
-      for(const model of MODELS) {
+      let lastErr = "Aucun modèle disponible";
+      for(let mi = 0; mi < MODELS.length; mi++) {
+        const model = MODELS[mi];
         const resp = await fetch("https://generativelanguage.googleapis.com/v1beta/models/"+model+":generateContent?key="+GEMINI_KEY, {
           method:"POST", headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({contents:[{parts}], generationConfig:{temperature:0.1, maxOutputTokens:maxTokens}})
+          body: JSON.stringify({contents:[{parts:parts}], generationConfig:{temperature:0.1, maxOutputTokens:maxTokens||8192}})
         });
         const d = await resp.json();
-        if(d.error?.message?.includes("no longer available") || d.error?.message?.includes("not found")) continue;
+        const errMsg = (d.error && d.error.message) ? d.error.message : "";
+        if(errMsg.indexOf("no longer available") >= 0 || errMsg.indexOf("not found") >= 0) {
+          lastErr = errMsg;
+          continue;
+        }
         if(d.error) throw new Error(d.error.message);
-        return d.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        return (d.candidates && d.candidates[0] && d.candidates[0].content && d.candidates[0].content.parts && d.candidates[0].content.parts[0]) ? d.candidates[0].content.parts[0].text : "";
       }
-      throw new Error("Aucun modèle disponible");
+      throw new Error(lastErr);
     };
 
-    // Étape 1 : extraire les articles en texte
+    const prompt = 'Extrais tous les articles de cette facture fournisseur. Reponds UNIQUEMENT avec un tableau JSON sans texte. Format: [{"nom":"article","ref":"1163-5-2012","paHT":8.00,"qte":5,"couleur":"BLEU","categorie":"Robes","ligneIndex":0}]. ligneIndex = numero de la ligne couleur en commencant a 0. Une ligne par couleur. Commence par [.';
+
     const text = await callGemini([
       { text: prompt },
       { inline_data: { mime_type: mediaType, data: base64 } }
     ]);
-    // Extraire le JSON même s'il est entouré de texte
+
     let jsonText = text.replace(/```json|```/g,"").trim();
-    // Chercher le tableau JSON dans la réponse
     const startIdx = jsonText.indexOf('[');
     const endIdx = jsonText.lastIndexOf(']');
     if(startIdx !== -1 && endIdx !== -1) {
@@ -3166,27 +3168,24 @@ window.scannerFacture = async (input) => {
     const articles = JSON.parse(jsonText);
 
     if(!Array.isArray(articles) || articles.length === 0) {
-      throw new Error("Aucun article détecté — vérifiez que la photo montre bien une facture avec des articles");
+      throw new Error("Aucun article détecté");
     }
 
-
-    // Calcul mathématique des positions photos (toujours même position sur ce type de facture)
     const imgDataUrl = "data:" + mediaType + ";base64," + base64;
     const nbArticles = articles.length;
 
-    const lignesAvecPhotos = await Promise.all(articles.map(async (a, idx) => {
+    const lignesAvecPhotos = await Promise.all(articles.map(async function(a, idx) {
       let photo = "";
       try {
         const ligneIdx = a.ligneIndex !== undefined ? parseInt(a.ligneIndex) : idx;
-        // Photo toujours à gauche, hauteur divisée équitablement
-        const margeHaut = 0.213;
-        const hauteurLigne = 0.199;
         const rx = 0.0;
         const rw = 0.15;
-        const ry = margeHaut + ligneIdx * hauteurLigne;
+        const ry = 0.213 + ligneIdx * 0.199;
         const rh = 0.046;
         photo = await decouperMiniatureRelative(imgDataUrl, rx, ry, rw, rh);
-      } catch(e) { photo = ""; }
+      } catch(photoErr) {
+        photo = "";
+      }
       return {
         nom: a.nom || "",
         paHT: a.paHT || "",
@@ -3196,57 +3195,8 @@ window.scannerFacture = async (input) => {
         ref: a.ref || "",
         couleur: a.couleur || "",
         photo: photo,
-        _prodId: null,
+        _prodId: null
       };
-    }));
-    // Regrouper les lignes de même référence en un seul article avec plusieurs couleurs
-    const grouped = {};
-    const orderedRefs = [];
-    lignesAvecPhotos.forEach(ligne => {
-      const key = ligne.ref || ligne.nom;
-      if(!grouped[key]) {
-        grouped[key] = {...ligne, _couleurs: [], _photos: {}};
-        orderedRefs.push(key);
-      }
-      if(ligne.couleur && !grouped[key]._couleurs.includes(ligne.couleur)) {
-        grouped[key]._couleurs.push(ligne.couleur);
-        if(ligne.photo) grouped[key]._photos[ligne.couleur] = ligne.photo;
-      }
-      // Additionner les quantités
-      grouped[key].qte = (grouped[key].qte||0) + (ligne.qte||1);
-      // Prendre la première photo disponible
-      if(!grouped[key].photo && ligne.photo) grouped[key].photo = ligne.photo;
-    });
-
-    STATE.receptionLignes = orderedRefs.map(key => {
-      const g = grouped[key];
-      return {
-        nom: g.nom,
-        paHT: g.paHT,
-        pvTTC: g.pvTTC,
-        qte: g.qte,
-        categorie: g.categorie,
-        ref: g.ref,
-        couleur: g._couleurs.join(', '),
-        photo: g.photo || '',
-        _prodId: null,
-        _couleursListe: g._couleurs,
-        _photosParCouleur: g._photos,
-      };
-    });
-    STATE.receptionScanError = null;
-
-    STATE.receptionScanLoading = false;
-    STATE.receptionScanLoading = false;
-    render();
-
-  } catch(err) {
-    STATE.receptionScanLoading = false;
-    STATE.receptionScanError = "Erreur : " + (err.message || "Analyse impossible");
-    render();
-  }
-};
-
 window.validerReception = () => {
   const lignes = STATE.receptionLignes || [];
   const erreurs = [];
