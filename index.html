@@ -10337,7 +10337,7 @@ window.imprimerLotEtiquettes = () => {
     if(!p) return;
     const infos = [ligne.taille?'T.'+ligne.taille:'', ligne.couleur&&ligne.couleur!=='_'?ligne.couleur:''].filter(Boolean).join(' · ');
     for(let i=0;i<(ligne.qty||1);i++) {
-      etiquettes.push({p, infos});
+      etiquettes.push({p, infos, ligne});
     }
   });
 
@@ -10345,9 +10345,9 @@ window.imprimerLotEtiquettes = () => {
   const startPos = (STATE.etiqStartPos||1) - 1;
   const videsHtml = Array(startPos).fill('<div class="etiq" style="border-color:transparent;"></div>').join("");
 
-  const toutesEtiq = (videsHtml ? [videsHtml] : []).concat(etiquettes.map(({p, infos}) => {
+  const toutesEtiq = (videsHtml ? [videsHtml] : []).concat(etiquettes.map(({p, infos, ligne: ligneItem}) => {
     // Utiliser le code-barre de la variante si disponible
-    const varKey = (ligne.taille||'_')+'_'+(ligne.couleur||'_');
+    const varKey = ((ligneItem&&ligneItem.taille)||'_')+'_'+((ligneItem&&ligneItem.couleur)||'_');
     const bcCode = (p.barcodeVariantes||{})[varKey] || p.barcode || p.ref || p.id;
     const bc = miniBarcode(bcCode);
     const bcImg = btoa_svg(bc);
