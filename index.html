@@ -2918,7 +2918,7 @@ function renderStockReception() {
     // Photo
     html += '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0;">';
     if(ligne.photo) {
-      html += '<div style="width:80px;height:80px;border-radius:8px;overflow:hidden;border:1px solid #e8e0e4;flex-shrink:0;"><img src="'+ligne.photo+'" style="width:100%;height:100%;object-fit:cover;display:block;"/></div>';
+      html += '<img src="'+ligne.photo+'" width="50" height="50" style="border-radius:8px;object-fit:cover;border:1px solid #e8e0e4;display:block;"/>';
     } else {
       html += '<div style="width:80px;height:80px;border-radius:8px;border:2px dashed #ddd;background:#fafafa;"></div>';
     }
@@ -3207,9 +3207,9 @@ window.scannerFacture = async (input) => {
       try {
         const ligneIdx = a.ligneIndex !== undefined ? parseInt(a.ligneIndex) : idx;
         const rx = 0.0;
-        const rw = 0.20;
-        const ry = 0.200 + ligneIdx * 0.199;
-        const rh = 0.080;
+        const rw = 0.15;
+        const ry = 0.213 + ligneIdx * 0.199;
+        const rh = 0.046;
         photo = await decouperMiniatureRelative(imgDataUrl, rx, ry, rw, rh);
       } catch(photoErr) {
         photo = "";
