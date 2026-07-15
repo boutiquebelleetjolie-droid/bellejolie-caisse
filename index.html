@@ -3223,6 +3223,48 @@ window.scannerFacture = async (input) => {
         photo: photo,
         _prodId: null
       };
+    }));
+
+    const grouped = {};
+    const orderedRefs = [];
+    lignesAvecPhotos.forEach(function(ligne) {
+      const key = ligne.ref || ligne.nom;
+      if(!grouped[key]) {
+        grouped[key] = Object.assign({}, ligne, {_couleurs: [], _photos: {}});
+        orderedRefs.push(key);
+      }
+      if(ligne.couleur && grouped[key]._couleurs.indexOf(ligne.couleur) === -1) {
+        grouped[key]._couleurs.push(ligne.couleur);
+        if(ligne.photo) grouped[key]._photos[ligne.couleur] = ligne.photo;
+      }
+      grouped[key].qte = (grouped[key].qte || 0) + (ligne.qte || 1);
+      if(!grouped[key].photo && ligne.photo) grouped[key].photo = ligne.photo;
+    });
+
+    STATE.receptionLignes = orderedRefs.map(function(key) {
+      const g = grouped[key];
+      return {
+        nom: g.nom, paHT: g.paHT, pvTTC: g.pvTTC, qte: g.qte,
+        categorie: g.categorie, ref: g.ref,
+        couleur: g._couleurs.join(', '),
+        photo: g.photo || '',
+        _prodId: null,
+        _couleursListe: g._couleurs,
+        _photosParCouleur: g._photos
+      };
+    });
+
+    STATE.receptionScanLoading = false;
+    STATE.receptionScanError = null;
+    render();
+
+  } catch(err) {
+    STATE.receptionScanLoading = false;
+    STATE.receptionScanError = "Erreur : " + (err.message || "Analyse impossible");
+    render();
+  }
+};
+
 window.validerReception = () => {
   const lignes = STATE.receptionLignes || [];
   const erreurs = [];
