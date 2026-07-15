@@ -3207,9 +3207,9 @@ window.scannerFacture = async (input) => {
       try {
         const ligneIdx = a.ligneIndex !== undefined ? parseInt(a.ligneIndex) : idx;
         const rx = 0.0;
-        const rw = 0.15;
-        const ry = 0.213 + ligneIdx * 0.199;
-        const rh = 0.046;
+        const rw = 0.20;
+        const ry = 0.200 + ligneIdx * 0.199;
+        const rh = 0.080;
         photo = await decouperMiniatureRelative(imgDataUrl, rx, ry, rw, rh);
       } catch(photoErr) {
         photo = "";
