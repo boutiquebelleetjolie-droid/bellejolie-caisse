@@ -525,16 +525,15 @@ function render() {
   bindApp();
 
   // Restaurer le scroll
-  if(modal) {
-    const newModal = document.querySelector('.modal-body');
-    if(newModal) {
+  const newModal = document.querySelector('.modal-body');
+  if(newModal && modalScrollTop > 0) {
+    newModal.scrollTop = modalScrollTop;
+    requestAnimationFrame(() => {
       newModal.scrollTop = modalScrollTop;
-      requestAnimationFrame(() => {
-        newModal.scrollTop = modalScrollTop;
-        setTimeout(() => { newModal.scrollTop = modalScrollTop; }, 50);
-      });
-    }
-  } else {
+      setTimeout(() => { newModal.scrollTop = modalScrollTop; }, 30);
+      setTimeout(() => { newModal.scrollTop = modalScrollTop; }, 100);
+    });
+  } else if(!newModal) {
     window.scrollTo(0, winScrollY);
     requestAnimationFrame(() => { window.scrollTo(0, winScrollY); });
   }
