@@ -2916,11 +2916,13 @@ function renderStockReception() {
     html += '</select></div>';
 
     // Photo
-    html += '<div>';
+    html += '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0;">';
     if(ligne.photo) {
-      html += '<img src="'+ligne.photo+'" width="100" height="100" style="border-radius:10px;object-fit:cover;border:1px solid #e8e0e4;display:block;"/>';
+      html += '<img src="'+ligne.photo+'" width="50" height="50" style="border-radius:8px;object-fit:cover;border:1px solid #e8e0e4;display:block;"/>';
+    } else {
+      html += '<div style="width:80px;height:80px;border-radius:8px;border:2px dashed #ddd;background:#fafafa;"></div>';
     }
-    html += '<label style="display:inline-block;padding:4px 10px;background:#f5f0f2;border:1px solid #ddd;border-radius:6px;cursor:pointer;font-size:11px;margin-top:'+(ligne.photo?'4':'0')+'px;">📷 Photo<input type="file" accept="image/*" data-idx="'+idx+'" onchange="photoLigneReception(parseInt(this.dataset.idx),this)" style="display:none;"/></label>';
+    html += '<label style="padding:4px 8px;background:#f5f0f2;border:1px solid #ddd;border-radius:6px;cursor:pointer;font-size:11px;white-space:nowrap;">📷 Photo<input type="file" accept="image/*" data-idx="'+idx+'" onchange="photoLigneReception(parseInt(this.dataset.idx),this)" style="display:none;"/></label>';
     html += '</div>';
 
     // Coeff
@@ -3026,6 +3028,65 @@ window.modifierLigneReception = (idx) => {
   STATE.showProdModal = true;
   render();
 };
+
+// Détecte automatiquement les positions des photos dans une facture
+async function detecterPhotosFacture(imgDataUrl) {
+  return new Promise((res) => {
+    const img = new Image();
+    img.onload = () => {
+      const W = img.naturalWidth;
+      const H = img.naturalHeight;
+      const canvas = document.createElement('canvas');
+      canvas.width = W;
+      canvas.height = H;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      
+      // Scanner le tiers gauche de l'image
+      const scanW = Math.floor(W * 0.20);
+      const data = ctx.getImageData(0, 0, scanW, H).data;
+      
+      // Trouver les lignes avec des pixels non-blancs
+      const nonWhiteRows = [];
+      for(let y = 0; y < H; y++) {
+        let hasColor = false;
+        for(let x = 0; x < scanW; x++) {
+          const i = (y * scanW + x) * 4;
+          const r = data[i], g = data[i+1], b = data[i+2];
+          if(r < 210 && g < 210 && b < 210) { hasColor = true; break; }
+        }
+        if(hasColor) nonWhiteRows.push(y);
+      }
+      
+      // Grouper en zones continues
+      const zones = [];
+      if(nonWhiteRows.length > 0) {
+        let start = nonWhiteRows[0], prev = nonWhiteRows[0];
+        for(let i = 1; i < nonWhiteRows.length; i++) {
+          const y = nonWhiteRows[i];
+          if(y - prev > 20) {
+            if(prev - start > 50) zones.push({y1: start, y2: prev});
+            start = y;
+          }
+          prev = y;
+        }
+        if(prev - start > 50) zones.push({y1: start, y2: prev});
+      }
+      
+      // Convertir en positions relatives
+      const positions = zones.map(z => ({
+        rx: 0.0,
+        ry: z.y1 / H,
+        rw: 0.20,
+        rh: (z.y2 - z.y1) / H
+      }));
+      
+      res(positions);
+    };
+    img.onerror = () => res([]);
+    img.src = imgDataUrl;
+  });
+}
 
 // Découpe une miniature avec coordonnées relatives (0-1)
 function decouperMiniatureRelative(imgDataUrl, rx, ry, rw, rh) {
@@ -3200,15 +3261,17 @@ window.scannerFacture = async (input) => {
     const imgDataUrl = "data:" + mediaType + ";base64," + base64;
     const nbArticles = articles.length;
 
+    // Détecter automatiquement les positions des photos via canvas
+    const photoPositions = await detecterPhotosFacture(imgDataUrl);
+    
     const lignesAvecPhotos = await Promise.all(articles.map(async function(a, idx) {
       let photo = "";
       try {
         const ligneIdx = a.ligneIndex !== undefined ? parseInt(a.ligneIndex) : idx;
-        const rx = 0.0;
-        const rw = 0.15;
-        const ry = 0.213 + ligneIdx * 0.199;
-        const rh = 0.046;
-        photo = await decouperMiniatureRelative(imgDataUrl, rx, ry, rw, rh);
+        const pos = photoPositions[ligneIdx];
+        if(pos) {
+          photo = await decouperMiniatureRelative(imgDataUrl, pos.rx, pos.ry, pos.rw, pos.rh);
+        }
       } catch(photoErr) {
         photo = "";
       }
