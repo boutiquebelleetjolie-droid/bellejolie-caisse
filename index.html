@@ -2104,6 +2104,28 @@ window.scannerImageCodeBarre = async (input) => {
     URL.revokeObjectURL(imgUrl);
     const code = result.getText();
     if(scanAvoir(code)) { STATE.searchBC=""; render(); return; }
+    // Chercher dans barcodeVariantes
+    let foundVar = false;
+    for(const prod of STATE.products) {
+      const bv = prod.barcodeVariantes||{};
+      for(const [varKey, bc] of Object.entries(bv)) {
+        if(bc === code) {
+          const parts = varKey.split('_');
+          const taille = parts[0]==='_'?'':parts[0];
+          const couleur = parts.slice(1).join('_').replace(/^_/,'');
+          addToCart(prod.id, taille||null, couleur||null);
+          STATE.searchBC=""; render();
+          const flash = document.createElement("div");
+          flash.style.cssText = "position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#3b6d11;color:#fff;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600;z-index:9999;";
+          flash.textContent = "✅ " + prod.name + (taille?' T.'+taille:'') + (couleur?' '+couleur:'') + " ajouté";
+          document.body.appendChild(flash);
+          setTimeout(()=>flash.remove(), 1500);
+          foundVar = true; break;
+        }
+      }
+      if(foundVar) break;
+    }
+    if(foundVar) { input.value=''; return; }
     const p = STATE.products.find(x=>x.barcode===code||x.ref===code);
     if(p && (p.stock||0)>0) {
       addToCart(p.id); STATE.searchBC=""; render();
