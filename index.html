@@ -2918,7 +2918,7 @@ function renderStockReception() {
     // Photo
     html += '<div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0;">';
     if(ligne.photo) {
-      html += '<img src="'+ligne.photo+'" style="width:80px;height:80px;border-radius:8px;object-fit:cover;border:1px solid #e8e0e4;"/>';
+      html += '<div style="width:80px;height:80px;border-radius:8px;overflow:hidden;border:1px solid #e8e0e4;flex-shrink:0;"><img src="'+ligne.photo+'" style="width:100%;height:100%;object-fit:cover;display:block;"/></div>';
     } else {
       html += '<div style="width:80px;height:80px;border-radius:8px;border:2px dashed #ddd;background:#fafafa;"></div>';
     }
