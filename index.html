@@ -3866,8 +3866,9 @@ function renderProdModal() {
   let blocVariantes = "";
   const tailles = f.tailles||[], couleurs = f.couleurs||[];
   if(tailles.length > 0 || couleurs.length > 0) {
-    const sv = f.stockVariantes||{};
-    if(!STATE.prodForm.stockVariantes) STATE.prodForm.stockVariantes = {...sv};
+    // Toujours utiliser STATE.prodForm.stockVariantes (mis à jour par oninput)
+    if(!STATE.prodForm.stockVariantes) STATE.prodForm.stockVariantes = {};
+    const sv = STATE.prodForm.stockVariantes;
     const cols = couleurs.length > 0 ? couleurs : [""];
     const rows = (tailles.length > 0 ? tailles : [""]).map(t => {
       const totLigne = cols.reduce((s,c)=>s+(parseInt(sv[(t||"_")+"_"+(c||"_")])||0),0);
