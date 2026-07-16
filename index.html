@@ -10002,12 +10002,22 @@ window.ajouterToutStockSelection = () => {
         });
       }
     }));
-    // Si pas de variantes avec stock, ajouter une ligne avec stock global
+    // Si pas de variantes avec stock, ajouter une ligne par taille/couleur avec qty=1
     if(!hasVariantes && (p.stock||0)>0) {
-      STATE.etiqLignes.push({
-        id: prodId+'_'+Date.now(),
-        prodId, taille:'', couleur:'', qty:p.stock||1
-      });
+      rows.forEach(t=>cols.forEach(c=>{
+        STATE.etiqLignes.push({
+          id: prodId+'_'+(t||'')+'_'+(c||'')+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,4),
+          prodId, taille:t||'', couleur:c||'', qty:1
+        });
+      }));
+      if(rows.length===1 && rows[0]==='' && cols.length===1 && cols[0]==='') {
+        // Pas de tailles ni couleurs - une seule étiquette avec stock global
+        STATE.etiqLignes = STATE.etiqLignes.filter(l=>l.prodId!==prodId);
+        STATE.etiqLignes.push({
+          id: prodId+'_'+Date.now(),
+          prodId, taille:'', couleur:'', qty:p.stock||1
+        });
+      }
     }
   });
 };
@@ -10347,8 +10357,12 @@ window.imprimerLotEtiquettes = () => {
 
   const toutesEtiq = (videsHtml ? [videsHtml] : []).concat(etiquettes.map(({p, infos, ligne: ligneItem}) => {
     // Utiliser le code-barre de la variante si disponible
-    const varKey = ((ligneItem&&ligneItem.taille)||'_')+'_'+((ligneItem&&ligneItem.couleur)||'_');
-    const bcCode = (p.barcodeVariantes||{})[varKey] || p.barcode || p.ref || p.id;
+    const t = (ligneItem&&ligneItem.taille) || '';
+    const c = (ligneItem&&ligneItem.couleur) || '';
+    const varKey = (t||'_')+'_'+(c||'_');
+    const varKeyAlt = t+'_'+c;
+    const bv = p.barcodeVariantes||{};
+    const bcCode = bv[varKey] || bv[varKeyAlt] || p.barcode || p.ref || p.id;
     const bc = miniBarcode(bcCode);
     const bcImg = btoa_svg(bc);
     return `<div class="etiq">
