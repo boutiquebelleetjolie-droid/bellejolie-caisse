@@ -1177,7 +1177,7 @@ function renderCaisse() {
               <tr style="border-bottom:0.5px solid #e8e0e4;${it.retour?"background:#fff8f0;":""}">
                 <td style="padding:8px 4px;">
                   <div style="font-weight:500;">${it.retour?"↩️ ":""}${it.name}</div>
-                  <div style="font-size:11px;color:#888;">${it.ref}</div>
+                  <div style="font-size:11px;color:#888;">${it.ref}${it.taille||it.couleur ? ' — '+[it.taille?'T.'+it.taille:'',it.couleur||'']. filter(Boolean).join(' ') : ''}</div>
                   ${it.retour&&!it.avoirId?`
                   <div style="margin-top:3px;display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
                     <select onchange="STATE.panier=STATE.panier.map(x=>x.id===it.id?{...x,motifRetour:this.value}:x);if(this.value==='Autre'){}else render()"
