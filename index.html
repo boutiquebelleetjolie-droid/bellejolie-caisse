@@ -2282,9 +2282,33 @@ function appliquer2Pour1Pct() {
   });
 }
 
-window.addToCart = id => {
+window.addToCart = (id, tailleParam, couleurParam) => {
   const p=STATE.products.find(x=>x.id===id);
   if(!p||p.stock===0) return;
+  // Si taille/couleur passés en paramètre (scan barcode variante), ajouter directement
+  if(tailleParam !== undefined || couleurParam !== undefined) {
+    // Continuer avec les valeurs passées
+    const taille = tailleParam || "";
+    const couleur = couleurParam || "";
+    const varKey = id+'_'+taille+'_'+couleur;
+    const {prix:prixPromo, promo:promoActive, remisePct:remisePctPromo} = getPrixAvecPromo(p);
+    const ex=STATE.panier.find(x=>x.id===varKey);
+    if(ex) {
+      STATE.panier=STATE.panier.map(x=>x.id===varKey?{...x,qty:x.qty+1}:x);
+    } else {
+      const ligne = {...p, qty:1, remise:"", remiseType:"", varKey, taille, couleur};
+      if(promoActive && remisePctPromo>0 && promoActive.type!=="2pour1pct") {
+        ligne.price = prixPromo;
+        ligne.prixOriginal = p.price;
+        ligne.promoNom = promoActive.nom;
+        ligne.remise = String(remisePctPromo);
+        ligne.remiseType = "pct";
+        ligne._promoAuto = true;
+      }
+      STATE.panier=[...STATE.panier, ligne];
+    }
+    STATE.searchBC=""; render(); return;
+  }
   // Si l'article a des variantes, ouvrir le sélecteur
   if((p.tailles&&p.tailles.length>0)||(p.couleurs&&p.couleurs.length>0)) {
     STATE.showVarianteModal = {prodId:id, taille:"", couleur:""};
