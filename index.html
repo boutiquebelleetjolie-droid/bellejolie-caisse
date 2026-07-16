@@ -532,8 +532,9 @@ function render() {
     newModal.scrollTop = modalScrollTop;
     requestAnimationFrame(() => {
       newModal.scrollTop = modalScrollTop;
-      setTimeout(() => { newModal.scrollTop = modalScrollTop; }, 30);
-      setTimeout(() => { newModal.scrollTop = modalScrollTop; }, 100);
+      setTimeout(() => { newModal.scrollTop = modalScrollTop; }, 20);
+      setTimeout(() => { newModal.scrollTop = modalScrollTop; }, 80);
+      setTimeout(() => { newModal.scrollTop = modalScrollTop; }, 200);
     });
   } else if(!newModal) {
     window.scrollTo(0, winScrollY);
@@ -3507,7 +3508,7 @@ function renderStock() {
 
   // Barre de recherche + boutons (sticky pour rester visible pendant le scroll)
   html += '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;position:sticky;top:52px;z-index:50;background:#f5f0f2;padding:8px 0 8px 0;border-radius:0 0 8px 8px;">';
-  html += '<input value="'+(STATE.searchProd||"")+'" oninput="STATE.searchProd=this.value;clearTimeout(window._spTimer);window._spTimer=setTimeout(render,300)" placeholder="Rechercher..." style="flex:1;min-width:160px;"/>';
+  html += '<input value="'+(STATE.searchProd||"")+'" id="stock-search" oninput="STATE.searchProd=this.value;clearTimeout(window._spTimer);window._spTimer=setTimeout(()=>{const el=document.getElementById('stock-search');const pos=el?el.selectionStart:0;render();const el2=document.getElementById('stock-search');if(el2){el2.focus();el2.setSelectionRange(pos,pos);}},300)" placeholder="Rechercher..." style="flex:1;min-width:160px;"/>';
   if(nbEtiq>0) html += renderBoutonLotEtiq(nbEtiq);
   if(STATE.vendeur.role!=="apprenti") html += '<button onclick="openProdModal(null)" class="btn-primary" style="width:auto;padding:8px 16px;">+ Nouvel article</button>';
   if(isV1) html += '<button onclick="STATE.stockTab=\'reception\';render()" class="btn-ghost" style="white-space:nowrap;">📦 Réception facture</button>';
@@ -4396,7 +4397,7 @@ function renderCRM() {
   return `
   <div>
     <div style="display:flex;gap:10px;margin-bottom:14px;">
-      <input value="${STATE.searchProd||""}" oninput="STATE.searchProd=this.value;clearTimeout(window._spTimer);window._spTimer=setTimeout(render,300)" placeholder="Rechercher..." style="flex:1;"/>
+      <input value="${STATE.searchProd||""}" id="stock-search2" oninput="STATE.searchProd=this.value;clearTimeout(window._spTimer);window._spTimer=setTimeout(()=>{const el=document.getElementById('stock-search2');const pos=el?el.selectionStart:0;render();const el2=document.getElementById('stock-search2');if(el2){el2.focus();el2.setSelectionRange(pos,pos);}},300)" placeholder="Rechercher..." style="flex:1;"/>
       <button onclick="openClientModal(null)" class="btn-primary" style="width:auto;padding:8px 16px;">+ Nouveau client</button>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(265px,1fr));gap:12px;">
