@@ -522,24 +522,26 @@ function render() {
   const modal = document.querySelector('.modal-body');
   const winScrollY = window.scrollY || 0;
   const modalScrollTop = modal ? modal.scrollTop : 0;
+  const activeId = document.activeElement ? document.activeElement.id : null;
+  const activeSel = document.activeElement && document.activeElement.selectionStart !== undefined ? document.activeElement.selectionStart : null;
 
   root.innerHTML = renderApp();
   bindApp();
 
-  // Restaurer le scroll
+  // Restaurer le scroll ET le focus
   const newModal = document.querySelector('.modal-body');
-  if(newModal && modalScrollTop > 0) {
-    newModal.scrollTop = modalScrollTop;
-    requestAnimationFrame(() => {
-      newModal.scrollTop = modalScrollTop;
-      setTimeout(() => { newModal.scrollTop = modalScrollTop; }, 20);
-      setTimeout(() => { newModal.scrollTop = modalScrollTop; }, 80);
-      setTimeout(() => { newModal.scrollTop = modalScrollTop; }, 200);
-    });
-  } else if(!newModal) {
-    window.scrollTo(0, winScrollY);
-    requestAnimationFrame(() => { window.scrollTo(0, winScrollY); });
-  }
+  const restoreScroll = () => {
+    if(newModal) { newModal.scrollTop = modalScrollTop; }
+    else { window.scrollTo(0, winScrollY); }
+    if(activeId) {
+      const el = document.getElementById(activeId);
+      if(el) { el.focus(); if(activeSel!==null && el.setSelectionRange) el.setSelectionRange(activeSel, activeSel); }
+    }
+  };
+  restoreScroll();
+  requestAnimationFrame(restoreScroll);
+  setTimeout(restoreScroll, 50);
+  setTimeout(restoreScroll, 150);
 
   // Restaurer le focus
   if(focusInfo && focusInfo.selector) {
@@ -3695,6 +3697,7 @@ window.chargerPhoto = (input) => {
 window.saveProd = () => {
   const f = STATE.prodForm;
   if(!f.name||!f.name.trim())       {alert("Entrez un nom d'article.");   return;}
+  if(!f.category)                   {alert("⚠️ Veuillez choisir une catégorie avant d'enregistrer."); return;}
   if(!f.price||isNaN(parseFloat(f.price))) {alert("Entrez un prix valide."); return;}
   if(f.stock===""||isNaN(parseInt(f.stock))){alert("Entrez un stock.");      return;}
 
@@ -3775,7 +3778,7 @@ window.openProdModal = id => {
   STATE.editProdId=id;
   STATE._newCouleur = "";
   if(id){const p=STATE.products.find(x=>x.id===id);STATE.prodForm={name:p.name,category:p.category,price:p.price,prixAchat:p.prixAchat||"",_coeffSaisi:"",stock:p.stock,ref:p.ref,barcode:p.barcode,tailles:p.tailles||[],couleurs:p.couleurs||[],photo:p.photo||"",stockVariantes:{...(p.stockVariantes||{})},grandeTaille:p.grandeTaille||false};}
-  else STATE.prodForm={name:"",category:"Robes",price:"",prixAchat:"",_coeffSaisi:"",stock:0,ref:uid("REF-"),barcode:genBC(),tailles:[],couleurs:[],photo:"",stockVariantes:{},grandeTaille:false};
+  else STATE.prodForm={name:"",category:"",price:"",prixAchat:"",_coeffSaisi:"",stock:0,ref:uid("REF-"),barcode:genBC(),tailles:[],couleurs:[],photo:"",stockVariantes:{},grandeTaille:false};
   STATE.showProdModal=true; render();
 };
 window.openBCModal  = id => { STATE.showBCModal=STATE.products.find(p=>p.id===id); STATE.etiquetteTailleVal=''; STATE.etiquetteCouleurVal=''; render(); };
