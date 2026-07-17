@@ -3666,23 +3666,46 @@ window.genBC = () => "BJ"+Date.now().toString().slice(-10);
 
 // Tailles
 window.toggleTaille = (t, checked) => {
+  const modal = document.querySelector('.modal-body');
+  const scrollTop = modal ? modal.scrollTop : 0;
   const tailles = STATE.prodForm.tailles||[];
   STATE.prodForm.tailles = checked ? [...tailles,t] : tailles.filter(x=>x!==t);
   render();
+  requestAnimationFrame(() => {
+    const m = document.querySelector('.modal-body');
+    if(m) m.scrollTop = scrollTop;
+    setTimeout(() => { const m2 = document.querySelector('.modal-body'); if(m2) m2.scrollTop = scrollTop; }, 50);
+    setTimeout(() => { const m3 = document.querySelector('.modal-body'); if(m3) m3.scrollTop = scrollTop; }, 150);
+  });
 };
 
 // Couleurs
 window.addCouleur = () => {
+  const modal = document.querySelector('.modal-body');
+  const scrollTop = modal ? modal.scrollTop : 0;
   const val = (STATE._newCouleur||"").trim();
   if(!val) return;
   if((STATE.prodForm.couleurs||[]).includes(val)) { alert("Cette couleur existe déjà."); return; }
   STATE.prodForm.couleurs = [...(STATE.prodForm.couleurs||[]), val];
   STATE._newCouleur = "";
   render();
+  requestAnimationFrame(() => {
+    const m = document.querySelector('.modal-body');
+    if(m) m.scrollTop = scrollTop;
+    setTimeout(() => { const m2 = document.querySelector('.modal-body'); if(m2) m2.scrollTop = scrollTop; }, 50);
+    setTimeout(() => { const m3 = document.querySelector('.modal-body'); if(m3) m3.scrollTop = scrollTop; }, 150);
+  });
 };
 window.removeCouleur = (c) => {
+  const modal = document.querySelector('.modal-body');
+  const scrollTop = modal ? modal.scrollTop : 0;
   STATE.prodForm.couleurs = (STATE.prodForm.couleurs||[]).filter(x=>x!==c);
   render();
+  requestAnimationFrame(() => {
+    const m = document.querySelector('.modal-body');
+    if(m) m.scrollTop = scrollTop;
+    setTimeout(() => { const m2 = document.querySelector('.modal-body'); if(m2) m2.scrollTop = scrollTop; }, 50);
+  });
 };
 
 // Photo
