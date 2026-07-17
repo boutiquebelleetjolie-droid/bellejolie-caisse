@@ -3964,8 +3964,7 @@ function renderProdModal() {
 
   let html = '<div class="modal-bg" onclick="if(event.target===this)setState({showProdModal:false})">'
     +'<div class="modal" style="max-width:500px;">'
-    +'<div class="modal-header"><span style="font-weight:500;">'+(STATE.editProdId?"Modifier l'article":"Nouvel article")+'</span>'      +(STATE.editProdId&&existant?' <span style="background:#fbeaf0;color:#993556;border-radius:6px;padding:2px 8px;font-size:12px;font-weight:600;">📦 '+existant.stock+' en stock</span>':'')
-    +'<button onclick="setState({showProdModal:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button></div>'
+    +'<div class="modal-header"><span style="font-weight:500;">'+(STATE.editProdId?"Modifier l'article":"Nouvel article")+'</span>'+(STATE.editProdId&&existant?' <span style="background:#fbeaf0;color:#993556;border-radius:6px;padding:2px 8px;font-size:12px;font-weight:600;">📦 '+existant.stock+' en stock</span>':'')+'<button onclick="setState({showProdModal:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button></div>'
     +'<div class="modal-body">'
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
     +'<div style="grid-column:1/-1;"><label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Nom *</label><input value="'+f.name+'" oninput="STATE.prodForm.name=this.value" style="width:100%;box-sizing:border-box;margin-bottom:10px;"/></div>'
@@ -10152,10 +10151,9 @@ window.toggleEtiqSel = (prodId, checked) => {
 };
 
 function renderBoutonLotEtiq(nb) {
-  // Bouton avec menu déroulant catégories
   const cats = [...new Set(STATE.products.filter(p=>(STATE.etiqSelection||{})[p.id]>0).map(p=>p.category))];
-  let catsMenu = cats.map(c=>'<button data-cat="'+c+'" onclick="imprimerEtiquettesCat(this.dataset.cat)" style="display:block;width:100%;text-align:left;padding:8px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:#333;border-bottom:0.5px solid #f0ebee;">'+c+'</button>').join('');
-  return '<div style="position:relative;display:inline-block;">'    +'<button onclick="ouvrirModalLotEtiq()" style="padding:8px 14px;background:#185fa5;color:#fff;border:none;border-radius:8px 0 0 8px;cursor:pointer;font-size:13px;font-weight:500;">🏷️ Étiquettes lot ('+nb+')</button>'    +'<button onclick="STATE.showCatMenu=!STATE.showCatMenu;render()" style="padding:8px 10px;background:#185fa5;color:#fff;border:none;border-left:1px solid rgba(255,255,255,0.3);border-radius:0 8px 8px 0;cursor:pointer;">▼</button>'    +(STATE.showCatMenu?'<div style="position:absolute;top:100%;left:0;background:#fff;border:1px solid #ddd;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:999;min-width:180px;padding:4px 0;margin-top:4px;"><div style="padding:8px 14px;font-size:11px;color:#888;font-weight:600;border-bottom:0.5px solid #f0ebee;">Imprimer par catégorie :</div>'+catsMenu+'</div>':'')
+  let catsOptions = cats.map(c=>'<option value="'+c+'">'+c+'</option>').join('');
+  return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">'    +'<button onclick="ouvrirModalLotEtiq()" style="padding:8px 14px;background:#185fa5;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">🏷️ Étiquettes lot ('+nb+')</button>'    +(cats.length>0?'<select onchange="if(this.value){imprimerEtiquettesCat(this.value);this.value=\'\'}" style="padding:8px 10px;border:1px solid #185fa5;border-radius:8px;font-size:12px;color:#185fa5;cursor:pointer;"><option value="">Par catégorie...</option>'+catsOptions+'</select>':'')
     +'</div>'
        + '<button onclick="ajouterToutStockSelection();ouvrirModalLotEtiq()" style="padding:8px 14px;background:#993556;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">📦 Tout le stock</button>'
        + '<button onclick="STATE.etiqSelection={};STATE.etiqLignes=[];render()" style="padding:8px 10px;background:#f5f0f2;border:none;border-radius:8px;cursor:pointer;font-size:13px;color:#888;">✕ Tout décocher</button>';
