@@ -4282,7 +4282,7 @@ window.imprimerToutStock = () => {
     const infos = [ligne.taille?'T.'+ligne.taille:'', ligne.couleur&&ligne.couleur!=='_'?ligne.couleur:''].filter(Boolean).join(' · ');
     for(let i=0;i<ligne.qty;i++) {
       etiqHtml += `<div class="etiq">
-        <div class="etiq-name">${p.name.length>26?p.name.slice(0,26)+"…":p.name}</div>
+        <div class="etiq-name">${p.name.length>26?p.name.slice(0,26)+"…":p.name}${p.grandeTaille?" <span style='font-size:5pt;background:#993556;color:#fff;border-radius:2px;padding:0 2px;'>GT</span>":""}</div>
         <div class="etiq-ref">${(p.ref+(infos?" · "+infos:"")).slice(0,32)}</div>
         <img src="${bcImg}" class="etiq-bc"/>
         ${ligneItem&&ligneItem.prixOriginal ? `<div class="etiq-prix"><span style="text-decoration:line-through;color:#aaa;font-size:9px;">${eur(ligneItem.prixOriginal)}</span> ${eur(p.price)}</div>` : `<div class="etiq-prix">${eur(p.price)}</div>`}
@@ -10575,7 +10575,7 @@ window.imprimerLotEtiquettes = () => {
     const bc = miniBarcode(bcCode);
     const bcImg = btoa_svg(bc);
     return `<div class="etiq">
-      <div class="etiq-name">${p.name.length>26?p.name.slice(0,26)+"…":p.name}</div>
+      <div class="etiq-name">${p.name.length>26?p.name.slice(0,26)+"…":p.name}${p.grandeTaille?" GT":""}</div>
       <div class="etiq-ref">${(p.ref+(infos?" · "+infos:"")).slice(0,32)}</div>
       <img src="${bcImg}" class="etiq-bc"/>
       ${ligneItem&&ligneItem.prixOriginal ? `<div class="etiq-prix"><span style="text-decoration:line-through;color:#aaa;font-size:9px;">${eur(ligneItem.prixOriginal)}</span> ${eur(p.price)}</div>` : `<div class="etiq-prix">${eur(p.price)}</div>`}
