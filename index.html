@@ -8547,6 +8547,16 @@ window.envoyerReleveCloture = async (z, ventesJour, dateStr) => {
       ? remises.map(r => `<tr><td style="padding:4px 8px;">${r.article}${r.taille?' T.'+r.taille:''}${r.couleur?' '+r.couleur:''}</td><td style="padding:4px 8px;color:#993556;">${r.remise}</td><td style="padding:4px 8px;font-weight:600;">${eur(r.montant)}</td><td style="padding:4px 8px;font-size:11px;color:#888;">${r.ticket}</td></tr>`).join('')
       : '<tr><td colspan="4" style="padding:8px;color:#888;text-align:center;">Aucune remise manuelle ce jour</td></tr>';
 
+    // Calculs IDV et fidélisation
+    const panierMoyen = z.nbVentes > 0 ? z.caTTC / z.nbVentes : 0;
+    const clientsAvecFidel = ventesJour.filter(v => v.clientId).length;
+    const tauxFidel = z.nbVentes > 0 ? Math.round(clientsAvecFidel / z.nbVentes * 100) : 0;
+    const cbTotal = (z.payM||{}).cb || 0;
+    const especesTotal = (z.payM||{}).especes || 0;
+    const chequeTotal = (z.payM||{}).cheque || 0;
+    const cadeauTotal = (z.payM||{}).cadeau || 0;
+    const avoirTotal = (z.payM||{}).avoir || 0;
+
     const html = `
       <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
         <div style="background:#993556;padding:20px;text-align:center;border-radius:10px 10px 0 0;">
@@ -8555,19 +8565,34 @@ window.envoyerReleveCloture = async (z, ventesJour, dateStr) => {
           <div style="color:#f0c8d4;font-size:13px;">${dateLocale}</div>
         </div>
         <div style="background:#fff;padding:24px;border-radius:0 0 10px 10px;border:1px solid #e8e0e4;">
-          <h2 style="color:#993556;font-size:16px;margin:0 0 16px;">📊 CA de la journée</h2>
+
+          <h2 style="color:#993556;font-size:16px;margin:0 0 12px;">📊 CA de la journée</h2>
           <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
-            <tr style="background:#fbeaf0;"><td style="padding:8px 12px;font-weight:600;">CA TTC</td><td style="padding:8px 12px;font-size:20px;font-weight:700;color:#993556;">${eur(z.caTTC)}</td></tr>
+            <tr style="background:#fbeaf0;"><td style="padding:10px 12px;font-weight:700;font-size:15px;">CA TTC</td><td style="padding:10px 12px;font-size:22px;font-weight:700;color:#993556;">${eur(z.caTTC)}</td></tr>
             <tr><td style="padding:6px 12px;color:#555;">CA HT</td><td style="padding:6px 12px;">${eur(z.caHT)}</td></tr>
             <tr><td style="padding:6px 12px;color:#555;">TVA collectée</td><td style="padding:6px 12px;">${eur(z.tvaCol)}</td></tr>
-            <tr><td style="padding:6px 12px;color:#555;">Nb ventes</td><td style="padding:6px 12px;">${z.nbVentes}</td></tr>
+            <tr><td style="padding:6px 12px;color:#555;">Nb ventes</td><td style="padding:6px 12px;font-weight:600;">${z.nbVentes}</td></tr>
+            <tr style="background:#eef4fd;"><td style="padding:8px 12px;font-weight:600;color:#185fa5;">🛒 IDV (panier moyen)</td><td style="padding:8px 12px;font-weight:700;color:#185fa5;">${eur(panierMoyen)}</td></tr>
+            <tr style="background:#eaf3de;"><td style="padding:8px 12px;font-weight:600;color:#3b6d11;">👥 Taux fidélisation</td><td style="padding:8px 12px;font-weight:700;color:#3b6d11;">${tauxFidel}% <span style="font-size:11px;font-weight:400;">(${clientsAvecFidel}/${z.nbVentes} ventes avec client)</span></td></tr>
           </table>
+
+          <h2 style="color:#993556;font-size:16px;margin:0 0 12px;">💳 Détail encaissements</h2>
+          <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+            <tr><td style="padding:6px 12px;color:#555;">💳 Carte bleue</td><td style="padding:6px 12px;font-weight:600;">${eur(cbTotal)}</td></tr>
+            <tr style="background:#fbeaf0;"><td style="padding:6px 12px;color:#555;">💵 Espèces</td><td style="padding:6px 12px;font-weight:600;">${eur(especesTotal)}</td></tr>
+            ${chequeTotal>0?`<tr><td style="padding:6px 12px;color:#555;">📝 Chèque</td><td style="padding:6px 12px;font-weight:600;">${eur(chequeTotal)}</td></tr>`:''}
+            ${cadeauTotal>0?`<tr><td style="padding:6px 12px;color:#555;">🎁 Carte cadeau</td><td style="padding:6px 12px;font-weight:600;">${eur(cadeauTotal)}</td></tr>`:''}
+            ${avoirTotal>0?`<tr><td style="padding:6px 12px;color:#555;">↩️ Avoir</td><td style="padding:6px 12px;font-weight:600;">${eur(avoirTotal)}</td></tr>`:''}
+            <tr style="border-top:2px solid #993556;"><td style="padding:8px 12px;font-weight:700;">TOTAL</td><td style="padding:8px 12px;font-weight:700;color:#993556;">${eur(z.caTTC)}</td></tr>
+          </table>
+
           <h2 style="color:#993556;font-size:16px;margin:0 0 12px;">🏷️ Remises manuelles (${remises.length})</h2>
           <table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:13px;">
             <thead><tr style="background:#f5f0f2;"><th style="padding:6px 8px;text-align:left;">Article</th><th style="padding:6px 8px;text-align:left;">Remise</th><th style="padding:6px 8px;text-align:left;">Montant</th><th style="padding:6px 8px;text-align:left;">Ticket</th></tr></thead>
             <tbody>${lignesRemises}</tbody>
           </table>
           ${remises.length>0?`<div style="text-align:right;font-weight:700;color:#993556;padding:8px 0;">Total remises : ${eur(totalRemises)}</div>`:''}
+
           <div style="margin-top:20px;padding:12px;background:#f9f6f8;border-radius:8px;font-size:11px;color:#888;text-align:center;">
             Belle&Jolie · ${BOUTIQUE_ADRESSE} · Clôturé par ${z.vendeur}
           </div>
