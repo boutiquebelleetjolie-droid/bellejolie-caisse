@@ -2483,7 +2483,7 @@ function renderPayModal() {
           ${(mode1==="avoir"||mode1==="cadeau")?`
             <div style="margin-bottom:14px;">
               <label style="font-size:12px;color:#888;display:block;margin-bottom:4px;">Montant disponible sur le document (€)</label>
-              <input type="number" step="0.01" min="0" value="${pays[0].montant}" oninput="pays0Montant(this.value)" placeholder="Montant du ${mode1==="avoir"?"bon d'avoir":"chèque cadeau"}" style="width:100%;box-sizing:border-box;margin-bottom:8px;"/>
+              <input type="number" step="0.01" min="0" inputmode="decimal" value="${pays[0].montant}" oninput="pays0Montant(this.value)" placeholder="Montant du ${mode1==="avoir"?"bon d'avoir":"chèque cadeau"}" style="width:100%;box-sizing:border-box;margin-bottom:8px;"/>
               ${(()=>{
                 const m1v = parseFloat(pays[0].montant||0);
                 const nomDoc = mode1==="avoir"?"bon d'avoir":"chèque cadeau";
@@ -3435,7 +3435,8 @@ prods.forEach(p=>{
   t += ' data-pid="'+p.id+'" onchange="toggleEtiqSel(this.dataset.pid,this.checked)" style="cursor:pointer;width:16px;height:16px;"/></td>';
   t += '<td style="padding:9px 6px;">'+photo+'</td>';
   t += '<td style="padding:9px 6px;font-family:monospace;font-size:12px;">'+p.ref+'</td>';
-  t += '<td style="padding:9px 6px;"><div style="font-weight:500;">'+p.name+'</div><div style="font-size:11px;color:#888;">'+p.barcode+'</div></td>';
+  const dernierReassort = p.dernierReassort ? new Date(p.dernierReassort).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}) : null;
+  t += '<td style="padding:9px 6px;"><div style="font-weight:500;">'+p.name+'</div><div style="font-size:11px;color:#888;">'+p.barcode+(dernierReassort?' · 📦 '+dernierReassort:'')+'</div></td>';
   t += '<td style="padding:9px 6px;"><span class="tag" style="background:#e5e4dc;color:#444;">'+p.category+'</span></td>';
 
   if(isV1){
@@ -4895,10 +4896,17 @@ function renderHistorique() {
   html += '</div>';
 
   // Récap
-  html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;">';
+  // Calcul IDV pour la période
+  const totalArtsVF = vf.reduce((s,v)=>(v.annulee?s:s+(v.panier||[]).filter(x=>!x.retour&&!x.avoirId).reduce((a,x)=>a+(x.qty||1),0)),0);
+  const idvPeriode = nbVentes > 0 ? Math.round(totalArtsVF/nbVentes*10)/10 : 0;
+
+  html += '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:8px;">';
   html += '<div style="background:#fbeaf0;border-radius:10px;padding:12px;text-align:center;"><div style="font-size:20px;font-weight:700;color:#993556;">'+nbVentes+'</div><div style="font-size:11px;color:#888;">Ventes</div></div>';
   html += '<div style="background:#fbeaf0;border-radius:10px;padding:12px;text-align:center;"><div style="font-size:16px;font-weight:700;color:#993556;">'+eur(caTotal)+'</div><div style="font-size:11px;color:#888;">CA total</div></div>';
-  html += '<div style="background:#fbeaf0;border-radius:10px;padding:12px;text-align:center;"><div style="font-size:16px;font-weight:700;color:#993556;">'+(nbVentes?eur(caTotal/nbVentes):"—")+'</div><div style="font-size:11px;color:#888;">Panier moyen</div></div>';
+  html += '</div>';
+  html += '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:14px;">';
+  html += '<div style="background:#eef4fd;border-radius:10px;padding:12px;text-align:center;"><div style="font-size:16px;font-weight:700;color:#185fa5;">'+(nbVentes?eur(caTotal/nbVentes):"—")+'</div><div style="font-size:11px;color:#888;">💰 Panier moyen</div></div>';
+  html += '<div style="background:#eaf3de;border-radius:10px;padding:12px;text-align:center;"><div style="font-size:16px;font-weight:700;color:#3b6d11;">'+idvPeriode+'</div><div style="font-size:11px;color:#888;">🛒 IDV (art./ticket)</div></div>';
   html += '</div>';
 
   // Liste ventes
@@ -10144,7 +10152,11 @@ window.toggleEtiqSel = (prodId, checked) => {
 };
 
 function renderBoutonLotEtiq(nb) {
-  return '<button onclick="ouvrirModalLotEtiq()" style="padding:8px 14px;background:#185fa5;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">🏷️ Étiquettes lot ('+nb+')</button>'
+  // Bouton avec menu déroulant catégories
+  const cats = [...new Set(STATE.products.filter(p=>(STATE.etiqSelection||{})[p.id]>0).map(p=>p.category))];
+  let catsMenu = cats.map(c=>'<button data-cat="'+c+'" onclick="imprimerEtiquettesCat(this.dataset.cat)" style="display:block;width:100%;text-align:left;padding:8px 14px;background:none;border:none;cursor:pointer;font-size:13px;color:#333;border-bottom:0.5px solid #f0ebee;">'+c+'</button>').join('');
+  return '<div style="position:relative;display:inline-block;">'    +'<button onclick="ouvrirModalLotEtiq()" style="padding:8px 14px;background:#185fa5;color:#fff;border:none;border-radius:8px 0 0 8px;cursor:pointer;font-size:13px;font-weight:500;">🏷️ Étiquettes lot ('+nb+')</button>'    +'<button onclick="STATE.showCatMenu=!STATE.showCatMenu;render()" style="padding:8px 10px;background:#185fa5;color:#fff;border:none;border-left:1px solid rgba(255,255,255,0.3);border-radius:0 8px 8px 0;cursor:pointer;">▼</button>'    +(STATE.showCatMenu?'<div style="position:absolute;top:100%;left:0;background:#fff;border:1px solid #ddd;border-radius:8px;box-shadow:0 4px 12px rgba(0,0,0,0.1);z-index:999;min-width:180px;padding:4px 0;margin-top:4px;"><div style="padding:8px 14px;font-size:11px;color:#888;font-weight:600;border-bottom:0.5px solid #f0ebee;">Imprimer par catégorie :</div>'+catsMenu+'</div>':'')
+    +'</div>'
        + '<button onclick="ajouterToutStockSelection();ouvrirModalLotEtiq()" style="padding:8px 14px;background:#993556;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">📦 Tout le stock</button>'
        + '<button onclick="STATE.etiqSelection={};STATE.etiqLignes=[];render()" style="padding:8px 10px;background:#f5f0f2;border:none;border-radius:8px;cursor:pointer;font-size:13px;color:#888;">✕ Tout décocher</button>';
 }
@@ -10234,6 +10246,26 @@ window.renderStockOnly = () => {
     const el2 = document.getElementById('stock-search') || document.getElementById('stock-search2');
     if(el2) { el2.focus(); el2.setSelectionRange(pos, pos); }
   });
+};
+
+window.imprimerEtiquettesCat = (cat) => {
+  STATE.showCatMenu = false;
+  const prodsCat = STATE.products.filter(p => p.category === cat && (STATE.etiqSelection||{})[p.id] > 0);
+  if(!prodsCat.length) { alert("Aucun article sélectionné dans la catégorie " + cat); return; }
+  STATE.etiqLignes = [];
+  prodsCat.forEach(p => {
+    const sv = p.stockVariantes||{};
+    const tailles = p.tailles||[], couleurs = p.couleurs||[];
+    const cols = couleurs.length>0 ? couleurs : [''];
+    const rows = tailles.length>0 ? tailles : [''];
+    let has = false;
+    rows.forEach(t=>cols.forEach(c=>{
+      const stk = parseInt(sv[(t||'_')+'_'+(c||'_')])||0;
+      if(stk>0) { has=true; STATE.etiqLignes.push({id:p.id+'_'+(t||'')+'_'+(c||'')+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,4),prodId:p.id,taille:t,couleur:c,qty:stk}); }
+    }));
+    if(!has) STATE.etiqLignes.push({id:p.id+'_'+Date.now(),prodId:p.id,taille:'',couleur:'',qty:p.stock||1});
+  });
+  setState({showLotEtiq:true});
 };
 
 window.toggleCatStock = (key) => { STATE[key] = !STATE[key]; render(); };
