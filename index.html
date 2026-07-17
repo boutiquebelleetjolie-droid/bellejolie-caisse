@@ -8547,8 +8547,10 @@ window.envoyerReleveCloture = async (z, ventesJour, dateStr) => {
       ? remises.map(r => `<tr><td style="padding:4px 8px;">${r.article}${r.taille?' T.'+r.taille:''}${r.couleur?' '+r.couleur:''}</td><td style="padding:4px 8px;color:#993556;">${r.remise}</td><td style="padding:4px 8px;font-weight:600;">${eur(r.montant)}</td><td style="padding:4px 8px;font-size:11px;color:#888;">${r.ticket}</td></tr>`).join('')
       : '<tr><td colspan="4" style="padding:8px;color:#888;text-align:center;">Aucune remise manuelle ce jour</td></tr>';
 
-    // Calculs IDV et fidélisation
+    // Calculs IDV, panier moyen et fidélisation
     const panierMoyen = z.nbVentes > 0 ? z.caTTC / z.nbVentes : 0;
+    const totalArticles = ventesJour.reduce((s,v) => s + (v.panier||[]).filter(x=>!x.retour&&!x.avoirId).reduce((a,x)=>a+(x.qty||1),0), 0);
+    const idv = z.nbVentes > 0 ? Math.round(totalArticles / z.nbVentes * 10) / 10 : 0;
     const clientsAvecFidel = ventesJour.filter(v => v.clientId).length;
     const tauxFidel = z.nbVentes > 0 ? Math.round(clientsAvecFidel / z.nbVentes * 100) : 0;
     const cbTotal = (z.payM||{}).cb || 0;
@@ -8572,7 +8574,8 @@ window.envoyerReleveCloture = async (z, ventesJour, dateStr) => {
             <tr><td style="padding:6px 12px;color:#555;">CA HT</td><td style="padding:6px 12px;">${eur(z.caHT)}</td></tr>
             <tr><td style="padding:6px 12px;color:#555;">TVA collectée</td><td style="padding:6px 12px;">${eur(z.tvaCol)}</td></tr>
             <tr><td style="padding:6px 12px;color:#555;">Nb ventes</td><td style="padding:6px 12px;font-weight:600;">${z.nbVentes}</td></tr>
-            <tr style="background:#eef4fd;"><td style="padding:8px 12px;font-weight:600;color:#185fa5;">🛒 IDV (panier moyen)</td><td style="padding:8px 12px;font-weight:700;color:#185fa5;">${eur(panierMoyen)}</td></tr>
+            <tr style="background:#eef4fd;"><td style="padding:8px 12px;font-weight:600;color:#185fa5;">🛒 IDV (articles/ticket)</td><td style="padding:8px 12px;font-weight:700;color:#185fa5;">${idv}</td></tr>
+            <tr style="background:#eef4fd;"><td style="padding:8px 12px;font-weight:600;color:#185fa5;">💰 Panier moyen</td><td style="padding:8px 12px;font-weight:700;color:#185fa5;">${eur(panierMoyen)}</td></tr>
             <tr style="background:#eaf3de;"><td style="padding:8px 12px;font-weight:600;color:#3b6d11;">👥 Taux fidélisation</td><td style="padding:8px 12px;font-weight:700;color:#3b6d11;">${tauxFidel}% <span style="font-size:11px;font-weight:400;">(${clientsAvecFidel}/${z.nbVentes} ventes avec client)</span></td></tr>
           </table>
 
