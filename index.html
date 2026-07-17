@@ -29,6 +29,14 @@
   .modal-body{padding:16px 18px;}
   .tag{font-size:11px;padding:2px 8px;border-radius:10px;font-weight:500;display:inline-block;}
   .hidden{display:none!important;}
+  /* Ergonomie tablette */
+  @media (hover: none) and (pointer: coarse) {
+    button { min-height:44px; }
+    input, select { min-height:44px; font-size:16px; }
+    .btn-ghost { padding:10px 16px; }
+    .btn-primary { padding:13px 18px; font-size:15px; }
+    .tab-btn { padding:14px 8px; }
+  }
   @media print{
     #app-header,#nav-bar,#pay-modal-bg,#new-client-modal,.btn-primary.no-print,.btn-ghost{display:none!important;}
     #ticket-print-area{visibility:visible!important;position:fixed;top:0;left:0;width:280px;}
@@ -3415,7 +3423,7 @@ t += '</tr></thead><tbody>';
 prods.forEach(p=>{
   const sel = (STATE.etiqSelection||{})[p.id];
   const stockColor = p.stock===0?"#a32d2d":p.stock<3?"#854f0b":"#1a1a1a";
-  const stockLabel = p.stock+(p.stock===0?" ⚠️":p.stock<3?" ↓":"");
+  const stockLabel = p.stock+(p.stock===0?" ⚠️":"");
 
   // Photo
   const photo = p.photo
@@ -3955,7 +3963,7 @@ function renderProdModal() {
 
   let html = '<div class="modal-bg" onclick="if(event.target===this)setState({showProdModal:false})">'
     +'<div class="modal" style="max-width:500px;">'
-    +'<div class="modal-header"><span style="font-weight:500;">'+(STATE.editProdId?"Modifier l'article":"Nouvel article")+'</span>'
+    +'<div class="modal-header"><span style="font-weight:500;">'+(STATE.editProdId?"Modifier l'article":"Nouvel article")+'</span>'      +(STATE.editProdId&&existant?' <span style="background:#fbeaf0;color:#993556;border-radius:6px;padding:2px 8px;font-size:12px;font-weight:600;">📦 '+existant.stock+' en stock</span>':'')
     +'<button onclick="setState({showProdModal:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button></div>'
     +'<div class="modal-body">'
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
@@ -4277,7 +4285,7 @@ window.imprimerToutStock = () => {
         <div class="etiq-name">${p.name.length>26?p.name.slice(0,26)+"…":p.name}</div>
         <div class="etiq-ref">${(p.ref+(infos?" · "+infos:"")).slice(0,32)}</div>
         <img src="${bcImg}" class="etiq-bc"/>
-        <div class="etiq-prix">${eur(p.price)}</div>
+        ${ligneItem&&ligneItem.prixOriginal ? `<div class="etiq-prix"><span style="text-decoration:line-through;color:#aaa;font-size:9px;">${eur(ligneItem.prixOriginal)}</span> ${eur(p.price)}</div>` : `<div class="etiq-prix">${eur(p.price)}</div>`}
       </div>`;
     }
   });
@@ -8496,6 +8504,87 @@ window.cloturerCaisse = (targetDateStr) => {
   STATE.caisseJour=[...(STATE.caisseJour||[]),z];
   setState({caisseJour:STATE.caisseJour});
   imprimerZ(z);
+  // Envoyer le relevé CA + remises par email automatiquement
+  envoyerReleveCloture(z, ventesJour, dateStr);
+};
+
+window.envoyerReleveCloture = async (z, ventesJour, dateStr) => {
+  try {
+    // Calculer les remises manuelles (hors promos auto)
+    const remises = [];
+    ventesJour.forEach(v => {
+      (v.panier||[]).forEach(it => {
+        // Remise manuelle = remise saisie manuellement, pas _promoAuto
+        if(it.remise && !it._promoAuto) {
+          const montantRemise = it.remiseType==='pct'
+            ? (it.prixOriginal||it.price) * (parseFloat(it.remise)/100) * (it.qty||1)
+            : parseFloat(it.remise) * (it.qty||1);
+          remises.push({
+            article: it.name,
+            taille: it.taille||'',
+            couleur: it.couleur||'',
+            remise: it.remise + (it.remiseType==='pct'?'%':'€'),
+            montant: montantRemise,
+            ticket: v.id
+          });
+        }
+      });
+      // Remise globale panier
+      if(v.remiseGlobale && v.remiseGlobale > 0) {
+        remises.push({
+          article: 'Remise globale panier',
+          remise: v.remiseGlobale + (v.remiseGlobaleType==='pct'?'%':'€'),
+          montant: v.remiseGlobale,
+          ticket: v.id
+        });
+      }
+    });
+
+    const totalRemises = remises.reduce((s,r)=>s+(r.montant||0),0);
+    const dateLocale = new Date(dateStr).toLocaleDateString('fr-FR', {weekday:'long',day:'numeric',month:'long',year:'numeric'});
+
+    const lignesRemises = remises.length > 0
+      ? remises.map(r => `<tr><td style="padding:4px 8px;">${r.article}${r.taille?' T.'+r.taille:''}${r.couleur?' '+r.couleur:''}</td><td style="padding:4px 8px;color:#993556;">${r.remise}</td><td style="padding:4px 8px;font-weight:600;">${eur(r.montant)}</td><td style="padding:4px 8px;font-size:11px;color:#888;">${r.ticket}</td></tr>`).join('')
+      : '<tr><td colspan="4" style="padding:8px;color:#888;text-align:center;">Aucune remise manuelle ce jour</td></tr>';
+
+    const html = `
+      <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;">
+        <div style="background:#993556;padding:20px;text-align:center;border-radius:10px 10px 0 0;">
+          <img src="https://i.imgur.com/NRbcVPO.png" width="80" height="80" style="border-radius:50%;" alt="Belle&Jolie"/>
+          <div style="color:#fff;font-size:20px;font-weight:700;margin-top:8px;">Relevé de clôture</div>
+          <div style="color:#f0c8d4;font-size:13px;">${dateLocale}</div>
+        </div>
+        <div style="background:#fff;padding:24px;border-radius:0 0 10px 10px;border:1px solid #e8e0e4;">
+          <h2 style="color:#993556;font-size:16px;margin:0 0 16px;">📊 CA de la journée</h2>
+          <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
+            <tr style="background:#fbeaf0;"><td style="padding:8px 12px;font-weight:600;">CA TTC</td><td style="padding:8px 12px;font-size:20px;font-weight:700;color:#993556;">${eur(z.caTTC)}</td></tr>
+            <tr><td style="padding:6px 12px;color:#555;">CA HT</td><td style="padding:6px 12px;">${eur(z.caHT)}</td></tr>
+            <tr><td style="padding:6px 12px;color:#555;">TVA collectée</td><td style="padding:6px 12px;">${eur(z.tvaCol)}</td></tr>
+            <tr><td style="padding:6px 12px;color:#555;">Nb ventes</td><td style="padding:6px 12px;">${z.nbVentes}</td></tr>
+          </table>
+          <h2 style="color:#993556;font-size:16px;margin:0 0 12px;">🏷️ Remises manuelles (${remises.length})</h2>
+          <table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:13px;">
+            <thead><tr style="background:#f5f0f2;"><th style="padding:6px 8px;text-align:left;">Article</th><th style="padding:6px 8px;text-align:left;">Remise</th><th style="padding:6px 8px;text-align:left;">Montant</th><th style="padding:6px 8px;text-align:left;">Ticket</th></tr></thead>
+            <tbody>${lignesRemises}</tbody>
+          </table>
+          ${remises.length>0?`<div style="text-align:right;font-weight:700;color:#993556;padding:8px 0;">Total remises : ${eur(totalRemises)}</div>`:''}
+          <div style="margin-top:20px;padding:12px;background:#f9f6f8;border-radius:8px;font-size:11px;color:#888;text-align:center;">
+            Belle&Jolie · ${BOUTIQUE_ADRESSE} · Clôturé par ${z.vendeur}
+          </div>
+        </div>
+      </div>`;
+
+    await emailjs.send(STATE.emailjsServiceId, STATE.emailjsTemplateId, {
+      to_email: 'boutiquebelleetjolie@gmail.com',
+      to_name: 'Belle&Jolie',
+      subject: 'Relevé clôture ' + dateLocale + ' — CA ' + eur(z.caTTC),
+      message: html,
+      html_content: html,
+    });
+    console.log('✅ Relevé clôture envoyé');
+  } catch(err) {
+    console.warn('Relevé clôture non envoyé:', err);
+  }
 };
 
 window.imprimerZ = (z) => {
@@ -10431,7 +10520,7 @@ window.imprimerLotEtiquettes = () => {
       <div class="etiq-name">${p.name.length>26?p.name.slice(0,26)+"…":p.name}</div>
       <div class="etiq-ref">${(p.ref+(infos?" · "+infos:"")).slice(0,32)}</div>
       <img src="${bcImg}" class="etiq-bc"/>
-      <div class="etiq-prix">${eur(p.price)}</div>
+      ${ligneItem&&ligneItem.prixOriginal ? `<div class="etiq-prix"><span style="text-decoration:line-through;color:#aaa;font-size:9px;">${eur(ligneItem.prixOriginal)}</span> ${eur(p.price)}</div>` : `<div class="etiq-prix">${eur(p.price)}</div>`}
     </div>`;
   }));
   // Découper en pages de 65 — chaque page a ses propres marges
