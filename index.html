@@ -1250,6 +1250,30 @@ function renderCaisse() {
                 ${fidPct>0?`<span style="margin-left:6px;background:#eaf3de;color:#3b6d11;padding:1px 6px;border-radius:10px;font-weight:500;">-20% fidélité!</span>`:""}
               </div>
               ${(()=>{
+                // Progression fidélité en temps réel avec panier actuel
+                const panierTotal = getCaisseSousTotal();
+                const achatsActuels = STATE.client.totalAchats||0;
+                const montantActuel = STATE.client.montantCumule||0;
+                const montantAvecPanier = montantActuel + panierTotal;
+                const achatsAvecPanier = achatsActuels + (panierTotal>=40?1:0);
+                // Programme -20% : 8 passages × 40€
+                const passagesVers20 = Math.min(nbPassages40 + (panierTotal>=40?1:0), 8);
+                const manqueVers20 = 8 - passagesVers20;
+                // Afficher seulement si panier > 0 et pas encore -20%
+                if(panierTotal <= 0 || fidPct > 0) return "";
+                const couleur = manqueVers20 <= 2 ? "#3b6d11" : "#854f0b";
+                const bg = manqueVers20 <= 2 ? "#eaf3de" : "#fff3e8";
+                return \`<div style="background:\${bg};border-radius:8px;padding:6px 10px;margin-top:4px;">
+                  <div style="font-size:11px;color:\${couleur};font-weight:600;">
+                    🎯 Fidélité -20% : \${passagesVers20}/8 passages ≥ 40€
+                    \${manqueVers20===0?"— <strong>Remise applicable ce soir !</strong>":manqueVers20===1?"— Plus qu'1 passage !":""}
+                  </div>
+                  <div style="background:#e8e0e4;border-radius:4px;height:4px;margin-top:4px;overflow:hidden;">
+                    <div style="height:100%;width:\${Math.min(100,passagesVers20/8*100)}%;background:\${couleur};border-radius:4px;transition:width 0.3s;"></div>
+                  </div>
+                </div>\`;
+              })()}
+              ${(()=>{
                 const avoirsClient=(STATE.avoirs||[]).filter(a=>a.clientId===STATE.client.id&&!a.utilise&&a.solde>0&&(!a.expiration||new Date(a.expiration)>=new Date())&&a.typeAvoir!=="anniversaire");
                 const bonBienv=(STATE.avoirs||[]).find(a=>a.clientId===STATE.client.id&&!a.utilise&&a.solde>0&&a.typeAvoir==="bienvenue"&&(!a.expiration||new Date(a.expiration)>=new Date())&&(!a.date||new Date(a.date)<=new Date()));
                 const bonFid400=(STATE.avoirs||[]).find(a=>a.clientId===STATE.client.id&&!a.utilise&&a.typeAvoir==="fidelite400"&&(!a.expiration||new Date(a.expiration)>=new Date()));
