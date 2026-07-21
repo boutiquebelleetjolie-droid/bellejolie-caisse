@@ -819,6 +819,10 @@ function renderApp() {
 }
 
 window.setTab = t => setState({tab:t});
+window.fermerInfoModal = () => {
+  const m = document.getElementById('info-art-modal');
+  if(m) m.remove();
+};
 window.afficherInfoArticlePanier = (itemId) => {
   const item = STATE.panier.find(x=>x.id===itemId);
   if(!item) return;
@@ -848,7 +852,7 @@ window.afficherInfoArticlePanier = (itemId) => {
   div.onclick = (e) => { if(e.target===div) div.remove(); };
   div.innerHTML = '<div class="modal" style="max-width:360px;">'
     +'<div class="modal-header"><span style="font-weight:500;">'+prod.name+'</span>'
-    +'<button onclick="document.getElementById('info-art-modal').remove()" style="background:none;border:none;font-size:24px;color:#aaa;">×</button></div>'
+    +'<button onclick="fermerInfoModal()"" style="background:none;border:none;font-size:24px;color:#aaa;">×</button></div>'
     +'<div class="modal-body">'
     +(prod.photo?'<img src="'+prod.photo+'" style="width:100%;height:160px;object-fit:cover;border-radius:10px;margin-bottom:12px;"/>':'')
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">'
@@ -6756,7 +6760,7 @@ function renderFacturesFourn() {
       html += '<div style="text-align:right;"><div style="font-size:13px;font-weight:600;">'+eur(parseFloat(f.montantHT||0))+' HT</div>';
       html += '<div style="font-size:11px;color:#888;">'+eur(ttc)+' TTC</div></div>';
       html += '<span style="background:'+statColor+';color:#fff;font-size:10px;padding:2px 6px;border-radius:5px;font-weight:500;margin-left:6px;">'+f.statut+'</span>';
-      html += '<button onclick="supprimerFactureFourn(''+f.id+'')" style="background:none;border:none;color:#a32d2d;cursor:pointer;font-size:16px;margin-left:4px;">×</button>';
+      html += '<button data-fid="'+f.id+'" onclick="supprimerFactureFourn(this.dataset.fid)" style="background:none;border:none;color:#a32d2d;cursor:pointer;font-size:16px;margin-left:4px;">×</button>';
       html += '</div>';
     });
     html += '</div>';
@@ -6796,8 +6800,7 @@ window.exporterFacturesFournCSV = () => {
     const montantTVA = ht*tva/100;
     rows.push([f.date,f.fournisseur,f.numeroFacture||'',ht.toFixed(2),tva,montantTVA.toFixed(2),(ht+montantTVA).toFixed(2),f.modePaiement,f.statut,f.notes||'']);
   });
-  const csv = rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(';')).join('
-');
+  const csv = rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(';')).join('\n');
   const blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
