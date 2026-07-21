@@ -1283,29 +1283,27 @@ function renderCaisse() {
                 let html = '';
                 
                 // Programme 1 : -20% (8 passages >= 40€)
-                html += \`<div style="background:\${bg};border-radius:8px;padding:6px 10px;margin-top:4px;">
-                  <div style="font-size:11px;color:\${couleur};font-weight:600;">
-                    🎯 Prog. -20% : \${passagesVers20}/8 passages ≥ 40€
-                    \${manqueVers20===0?"— <strong>Remise applicable !</strong>":manqueVers20===1?"— Plus qu'1 passage !":""}
-                  </div>
-                  <div style="background:#e8e0e4;border-radius:4px;height:4px;margin-top:4px;overflow:hidden;">
-                    <div style="height:100%;width:\${Math.min(100,passagesVers20/8*100)}%;background:\${couleur};border-radius:4px;"></div>
-                  </div>
-                </div>\`;
+                html += '<div style="background:'+bg+';border-radius:8px;padding:6px 10px;margin-top:4px;">'
+                  +'<div style="font-size:11px;color:'+couleur+';font-weight:600;">'
+                  +'🎯 Prog. -20% : '+passagesVers20+'/8 passages ≥ 40€'
+                  +(manqueVers20===0?" — <strong>Remise applicable !</strong>":manqueVers20===1?" — Plus qu'1 passage !":"")
+                  +'</div>'
+                  +'<div style="background:#e8e0e4;border-radius:4px;height:4px;margin-top:4px;overflow:hidden;">'
+                  +'<div style="height:100%;width:'+Math.min(100,passagesVers20/8*100)+'%;background:'+couleur+';border-radius:4px;"></div>'
+                  +'</div></div>';
                 
                 // Programme 2 : -15% (6 passages < 40€ + 400€ cumulés)
                 if(nbPassages40 < 3) {
                   const couleur2 = eligibleProg2 ? "#3b6d11" : (manqueProg2passages<=1&&manqueProg2montant<50?"#854f0b":"#185fa5");
                   const bg2 = eligibleProg2 ? "#eaf3de" : "#eef4fd";
-                  html += \`<div style="background:\${bg2};border-radius:8px;padding:6px 10px;margin-top:4px;">
-                    <div style="font-size:11px;color:\${couleur2};font-weight:600;">
-                      🎀 Prog. -15% : \${progProg2}/6 passages < 40€ · \${eur(montantTotal)}/400€
-                      \${eligibleProg2?"— <strong>Bon -15% à générer !</strong>":manqueProg2passages===0?(" · encore "+eur(manqueProg2montant)):""}
-                    </div>
-                    <div style="background:#e8e0e4;border-radius:4px;height:4px;margin-top:3px;overflow:hidden;">
-                      <div style="height:100%;width:\${Math.min(100,Math.min(progProg2/6,montantTotal/400)*100)}%;background:\${couleur2};border-radius:4px;"></div>
-                    </div>
-                  </div>\`;
+                  html += '<div style="background:'+bg2+';border-radius:8px;padding:6px 10px;margin-top:4px;">'
+                    +'<div style="font-size:11px;color:'+couleur2+';font-weight:600;">'
+                    +'🎀 Prog. -15% : '+progProg2+'/6 passages < 40€ · '+eur(montantTotal)+'/400€'
+                    +(eligibleProg2?' — <strong>Bon -15% à générer !</strong>':manqueProg2passages===0?' · encore '+eur(manqueProg2montant):'')
+                    +'</div>'
+                    +'<div style="background:#e8e0e4;border-radius:4px;height:4px;margin-top:3px;overflow:hidden;">'
+                    +'<div style="height:100%;width:'+Math.min(100,Math.min(progProg2/6,montantTotal/400)*100)+'%;background:'+couleur2+';border-radius:4px;"></div>'
+                    +'</div></div>';
                 }
                 
                 return html;
