@@ -819,6 +819,11 @@ function renderApp() {
 }
 
 window.setTab = t => setState({tab:t});
+window.viderPanier = () => {
+  if(!STATE.panier.length) return;
+  if(confirm("Vider le panier ?")) { STATE.panier=[]; render(); }
+};
+
 window.logout = () => {
   // Vérifier si le mémo du jour a été rempli
   const aujourdhui = new Date().toISOString().slice(0,10);
@@ -1625,6 +1630,7 @@ function renderCaisse() {
         `}
       `:`
         <div style="display:flex;gap:8px;">
+          <button onclick="viderPanier()" ${panier.length===0?"disabled":""} style="flex:0 0 auto;padding:14px 12px;background:#f5f0f2;color:#a32d2d;border:1px solid #f0959599;border-radius:9px;cursor:pointer;font-size:13px;font-weight:500;opacity:${panier.length>0?1:0.45};" title="Vider le panier">🗑️</button>
           <button onclick="mettreEnAttente()" ${panier.length===0?"disabled":""} style="flex:0 0 auto;padding:14px 12px;background:#f5f0f2;color:#993556;border:1px solid #e8d8de;border-radius:9px;cursor:pointer;font-size:13px;font-weight:500;opacity:${panier.length>0?1:0.45};">
             ⏸
           </button>
@@ -2246,7 +2252,7 @@ window.scannerImageCodeBarre = async (input) => {
           STATE.searchBC=""; render();
           const flash = document.createElement("div");
           flash.style.cssText = "position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#3b6d11;color:#fff;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600;z-index:9999;";
-          flash.textContent = "✅ " + prod.name + (taille?' T.'+taille:'') + (couleur?' '+couleur:'') + " ajouté";
+          const sr=prod.stock-1;flash.innerHTML="✅ "+prod.name+(taille?" T."+taille:"")+(couleur?" "+couleur:"")+" ajouté"+(sr<=3&&sr>0?'<div style="font-size:11px;opacity:0.85;">⚠️ Plus que '+sr+' en stock</div>':sr===0?'<div style="font-size:11px;">⛔ Dernier !</div>':"");
           document.body.appendChild(flash);
           setTimeout(()=>flash.remove(), 1500);
           foundVar = true; break;
