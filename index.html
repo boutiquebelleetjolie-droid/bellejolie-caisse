@@ -819,6 +819,23 @@ function renderApp() {
 }
 
 window.setTab = t => setState({tab:t});
+window.ajouterSac = () => {
+  // Chercher si un article "Sac" existe déjà dans les produits
+  const sacProd = STATE.products.find(p => p.name.toLowerCase().includes('sac') && p.price <= 0.5);
+  if(sacProd) {
+    addToCart(sacProd.id);
+    return;
+  }
+  // Sinon ajouter une ligne sac directement
+  const sacId = "SAC_"+Date.now();
+  STATE.panier = [...STATE.panier, {
+    id: sacId, name: "Sac", ref: "SAC", price: 0.20,
+    qty: 1, remise: "", remiseType: "", taille: "", couleur: "",
+    _sacRapide: true
+  }];
+  render();
+};
+
 window.viderPanier = () => {
   if(!STATE.panier.length) return;
   if(confirm("Vider le panier ?")) { STATE.panier=[]; render(); }
@@ -1581,6 +1598,7 @@ function renderCaisse() {
 
       <!-- Remise globale -->
       <div class="card">
+        <button onclick="ajouterSac()" style="width:100%;padding:9px;background:#f9f6f8;color:#555;border:1px solid #e8d8de;border-radius:8px;cursor:pointer;font-size:13px;margin-bottom:8px;font-weight:500;">🛍️ + Sac — 0,20€</button>
         <div style="font-weight:500;font-size:13px;margin-bottom:8px;">🏷️ Remise globale panier</div>
         <!-- Bouton rapide réseaux sociaux -->
         <button onclick="appliquerRemiseReseaux()"
@@ -2252,7 +2270,7 @@ window.scannerImageCodeBarre = async (input) => {
           STATE.searchBC=""; render();
           const flash = document.createElement("div");
           flash.style.cssText = "position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#3b6d11;color:#fff;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:600;z-index:9999;";
-          const sr=prod.stock-1;flash.innerHTML="✅ "+prod.name+(taille?" T."+taille:"")+(couleur?" "+couleur:"")+" ajouté"+(sr<=3&&sr>0?'<div style="font-size:11px;opacity:0.85;">⚠️ Plus que '+sr+' en stock</div>':sr===0?'<div style="font-size:11px;">⛔ Dernier !</div>':"");
+          const sr=prod.stock-1;flash.innerHTML="✅ "+prod.name+(taille?" T."+taille:"")+(couleur?" "+couleur:"")+" ajouté"+(sr===0?'<div style="font-size:11px;">⛔ Dernier article vendu !</div>':"");
           document.body.appendChild(flash);
           setTimeout(()=>flash.remove(), 1500);
           foundVar = true; break;
