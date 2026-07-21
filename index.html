@@ -738,6 +738,7 @@ function renderApp() {
     ...(STATE.vendeur.id==="V1"?[
       {key:"bilan",       label:"Bilan",        emoji:"📒"},
       {key:"compta",      label:"Comptabilité", emoji:"🧾"},
+      {key:"factures_fourn", label:"Factures",      emoji:"📃"},
       {key:"factures",    label:"Factures",      emoji:"📄"},
 
       {key:"annulations", label:"Annulations",  emoji:"↩️"},
@@ -785,6 +786,7 @@ function renderApp() {
     ${STATE.tab==="bilan"        ? (STATE.vendeur.id==="V1" ? renderBilan()       : "") : ""}
     ${STATE.tab==="caisse_jour"  ? renderCaisseJour()  : ""}
     ${STATE.tab==="compta"       ? (STATE.vendeur.id==="V1" ? renderCompta()      : "") : ""}
+    ${STATE.tab==="factures_fourn" ? (STATE.vendeur.id==="V1" ? renderFacturesFourn() : "") : ""}
     ${STATE.tab==="factures"     ? renderFacturesClients() : ""}
     ${STATE.tab==="memo"         ? renderMemo() : ""}
     ${STATE.tab==="annulations" ? (STATE.vendeur.id==="V1" ? renderAnnulations() : "") : ""}
@@ -1089,7 +1091,11 @@ function calcPanier() {
     }).length : 0;
   // Le -20% prend le dessus si 3+ achats >= 40€ sur les 8 derniers passages
   // Le bon -15% et le -20% ne sont pas cumulables
-  const bonFid400Actif = !!STATE._bonFid400EnCours && nbPassages40 < 3;
+  // Programme -15% : vérifier si disponible dans les 3 mois + activation manuelle
+  const bonFid15 = STATE.client?.bonFid15Disponible;
+  const bonFid15Valide = bonFid15 && (Date.now()-new Date(bonFid15)) < 90*24*60*60*1000;
+  const bonFid15Active = bonFid15Valide && STATE._fidAppliquee15===STATE.client?.id;
+  const bonFid400Actif = bonFid15Active && nbPassages40 < 3;
   // Programme -20% : vérifier si remise disponible (dans les 3 mois) ET manuellement activée
   const bonFid20 = STATE.client?.bonFid20Disponible;
   const bonFid20Valide = bonFid20 && (Date.now() - new Date(bonFid20)) < 90*24*60*60*1000;
@@ -1109,11 +1115,27 @@ function calcPanier() {
     // Appliquer seulement si manuellement activée
     if(bonFid20Active) fidPct=20;
   }
+  // Programme -15% : détecter palier atteint (6 passages < 40€ sur 8 derniers + 400€ cumulés)
+  if(STATE.client && !bonFid15) {
+    const derniers8 = (STATE.ventes||[])
+      .filter(v=>!v.annulee&&!v.test&&v.client?.id===STATE.client.id)
+      .sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,8);
+    const nbSous40 = derniers8.filter(v=>{
+      const net=(v.panier||[]).filter(x=>!x.retour).reduce((s,x)=>s+x.price*(x.qty||1),0);
+      return net<40;
+    }).length;
+    if(nbSous40>=6 && (STATE.client.montantCumule||0)>=400 && nbPassages40<3) {
+      STATE.client.bonFid15Disponible = new Date().toISOString();
+      lsSet("bj_clients", STATE.clients);
+    }
+  }
   const remGlobal = STATE.remVal
     ? (STATE.remType==="pct" ? Math.max(stTotal,0)*(parseFloat(STATE.remVal)/100) : parseFloat(STATE.remVal))
     : 0;
   // Fidélité -20% : seulement sur les articles plein tarif
-  const remiseFidMontant = !bonFid400Actif ? Math.max(stTotalSansRemise,0)*fidPct/100 : 0;
+  const pct15 = bonFid400Actif ? 15 : 0;
+  const remiseFidMontant = fidPct>0 ? Math.max(stTotalSansRemise,0)*fidPct/100 : (pct15>0 ? Math.max(stTotalSansRemise,0)*pct15/100 : 0);
+  const fidPctFinal = fidPct>0 ? fidPct : pct15;
   const total = stTotal - remGlobal - remiseFidMontant;
   return {stTotal, stTotalSansRemise, remGlobal, fidPct, remiseFidMontant, total};
 }
@@ -1270,7 +1292,19 @@ function renderCaisse() {
                     return '<span style="margin-left:6px;background:#eaf3de;color:#3b6d11;padding:2px 8px;border-radius:10px;font-weight:500;">✅ -20% appliqué</span>'
                       +'<button onclick="STATE._fidAppliquee20=null;render()" style="margin-left:4px;font-size:10px;background:none;border:1px solid #3b6d11;color:#3b6d11;border-radius:6px;padding:1px 6px;cursor:pointer;">Retirer</button>';
                   }
-                  return '<button onclick="STATE._fidAppliquee20=STATE.client.id;render()" style="margin-left:6px;background:#eaf3de;color:#3b6d11;border:1px solid #3b6d11;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:500;cursor:pointer;">🎁 Appliquer -20% fidélité (encore '+joursRestants+'j)</button>';
+                  return '<button onclick="STATE._fidAppliquee20=STATE.client.id;render()" style="margin-left:6px;background:#eaf3de;color:#3b6d11;border:1px solid #3b6d11;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:500;cursor:pointer;">🎁 -20% fidélité (encore '+joursRestants+'j)</button>';
+                })()}
+                ${(()=>{
+                  const bonFid15 = STATE.client?.bonFid15Disponible;
+                  const bonFid15Valide = bonFid15 && (Date.now()-new Date(bonFid15)) < 90*24*60*60*1000;
+                  const bonFid15Active = bonFid15Valide && STATE._fidAppliquee15===STATE.client?.id;
+                  if(!bonFid15Valide) return "";
+                  const joursRestants15 = Math.floor((90*24*60*60*1000-(Date.now()-new Date(bonFid15)))/(24*60*60*1000));
+                  if(bonFid15Active) {
+                    return '<span style="margin-left:6px;background:#eef4fd;color:#185fa5;padding:2px 8px;border-radius:10px;font-weight:500;">✅ -15% appliqué</span>'
+                      +'<button onclick="STATE._fidAppliquee15=null;render()" style="margin-left:4px;font-size:10px;background:none;border:1px solid #185fa5;color:#185fa5;border-radius:6px;padding:1px 6px;cursor:pointer;">Retirer</button>';
+                  }
+                  return '<button onclick="STATE._fidAppliquee15=STATE.client.id;render()" style="margin-left:6px;background:#eef4fd;color:#185fa5;border:1px solid #185fa5;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:500;cursor:pointer;">🎁 -15% fidélité (encore '+joursRestants15+'j)</button>';
                 })()}
               </div>
               ${(()=>{
@@ -6562,6 +6596,149 @@ ${f.notes?`<div style="margin-top:20px;padding:12px;background:#f9f6f8;border-ra
   else setTimeout(()=>URL.revokeObjectURL(url),10000);
 }
 
+// ─── FACTURES FOURNISSEURS ──────────────────────────────────────────
+function renderFacturesFourn() {
+  if(!STATE.facturesFourn) STATE.facturesFourn = [];
+  const fourn = [...new Set((STATE.facturesFourn||[]).map(f=>f.fournisseur).filter(Boolean))];
+
+  let html = '<div style="padding:16px;">';
+  html += '<div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;">';
+  html += '<div style="font-size:16px;font-weight:600;">📃 Factures fournisseurs</div>';
+  html += '<div style="flex:1;"></div>';
+  html += '<button onclick="STATE.showNouvelleFactureFourn=true;render()" style="padding:8px 16px;background:#993556;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">+ Nouvelle facture</button>';
+  html += '</div>';
+
+  // Modal nouvelle facture fournisseur
+  if(STATE.showNouvelleFactureFourn) {
+    if(!STATE.nouvelleFactureFourn) STATE.nouvelleFactureFourn = {
+      date: new Date().toISOString().slice(0,10),
+      fournisseur: '', numeroFacture: '', montantHT: '', tva: '20', montantTTC: '',
+      modePaiement: 'virement', dateEcheance: '', statut: 'impayée', notes: ''
+    };
+    const f = STATE.nouvelleFactureFourn;
+    const ttcCalc = f.montantHT ? parseFloat(f.montantHT)*(1+parseFloat(f.tva||0)/100) : 0;
+
+    html += '<div class="modal-bg" onclick="if(event.target===this){STATE.showNouvelleFactureFourn=false;STATE.nouvelleFactureFourn=null;render()}">';
+    html += '<div class="modal" style="max-width:500px;">';
+    html += '<div class="modal-header"><span style="font-weight:500;">📃 Nouvelle facture fournisseur</span>';
+    html += '<button onclick="STATE.showNouvelleFactureFourn=false;STATE.nouvelleFactureFourn=null;render()" style="background:none;border:none;font-size:24px;color:#aaa;">×</button></div>';
+    html += '<div class="modal-body">';
+
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">';
+    html += '<div><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Date facture *</label>';
+    html += '<input type="date" value="'+f.date+'" oninput="STATE.nouvelleFactureFourn.date=this.value" style="width:100%;border:1px solid #ddd;border-radius:7px;padding:6px;font-size:13px;box-sizing:border-box;"/></div>';
+    html += '<div><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">N° Facture</label>';
+    html += '<input value="'+(f.numeroFacture||'')+'" oninput="STATE.nouvelleFactureFourn.numeroFacture=this.value" placeholder="FAC-001" style="width:100%;border:1px solid #ddd;border-radius:7px;padding:6px;font-size:13px;box-sizing:border-box;"/></div>';
+    html += '</div>';
+
+    html += '<div style="margin-bottom:10px;"><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Fournisseur *</label>';
+    html += '<input value="'+(f.fournisseur||'')+'" oninput="STATE.nouvelleFactureFourn.fournisseur=this.value" list="fourn-list" placeholder="Nom du fournisseur" style="width:100%;border:1px solid #ddd;border-radius:7px;padding:6px;font-size:13px;box-sizing:border-box;"/>';
+    html += '<datalist id="fourn-list">'+fourn.map(fn=>'<option value="'+fn+'">').join('')+'</datalist></div>';
+
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:10px;">';
+    html += '<div><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Montant HT (€) *</label>';
+    html += '<input type="number" step="0.01" value="'+(f.montantHT||'')+'" oninput="STATE.nouvelleFactureFourn.montantHT=this.value;render()" placeholder="0.00" style="width:100%;border:1px solid #ddd;border-radius:7px;padding:6px;font-size:13px;box-sizing:border-box;"/></div>';
+    html += '<div><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">TVA %</label>';
+    html += '<select oninput="STATE.nouvelleFactureFourn.tva=this.value;render()" style="width:100%;border:1px solid #ddd;border-radius:7px;padding:6px;font-size:13px;">';
+    [0,5.5,10,20].forEach(t=>{ html += '<option value="'+t+'"'+(f.tva==t?' selected':'')+'>'+t+'%</option>'; });
+    html += '</select></div>';
+    html += '<div><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Montant TTC (€)</label>';
+    html += '<input type="number" step="0.01" value="'+(f.montantHT?ttcCalc.toFixed(2):'')+'" readonly style="width:100%;border:1px solid #eee;border-radius:7px;padding:6px;font-size:13px;box-sizing:border-box;background:#f9f6f8;"/></div>';
+    html += '</div>';
+
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">';
+    html += '<div><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Mode paiement</label>';
+    html += '<select oninput="STATE.nouvelleFactureFourn.modePaiement=this.value" style="width:100%;border:1px solid #ddd;border-radius:7px;padding:6px;font-size:13px;">';
+    ['virement','chèque','carte','espèces','prélèvement'].forEach(m=>{ html += '<option value="'+m+'"'+(f.modePaiement===m?' selected':'')+'>'+m+'</option>'; });
+    html += '</select></div>';
+    html += '<div><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Statut</label>';
+    html += '<select oninput="STATE.nouvelleFactureFourn.statut=this.value;render()" style="width:100%;border:1px solid #ddd;border-radius:7px;padding:6px;font-size:13px;">';
+    ['impayée','payée','partiellement payée'].forEach(s=>{ html += '<option value="'+s+'"'+(f.statut===s?' selected':'')+'>'+s+'</option>'; });
+    html += '</select></div>';
+    html += '</div>';
+
+    html += '<div style="margin-bottom:14px;"><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Notes</label>';
+    html += '<textarea oninput="STATE.nouvelleFactureFourn.notes=this.value" style="width:100%;border:1px solid #ddd;border-radius:7px;padding:6px;font-size:12px;box-sizing:border-box;resize:none;" rows="2">'+(f.notes||'')+'</textarea></div>';
+
+    html += '<button onclick="sauvegarderFactureFourn()" style="width:100%;padding:11px;background:#993556;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:500;">💾 Enregistrer la facture</button>';
+    html += '</div></div></div>';
+  }
+
+  // Stats globales
+  const total = (STATE.facturesFourn||[]).reduce((s,f)=>s+parseFloat(f.montantHT||0),0);
+  const totalTVA = (STATE.facturesFourn||[]).reduce((s,f)=>s+parseFloat(f.montantHT||0)*parseFloat(f.tva||0)/100,0);
+  const impayees = (STATE.facturesFourn||[]).filter(f=>f.statut==='impayée');
+  const totalImpaye = impayees.reduce((s,f)=>s+parseFloat(f.montantHT||0)*(1+parseFloat(f.tva||0)/100),0);
+
+  html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:16px;">';
+  html += '<div style="background:#fbeaf0;border-radius:10px;padding:10px;text-align:center;"><div style="font-size:15px;font-weight:700;color:#993556;">'+eur(total)+'</div><div style="font-size:11px;color:#888;">Total achats HT</div></div>';
+  html += '<div style="background:#eef4fd;border-radius:10px;padding:10px;text-align:center;"><div style="font-size:15px;font-weight:700;color:#185fa5;">'+eur(totalTVA)+'</div><div style="font-size:11px;color:#888;">TVA déductible</div></div>';
+  html += '<div style="background:'+(totalImpaye>0?'#fcebeb':'#eaf3de')+';border-radius:10px;padding:10px;text-align:center;"><div style="font-size:15px;font-weight:700;color:'+(totalImpaye>0?'#a32d2d':'#3b6d11')+';">'+eur(totalImpaye)+'</div><div style="font-size:11px;color:#888;">À payer TTC</div></div>';
+  html += '</div>';
+
+  // Liste des factures
+  if(!(STATE.facturesFourn||[]).length) {
+    html += '<div style="text-align:center;padding:40px;color:#aaa;">Aucune facture fournisseur. Cliquez sur "+ Nouvelle facture".</div>';
+  } else {
+    html += '<div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;overflow:hidden;">';
+    [...(STATE.facturesFourn||[])].sort((a,b)=>new Date(b.date)-new Date(a.date)).forEach(f => {
+      const ttc = parseFloat(f.montantHT||0)*(1+parseFloat(f.tva||0)/100);
+      const statColor = f.statut==='payée'?'#3b6d11':f.statut==='partiellement payée'?'#854f0b':'#a32d2d';
+      html += '<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:0.5px solid #e8e0e4;">';
+      html += '<div style="flex:1;"><div style="font-weight:500;font-size:13px;">'+f.fournisseur+'</div>';
+      html += '<div style="font-size:11px;color:#888;">'+new Date(f.date).toLocaleDateString('fr-FR')+(f.numeroFacture?' · '+f.numeroFacture:'')+'</div></div>';
+      html += '<div style="text-align:right;"><div style="font-size:13px;font-weight:600;">'+eur(parseFloat(f.montantHT||0))+' HT</div>';
+      html += '<div style="font-size:11px;color:#888;">'+eur(ttc)+' TTC</div></div>';
+      html += '<span style="background:'+statColor+';color:#fff;font-size:10px;padding:2px 6px;border-radius:5px;font-weight:500;margin-left:6px;">'+f.statut+'</span>';
+      html += '<button onclick="supprimerFactureFourn(''+f.id+'')" style="background:none;border:none;color:#a32d2d;cursor:pointer;font-size:16px;margin-left:4px;">×</button>';
+      html += '</div>';
+    });
+    html += '</div>';
+
+    // Bouton export CSV
+    html += '<button onclick="exporterFacturesFournCSV()" style="margin-top:12px;padding:8px 16px;background:#3b6d11;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;">📥 Exporter CSV pour comptable</button>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
+window.sauvegarderFactureFourn = () => {
+  const f = STATE.nouvelleFactureFourn;
+  if(!f||!f.fournisseur) { alert("Renseignez le fournisseur."); return; }
+  if(!f.montantHT) { alert("Renseignez le montant HT."); return; }
+  const facture = {...f, id: uid("FF"), savedAt: new Date().toISOString()};
+  STATE.facturesFourn = [...(STATE.facturesFourn||[]), facture];
+  lsSet("bj_factures_fourn", STATE.facturesFourn);
+  STATE.showNouvelleFactureFourn = false;
+  STATE.nouvelleFactureFourn = null;
+  render();
+};
+
+window.supprimerFactureFourn = (id) => {
+  if(!confirm("Supprimer cette facture ?")) return;
+  STATE.facturesFourn = (STATE.facturesFourn||[]).filter(f=>f.id!==id);
+  lsSet("bj_factures_fourn", STATE.facturesFourn);
+  render();
+};
+
+window.exporterFacturesFournCSV = () => {
+  const rows = [["Date","Fournisseur","N° Facture","Montant HT","TVA %","Montant TVA","Montant TTC","Mode paiement","Statut","Notes"]];
+  (STATE.facturesFourn||[]).sort((a,b)=>new Date(a.date)-new Date(b.date)).forEach(f => {
+    const ht = parseFloat(f.montantHT||0);
+    const tva = parseFloat(f.tva||0);
+    const montantTVA = ht*tva/100;
+    rows.push([f.date,f.fournisseur,f.numeroFacture||'',ht.toFixed(2),tva,montantTVA.toFixed(2),(ht+montantTVA).toFixed(2),f.modePaiement,f.statut,f.notes||'']);
+  });
+  const csv = rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(';')).join('
+');
+  const blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'factures-fournisseurs-'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click();
+};
+
 function renderCompta() {
   const now = new Date();
   if(!STATE.comptaMonth) STATE.comptaMonth = now.getMonth();
@@ -11711,6 +11888,7 @@ STATE.emailjsServiceId  = ls("bj_ejs_service","");
 STATE.emailjsTemplateId = ls("bj_ejs_template","");
 STATE.emailjsPublicKey  = ls("bj_ejs_key","");
 STATE.facturesClients = ls("bj_factures_clients", []);
+  STATE.facturesFourn = ls("bj_factures_fourn", []);
 const savedVendeurs = ls("bj_vendeurs", null);
 // On ne restaure que le code PIN, pas le nom (le nom est défini dans VENDEURS)
 if(savedVendeurs) savedVendeurs.forEach((sv,i)=>{ if(VENDEURS[i]&&sv.code){VENDEURS[i].code=sv.code;} });
