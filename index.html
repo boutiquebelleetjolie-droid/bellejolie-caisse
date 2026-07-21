@@ -819,6 +819,48 @@ function renderApp() {
 }
 
 window.setTab = t => setState({tab:t});
+window.afficherInfoArticlePanier = (itemId) => {
+  const item = STATE.panier.find(x=>x.id===itemId);
+  if(!item) return;
+  const prod = STATE.products.find(p=>p.id===item.id||p.ref===item.ref);
+  if(!prod) { alert("Article introuvable dans le stock."); return; }
+  const sv = prod.stockVariantes||{};
+  const tailles = prod.tailles||[], couleurs = prod.couleurs||[];
+  let stockDetails = '';
+  if(tailles.length>0||couleurs.length>0) {
+    const cols = couleurs.length>0?couleurs:[''];
+    const rows = tailles.length>0?tailles:[''];
+    rows.forEach(t=>cols.forEach(c=>{
+      const key=(t||'_')+'_'+(c||'_');
+      const stk=parseInt(sv[key])||0;
+      stockDetails += '<div style="display:flex;justify-content:space-between;padding:4px 0;font-size:12px;border-bottom:0.5px solid #f0ebee;">'
+        +'<span>'+(t?'T.'+t:'')+(t&&c&&c!=='_'?' ':'')+(c&&c!=='_'?c:'')+'</span>'
+        +'<span style="font-weight:600;color:'+(stk===0?'#a32d2d':stk<=2?'#854f0b':'#3b6d11')+';">'+stk+'</span>'
+        +'</div>';
+    }));
+  }
+  const existing = document.getElementById('info-art-modal');
+  if(existing) existing.remove();
+  const div = document.createElement('div');
+  div.id = 'info-art-modal';
+  div.className = 'modal-bg';
+  div.style.zIndex = '10000';
+  div.onclick = (e) => { if(e.target===div) div.remove(); };
+  div.innerHTML = '<div class="modal" style="max-width:360px;">'
+    +'<div class="modal-header"><span style="font-weight:500;">'+prod.name+'</span>'
+    +'<button onclick="document.getElementById('info-art-modal').remove()" style="background:none;border:none;font-size:24px;color:#aaa;">×</button></div>'
+    +'<div class="modal-body">'
+    +(prod.photo?'<img src="'+prod.photo+'" style="width:100%;height:160px;object-fit:cover;border-radius:10px;margin-bottom:12px;"/>':'')
+    +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:12px;">'
+    +'<div style="background:#fbeaf0;border-radius:8px;padding:10px;text-align:center;"><div style="font-size:18px;font-weight:700;color:#993556;">'+prod.stock+'</div><div style="font-size:11px;color:#888;">En stock</div></div>'
+    +'<div style="background:#f5f0f2;border-radius:8px;padding:10px;text-align:center;"><div style="font-size:18px;font-weight:700;color:#555;">'+eur(prod.price)+'</div><div style="font-size:11px;color:#888;">Prix TTC</div></div>'
+    +'</div>'
+    +(stockDetails?'<div style="margin-bottom:12px;"><div style="font-size:11px;font-weight:600;color:#555;margin-bottom:6px;">Stock par variante</div>'+stockDetails+'</div>':'')
+    +'<div style="font-size:11px;color:#888;text-align:center;">Réf. '+prod.ref+(prod.category?' · '+prod.category:'')+(prod.grandeTaille?' · Grande taille':'')+'</div>'
+    +'</div></div>';
+  document.body.appendChild(div);
+};
+
 window.ajouterSac = () => {
   // Chercher si un article "Sac" existe déjà dans les produits
   const sacProd = STATE.products.find(p => p.name.toLowerCase().includes('sac') && p.price <= 0.5);
@@ -1244,7 +1286,7 @@ function renderCaisse() {
               return `
               <tr style="border-bottom:0.5px solid #e8e0e4;${it.retour?"background:#fff8f0;":""}">
                 <td style="padding:8px 4px;">
-                  <div style="font-weight:500;">${it.retour?"↩️ ":""}${it.name}</div>
+                  <div style="font-weight:500;">${it.retour?"↩️ ":""}${it.name} <span style="font-size:10px;color:#bbb;cursor:pointer;" onclick="afficherInfoArticlePanier('${it.id}')">ℹ️</span></div>
                   <div style="font-size:11px;color:#888;">${it.ref}${it.taille||it.couleur ? ' — '+[it.taille?'T.'+it.taille:'',it.couleur||'']. filter(Boolean).join(' ') : ''}</div>
                   ${it.retour&&!it.avoirId?`
                   <div style="margin-top:3px;display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
