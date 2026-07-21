@@ -3498,7 +3498,11 @@ prods.forEach(p=>{
   t += '<td style="padding:9px 6px;font-family:monospace;font-size:12px;">'+p.ref+'</td>';
   const dernierReassort = p.dernierReassort ? new Date(p.dernierReassort).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}) : null;
   t += '<td style="padding:9px 6px;"><div style="font-weight:500;">'+p.name+'</div><div style="font-size:11px;color:#888;">'+p.barcode+(dernierReassort?' · 📦 '+dernierReassort:'')+'</div></td>';
-  t += '<td style="padding:9px 6px;"><span class="tag" style="background:#e5e4dc;color:#444;">'+p.category+'</span></td>';
+  const moisEnReserve = p.enReserve && p.dateReserve ? Math.floor((Date.now()-new Date(p.dateReserve))/(1000*60*60*24*30)) : 0;
+  const alerteReserve = moisEnReserve >= 5;
+  t += '<td style="padding:9px 6px;"><span class="tag" style="background:#e5e4dc;color:#444;">'+p.category+'</span>'
+    +(p.enReserve?' <span style="background:'+(alerteReserve?'#a32d2d':'#854f0b')+';color:#fff;font-size:9px;padding:1px 4px;border-radius:3px;font-weight:600;">'+(alerteReserve?'⚠️ RÉSERVE '+moisEnReserve+'m':'📦 RÉSERVE')+'</span>':'')
+    +'</td>';
 
   if(isV1){
     const pa=p.prixAchat||0, pv=p.price||0, pvht=pv/1.20;
@@ -3708,20 +3712,57 @@ function renderStock() {
     const vaTTC = va * 1.20;
     const coeffGlobal = va>0 ? parseFloat((vv/1.20/va).toFixed(2)) : null;
 
+    // Calculs séparés : en vente vs en réserve
+    const filteredVente = filtered.filter(p=>!p.enReserve);
+    const filteredReserve = filtered.filter(p=>p.enReserve);
+    const qtVente = filteredVente.reduce((s,p)=>s+(p.stock||0),0);
+    const vvVente = filteredVente.reduce((s,p)=>s+(p.stock||0)*p.price,0);
+    const vaVente = filteredVente.reduce((s,p)=>s+(p.stock||0)*(p.prixAchat||0),0);
+    const qtReserve = filteredReserve.reduce((s,p)=>s+(p.stock||0),0);
+    const vvReserve = filteredReserve.reduce((s,p)=>s+(p.stock||0)*p.price,0);
+    const vaReserve = filteredReserve.reduce((s,p)=>s+(p.stock||0)*(p.prixAchat||0),0);
+    const alertesReserve = filteredReserve.filter(p=>p.dateReserve&&Math.floor((Date.now()-new Date(p.dateReserve))/(1000*60*60*24*30))>=5).length;
+
+    // Sélecteur de vue récap
+    if(!STATE.recapVue) STATE.recapVue = 'tout';
+
     html += '<div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px 18px;margin-top:14px;">';
-    html += '<div style="font-weight:600;font-size:13px;color:#555;margin-bottom:12px;">📦 Récapitulatif du stock</div>';
+    html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">';
+    html += '<div style="font-weight:600;font-size:13px;color:#555;">📦 Récapitulatif du stock</div>';
+    html += '<div style="display:flex;gap:4px;margin-left:auto;">';
+    ['tout','vente','reserve'].forEach(v=>{
+      const labels={'tout':'Tout','vente':'En vente','reserve':'Réserve'+(filteredReserve.length?' ('+filteredReserve.length+')':'')+(alertesReserve?' ⚠️':'')};
+      html += '<button data-vue="'+v+'" onclick="STATE.recapVue=this.dataset.vue;render()" style="padding:4px 10px;border-radius:6px;border:1px solid '+(STATE.recapVue===v?'#993556':'#ddd')+';background:'+(STATE.recapVue===v?'#993556':'#fff')+';color:'+(STATE.recapVue===v?'#fff':'#555')+';font-size:11px;cursor:pointer;">'+labels[v]+'</button>';
+    });
+    html += '</div></div>';
+
+    // Données selon vue
+    const vueProd = STATE.recapVue==='vente'?filteredVente:STATE.recapVue==='reserve'?filteredReserve:filtered;
+    const vueQt = STATE.recapVue==='vente'?qtVente:STATE.recapVue==='reserve'?qtReserve:qt;
+    const vueVV = STATE.recapVue==='vente'?vvVente:STATE.recapVue==='reserve'?vvReserve:vv;
+    const vueVA = STATE.recapVue==='vente'?vaVente:STATE.recapVue==='reserve'?vaReserve:va;
+    const vueVATTC = vueVA * 1.20;
+    const vueMg = vueVV>0&&vueVA>0?Math.round((vueVV/1.20-vueVA)/(vueVV/1.20)*100):null;
+    const vueCoeff = vueVA>0?parseFloat((vueVV/1.20/vueVA).toFixed(2)):null;
+    const vueMb = vueMg===null?"#f5f0f2":vueMg>=50?"#eaf3de":vueMg>=30?"#fff3e8":"#fcebeb";
+    const vueMc = vueMg===null?"#aaa":vueMg>=50?"#3b6d11":vueMg>=30?"#854f0b":"#a32d2d";
+
+    if(STATE.recapVue==='reserve'&&alertesReserve>0) {
+      html += '<div style="background:#fcebeb;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#a32d2d;font-weight:500;">⚠️ '+alertesReserve+' article(s) en réserve depuis plus de 5 mois — pensez à les remettre en vente !</div>';
+    }
+
     html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center;margin-bottom:10px;">';
-    html += '<div style="background:#f5f0f2;border-radius:10px;padding:12px 8px;"><div style="font-size:22px;font-weight:700;color:#993556;">'+filtered.length+'</div><div style="font-size:11px;color:#888;">Références</div></div>';
-    html += '<div style="background:#f5f0f2;border-radius:10px;padding:12px 8px;"><div style="font-size:22px;font-weight:700;color:#185fa5;">'+qt+'</div><div style="font-size:11px;color:#888;">En stock</div></div>';
-    html += '<div style="background:'+(mg!==null?mb:'#f5f0f2')+';border-radius:10px;padding:12px 8px;"><div style="font-size:22px;font-weight:700;color:'+(mg!==null?mc:'#aaa')+';">'+(mg!==null?mg+"%":"—")+'</div><div style="font-size:11px;color:#888;">Marge globale</div></div>';
+    html += '<div style="background:#f5f0f2;border-radius:10px;padding:12px 8px;"><div style="font-size:20px;font-weight:700;color:#993556;">'+vueProd.length+'</div><div style="font-size:11px;color:#888;">Références</div></div>';
+    html += '<div style="background:#f5f0f2;border-radius:10px;padding:12px 8px;"><div style="font-size:20px;font-weight:700;color:#185fa5;">'+vueQt+'</div><div style="font-size:11px;color:#888;">Unités</div></div>';
+    html += '<div style="background:'+vueMb+';border-radius:10px;padding:12px 8px;"><div style="font-size:20px;font-weight:700;color:'+vueMc+';">'+(vueMg!==null?vueMg+'%':'—')+'</div><div style="font-size:11px;color:#888;">Marge</div></div>';
     html += '</div>';
     html += '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;text-align:center;margin-bottom:10px;">';
-    html += '<div style="background:#eaf3de;border-radius:10px;padding:12px 8px;"><div style="font-size:15px;font-weight:700;color:#3b6d11;">'+eur(vv)+'</div><div style="font-size:11px;color:#888;">Valeur stock PV TTC</div></div>';
-    html += '<div style="background:#fbeaf0;border-radius:10px;padding:12px 8px;"><div style="font-size:15px;font-weight:700;color:#993556;">'+(coeffGlobal?'×'+coeffGlobal:'—')+'</div><div style="font-size:11px;color:#888;">Coeff global stock</div></div>';
+    html += '<div style="background:#eaf3de;border-radius:10px;padding:12px 8px;"><div style="font-size:14px;font-weight:700;color:#3b6d11;">'+eur(vueVV)+'</div><div style="font-size:11px;color:#888;">Valeur PV TTC</div></div>';
+    html += '<div style="background:#fbeaf0;border-radius:10px;padding:12px 8px;"><div style="font-size:14px;font-weight:700;color:#993556;">'+(vueCoeff?'×'+vueCoeff:'—')+'</div><div style="font-size:11px;color:#888;">Coeff global</div></div>';
     html += '</div>';
     html += '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;text-align:center;">';
-    html += '<div style="background:#f9f6f8;border-radius:10px;padding:12px 8px;"><div style="font-size:15px;font-weight:700;color:#555;">'+eur(va)+'</div><div style="font-size:11px;color:#888;">Valeur stock PA HT</div></div>';
-    html += '<div style="background:#eef4fd;border-radius:10px;padding:12px 8px;"><div style="font-size:15px;font-weight:700;color:#185fa5;">'+eur(vaTTC)+'</div><div style="font-size:11px;color:#888;">Valeur stock PA TTC</div></div>';
+    html += '<div style="background:#f9f6f8;border-radius:10px;padding:12px 8px;"><div style="font-size:14px;font-weight:700;color:#555;">'+eur(vueVA)+'</div><div style="font-size:11px;color:#888;">Valeur PA HT</div></div>';
+    html += '<div style="background:#eef4fd;border-radius:10px;padding:12px 8px;"><div style="font-size:14px;font-weight:700;color:#185fa5;">'+eur(vueVATTC)+'</div><div style="font-size:11px;color:#888;">Valeur PA TTC</div></div>';
     html += '</div></div>';
     try{ html += renderReassort(); }catch(e){ console.error('Reassort:',e); }
   }
@@ -3832,6 +3873,8 @@ window.saveProd = () => {
     stockVariantes:  f.stockVariantes||{},
     barcodeVariantes: barcodeVariantes,
     grandeTaille:   f.grandeTaille||false,
+    enReserve:      f.enReserve||false,
+    dateReserve:    f.enReserve ? (existant?.dateReserve || new Date().toISOString()) : null,
     createdAt:      existant?.createdAt || new Date().toISOString(),
   };
 
@@ -3871,7 +3914,7 @@ window.openProdModal = id => {
   STATE.editProdId=id;
   STATE._newCouleur = "";
   if(id){const p=STATE.products.find(x=>x.id===id);STATE.prodForm={name:p.name,category:p.category,price:p.price,prixAchat:p.prixAchat||"",_coeffSaisi:"",stock:p.stock,ref:p.ref,barcode:p.barcode,tailles:p.tailles||[],couleurs:p.couleurs||[],photo:p.photo||"",stockVariantes:{...(p.stockVariantes||{})},grandeTaille:p.grandeTaille||false};}
-  else STATE.prodForm={name:"",category:"",price:"",prixAchat:"",_coeffSaisi:"",stock:0,ref:uid("REF-"),barcode:genBC(),tailles:[],couleurs:[],photo:"",stockVariantes:{},grandeTaille:false};
+  else STATE.prodForm={name:"",category:"",price:"",prixAchat:"",_coeffSaisi:"",stock:0,ref:uid("REF-"),barcode:genBC(),tailles:[],couleurs:[],photo:"",stockVariantes:{},grandeTaille:false,enReserve:false};
   STATE.showProdModal=true; render();
 };
 window.openBCModal  = id => { STATE.showBCModal=STATE.products.find(p=>p.id===id); STATE.etiquetteTailleVal=''; STATE.etiquetteCouleurVal=''; render(); };
@@ -4029,7 +4072,7 @@ function renderProdModal() {
     +'<div class="modal-body">'
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
     +'<div style="grid-column:1/-1;"><label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Nom *</label><input value="'+f.name+'" oninput="STATE.prodForm.name=this.value" style="width:100%;box-sizing:border-box;margin-bottom:10px;"/></div>'
-    +'<div><label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Catégorie</label><select onchange="STATE.prodForm.category=this.value;render()" style="width:100%;box-sizing:border-box;margin-bottom:6px;"><option></option>'+catHTML+'</select>'      +(['Robes','Hauts','Pantalons','Jupes','Shorts','Vestes','Manteaux','Pulls & Gilets','Ensembles','Combinaisons'].includes(f.category)?'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#555;cursor:pointer;margin-bottom:10px;"><input type="checkbox" '+(f.grandeTaille?'checked':'')+' onchange="STATE.prodForm.grandeTaille=this.checked" style="width:16px;height:16px;"/> Grande taille (à partir du 42/44)</label>':'<div style="margin-bottom:10px;"></div>')      +'</div>'
+    +'<div><label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Catégorie</label><select onchange="STATE.prodForm.category=this.value;render()" style="width:100%;box-sizing:border-box;margin-bottom:6px;"><option></option>'+catHTML+'</select>'      +(['Robes','Hauts','Pantalons','Jupes','Shorts','Vestes','Manteaux','Pulls & Gilets','Ensembles','Combinaisons'].includes(f.category)?'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#555;cursor:pointer;margin-bottom:10px;"><input type="checkbox" '+(f.grandeTaille?'checked':'')+' onchange="STATE.prodForm.grandeTaille=this.checked" style="width:16px;height:16px;"/> Grande taille (à partir du 42/44)</label>':'<div style="margin-bottom:6px;"></div>')      +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#854f0b;cursor:pointer;margin-bottom:10px;background:#fff3e8;border-radius:7px;padding:6px 10px;"><input type="checkbox" '+(f.enReserve?'checked':'')+' onchange="STATE.prodForm.enReserve=this.checked" style="width:16px;height:16px;"/> 📦 En réserve (pas encore en vente)</label>'      +'</div>'
     +'<div></div>'
     +(isV1?blocPrix:"")
     +(isV1?"":"<div><label style='font-size:12px;color:#888;display:block;margin-bottom:3px;'>Prix de vente TTC (€) *</label><input type='number' step='0.01' value='"+(f.price||"")+"' oninput='STATE.prodForm.price=this.value' placeholder='0.00' style='width:100%;box-sizing:border-box;margin-bottom:10px;'/></div>")
