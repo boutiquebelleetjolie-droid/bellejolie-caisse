@@ -3498,8 +3498,16 @@ prods.forEach(p=>{
   t += '<td style="padding:9px 6px;"><div style="font-weight:500;">'+p.name+'</div><div style="font-size:11px;color:#888;">'+p.barcode+(dernierReassort?' · 📦 '+dernierReassort:'')+'</div></td>';
   const moisEnReserve = p.enReserve && p.dateReserve ? Math.floor((Date.now()-new Date(p.dateReserve))/(1000*60*60*24*30)) : 0;
   const alerteReserve = moisEnReserve >= 5;
+  // Vérifier si l'article a des réservations clients actives
+  const now = new Date();
+  const resasActives = (STATE.reservations||[]).filter(r =>
+    r.statut==='active' && new Date(r.expiration)>=now &&
+    (r.articles||[]).some(a=>a.id===p.id)
+  );
+  const nbResas = resasActives.length;
   t += '<td style="padding:9px 6px;"><span class="tag" style="background:#e5e4dc;color:#444;">'+p.category+'</span>'
     +(p.enReserve?' <span style="background:'+(alerteReserve?'#a32d2d':'#854f0b')+';color:#fff;font-size:9px;padding:1px 4px;border-radius:3px;font-weight:600;">'+(alerteReserve?'⚠️ RÉSERVE '+moisEnReserve+'m':'📦 RÉSERVE')+'</span>':'')
+    +(nbResas>0?' <span style="background:#185fa5;color:#fff;font-size:9px;padding:1px 4px;border-radius:3px;font-weight:600;">📌 '+nbResas+' rés.</span>':'')
     +'</td>';
 
   if(isV1){
