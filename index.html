@@ -188,6 +188,22 @@ const PROMO_TEMPLATES = [
 // (ex: onclick="..."). Sans ça, le premier " du JSON coupe l'attribut en plein milieu et casse le bouton.
 function jsonForAttr(v) { return JSON.stringify(v).replace(/"/g, "&quot;"); }
 
+// ─── Quota quotidien d'envoi d'emails (limite Gmail : 500/jour) ──
+// On se garde une marge de sécurité (450) pour ne jamais risquer le blocage Gmail.
+const DAILY_EMAIL_CAP = 450;
+function getEnvoisAujourdhui() {
+  const today = new Date().toISOString().slice(0,10);
+  const data = ls("bj_ejs_envois_jour", {date:"", count:0});
+  if(data.date !== today) return 0;
+  return data.count||0;
+}
+function incrementerEnvoisJour(n=1) {
+  const today = new Date().toISOString().slice(0,10);
+  const data = ls("bj_ejs_envois_jour", {date:"", count:0});
+  const nouveauCompte = (data.date === today ? (data.count||0) : 0) + n;
+  lsSet("bj_ejs_envois_jour", {date:today, count:nouveauCompte});
+}
+
 // Motifs de retour prédéfinis
 const MOTIFS_RETOUR = [
   "Taille incorrecte",
@@ -4917,6 +4933,7 @@ window.envoyerEmailPromoClient = async (clientId) => {
       vendeur:  "Belle&Jolie",
     });
     if(statusEl){ statusEl.style.background="#eaf3de"; statusEl.style.color="#3b6d11"; statusEl.textContent=`✅ Email envoyé à ${c.email} !`; }
+    incrementerEnvoisJour(1);
     // Historique
     STATE.historiquePromo = [...(STATE.historiquePromo||[]), {
       id:uid("PR"), date:new Date().toISOString(),
@@ -7997,6 +8014,7 @@ window.envoyerEmailJS = async () => {
     });
     
     console.log("EmailJS success:", result.status, result.text);
+    incrementerEnvoisJour(1);
     if(statusEl){ statusEl.style.display="block"; statusEl.textContent="✅ Email envoyé avec succès !"; statusEl.style.color="#3b6d11"; }
     if(btnEl)   { btnEl.textContent="✅ Envoyé !"; btnEl.style.background="#3b6d11"; btnEl.disabled=false; }
     
@@ -10083,6 +10101,20 @@ function renderPromo() {
       </div>
     `:""}
 
+    ${(()=>{
+      const q = STATE.promoQueue || ls("bj_promo_queue", null);
+      if(!q || !q.clientIds || q.clientIds.length===0) return "";
+      const placesRestantes = Math.max(0, DAILY_EMAIL_CAP - getEnvoisAujourdhui());
+      return `
+      <div style="background:#e6f1fb;border:1px solid #a9cdec;border-radius:10px;padding:14px;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div>
+          <div style="font-weight:600;font-size:13px;color:#185fa5;">⏳ ${q.clientIds.length} email${q.clientIds.length>1?"s":""} en attente d'envoi</div>
+          <div style="font-size:12px;color:#3576b5;margin-top:2px;">"${q.sujet}" · limite quotidienne Gmail atteinte hier — ${placesRestantes>0?`${placesRestantes} places disponibles aujourd'hui`:"limite déjà atteinte aujourd'hui aussi, réessaie demain"}</div>
+        </div>
+        ${placesRestantes>0?`<button onclick="envoyerFileAttentePromo()" style="padding:10px 16px;background:#185fa5;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;white-space:nowrap;">📤 Envoyer la suite</button>`:""}
+      </div>`;
+    })()}
+
     <!-- Filtres avancés -->
     <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:16px;margin-bottom:14px;">
       <div style="font-weight:500;font-size:13px;margin-bottom:12px;">🎯 Filtrer les destinataires</div>
@@ -10285,7 +10317,20 @@ window.envoyerEmailsPromo = async () => {
   if(f.avecCategorie) segLabel += ` · achète ${catLabel(f.avecCategorie)}`;
   if(f.sansCategorie) segLabel += ` · sans ${catLabel(f.sansCategorie)}`;
 
-  if(!confirm(`Envoyer cet email à ${seg.length} cliente${seg.length>1?"s":""} ?\n\nObjet : ${sujet}\nSegment : ${segLabel}\n\nCette action est irréversible.`)) return;
+  // Étalement automatique si le segment dépasse le quota quotidien restant (marge de sécurité Gmail 500/jour)
+  const dejaEnvoyes = getEnvoisAujourdhui();
+  const placesRestantes = Math.max(0, DAILY_EMAIL_CAP - dejaEnvoyes);
+  let segAEnvoyer = seg, segRestant = [];
+  if(seg.length > placesRestantes) {
+    segAEnvoyer = seg.slice(0, placesRestantes);
+    segRestant  = seg.slice(placesRestantes);
+  }
+
+  const messageConfirm = segRestant.length>0
+    ? `Envoyer cet email à ${seg.length} cliente${seg.length>1?"s":""} ?\n\nObjet : ${sujet}\nSegment : ${segLabel}\n\n⚠️ Limite quotidienne Gmail (${DAILY_EMAIL_CAP}/jour) : ${segAEnvoyer.length} seront envoyés maintenant, les ${segRestant.length} restants seront mis en attente et envoyables demain.\n\nCette action est irréversible.`
+    : `Envoyer cet email à ${seg.length} cliente${seg.length>1?"s":""} ?\n\nObjet : ${sujet}\nSegment : ${segLabel}\n\nCette action est irréversible.`;
+  if(!confirm(messageConfirm)) return;
+  seg = segAEnvoyer;
 
   const statusEl = document.getElementById("promo-status");
   if(statusEl){ statusEl.style.display="block"; statusEl.style.background="#e6f1fb"; statusEl.style.color="#185fa5"; statusEl.textContent="⏳ Envoi en cours..."; }
@@ -10333,7 +10378,98 @@ window.envoyerEmailsPromo = async () => {
         vendeur:    "Belle&Jolie",
       });
       nb++;
+      incrementerEnvoisJour(1);
       if(statusEl) statusEl.textContent = `⏳ Envoi en cours... ${nb}/${seg.length}`;
+      await new Promise(r=>setTimeout(r,300));
+    } catch(err) {
+      console.error(`Erreur envoi à ${c.email}:`, err);
+      erreurs++;
+    }
+  }
+
+  // Sauvegarder la file d'attente pour les clientes non envoyées (limite quotidienne atteinte)
+  if(segRestant.length>0) {
+    STATE.promoQueue = {
+      id: uid("PRQ"), sujet, message,
+      clientIds: segRestant.map(c=>c.id),
+      segLabel, createdAt: new Date().toISOString(),
+    };
+    lsSet("bj_promo_queue", STATE.promoQueue);
+  }
+
+  STATE.historiquePromo = [...(STATE.historiquePromo||[]), {
+    id:uid("PR"), date:new Date().toISOString(),
+    sujet, nb, erreurs, segment: segLabel + (segRestant.length>0?` (+${segRestant.length} en attente)`:""),
+  }];
+  lsSet("bj_historique_promo", STATE.historiquePromo);
+
+  if(statusEl){
+    statusEl.style.background = erreurs>0?"#faeeda":"#eaf3de";
+    statusEl.style.color      = erreurs>0?"#854f0b":"#3b6d11";
+    statusEl.textContent      = erreurs>0
+      ? `✅ ${nb} envoyés · ⚠️ ${erreurs} erreurs`+(segRestant.length>0?` · ⏳ ${segRestant.length} en attente (demain)`:"")
+      : `✅ ${nb} email${nb>1?"s":""} envoyés avec succès !`+(segRestant.length>0?` · ⏳ ${segRestant.length} en attente (demain, limite Gmail atteinte)`:"");
+  }
+  STATE.promoSujet=""; STATE.promoMessage="";
+  render();
+};
+
+// Envoie la file d'attente en attente (clientes non envoyées car limite quotidienne atteinte la veille)
+window.envoyerFileAttentePromo = async () => {
+  const q = STATE.promoQueue || ls("bj_promo_queue", null);
+  if(!q) return;
+  const dejaEnvoyes = getEnvoisAujourdhui();
+  const placesRestantes = Math.max(0, DAILY_EMAIL_CAP - dejaEnvoyes);
+  if(placesRestantes<=0) { alert(`Limite quotidienne déjà atteinte aujourd'hui (${DAILY_EMAIL_CAP}/jour). Réessaie demain.`); return; }
+
+  const clients = q.clientIds.map(id=>STATE.clients.find(c=>c.id===id)).filter(Boolean);
+  const aEnvoyerMaintenant = clients.slice(0, placesRestantes);
+  const resteApres = clients.slice(placesRestantes);
+
+  if(!confirm(`Envoyer la suite en attente à ${aEnvoyerMaintenant.length} cliente${aEnvoyerMaintenant.length>1?"s":""} ?\n\nObjet : ${q.sujet}${resteApres.length>0?`\n\n⚠️ ${resteApres.length} resteront encore en attente après cet envoi.`:""}`)) return;
+
+  const statusEl = document.getElementById("promo-status");
+  if(statusEl){ statusEl.style.display="block"; statusEl.style.background="#e6f1fb"; statusEl.style.color="#185fa5"; statusEl.textContent="⏳ Envoi de la file d'attente en cours..."; }
+
+  await emailjs.init(STATE.emailjsPublicKey);
+  let nb=0, erreurs=0;
+  for(const c of aEnvoyerMaintenant) {
+    const msgPersonnalise = q.message.replace(/\[Prénom\]/g, c.prenom);
+    const htmlPromo = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
+<body style="margin:0;padding:0;background:#f5f0f2;font-family:Georgia,serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0f2;padding:30px 0;">
+<tr><td align="center">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+  <tr><td style="background:#fff;border-radius:16px 16px 0 0;padding:24px 40px 16px;text-align:center;border-bottom:3px solid #993556;">
+    <img src="${LOGO_TICKET_B64}" width="100" height="100" alt="Belle&Jolie" style="border-radius:50%;"/>
+    <div style="font-size:22px;font-weight:700;color:#993556;font-family:Georgia,serif;margin-top:8px;">Belle&amp;Jolie</div>
+    <div style="font-size:12px;color:#aaa;margin-top:2px;">${BOUTIQUE_ADRESSE}</div>
+  </td></tr>
+  <tr><td style="background:#fff;padding:28px 40px 36px;">
+    <div style="font-size:14px;color:#555;line-height:1.8;white-space:pre-line;margin-bottom:28px;">${msgPersonnalise.replace(/\n/g,"<br/>")}</div>
+    <div style="text-align:center;margin-top:24px;">
+      <div style="display:inline-block;background:#993556;color:#fff;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:600;">Belle&amp;Jolie vous attend ! 🌸</div>
+    </div>
+  </td></tr>
+  <tr><td style="background:#f9f6f8;padding:16px 40px;text-align:center;border-radius:0 0 16px 16px;border-top:0.5px solid #e8e0e4;">
+    <div style="font-size:12px;color:#aaa;">Belle&amp;Jolie · ${BOUTIQUE_ADRESSE}</div>
+    <div style="font-size:11px;color:#bbb;margin-top:2px;">🕐 ${BOUTIQUE_HORAIRES}</div>
+    <div style="font-size:11px;color:#ccc;margin-top:4px;">⚠️ Merci de ne pas répondre à cet email. Contact : boutiquebelleetjolie@gmail.com</div>
+  </td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>`;
+    try {
+      await emailjs.send(STATE.emailjsServiceId, STATE.emailjsTemplateId, {
+        to_email: c.email, to_name: c.prenom, subject: q.sujet, message: htmlPromo,
+        date_achat: new Date().toLocaleDateString("fr-FR"), articles: msgPersonnalise,
+        total: q.sujet, paiement: "", vendeur: "Belle&Jolie",
+      });
+      nb++;
+      incrementerEnvoisJour(1);
+      if(statusEl) statusEl.textContent = `⏳ Envoi en cours... ${nb}/${aEnvoyerMaintenant.length}`;
       await new Promise(r=>setTimeout(r,300));
     } catch(err) {
       console.error(`Erreur envoi à ${c.email}:`, err);
@@ -10343,16 +10479,23 @@ window.envoyerEmailsPromo = async () => {
 
   STATE.historiquePromo = [...(STATE.historiquePromo||[]), {
     id:uid("PR"), date:new Date().toISOString(),
-    sujet, nb, erreurs, segment: segLabel,
+    sujet:q.sujet, nb, erreurs, segment: (q.segLabel||"") + " (file d'attente)" + (resteApres.length>0?` (+${resteApres.length} en attente)`:""),
   }];
   lsSet("bj_historique_promo", STATE.historiquePromo);
+
+  if(resteApres.length>0) {
+    STATE.promoQueue = {...q, clientIds: resteApres.map(c=>c.id)};
+    lsSet("bj_promo_queue", STATE.promoQueue);
+  } else {
+    STATE.promoQueue = null;
+    localStorage.removeItem("bj_promo_queue");
+  }
 
   if(statusEl){
     statusEl.style.background = erreurs>0?"#faeeda":"#eaf3de";
     statusEl.style.color      = erreurs>0?"#854f0b":"#3b6d11";
-    statusEl.textContent      = erreurs>0?`✅ ${nb} envoyés · ⚠️ ${erreurs} erreurs`:`✅ ${nb} email${nb>1?"s":""} envoyés avec succès !`;
+    statusEl.textContent      = `✅ ${nb} email${nb>1?"s":""} de la file d'attente envoyés !`+(resteApres.length>0?` · ⏳ ${resteApres.length} encore en attente`:"");
   }
-  STATE.promoSujet=""; STATE.promoMessage="";
   render();
 };
 
