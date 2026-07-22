@@ -4899,6 +4899,8 @@ window.envoyerEmailPromoClient = async (clientId) => {
     await emailjs.send(STATE.emailjsServiceId, STATE.emailjsTemplateId, {
       to_email: c.email,
       to_name:  c.prenom,
+      subject:  sujet,
+      message:  html,
       articles: msgPerso,
       total:    sujet,
       paiement: "",
@@ -9224,6 +9226,8 @@ window.envoyerSauvegardeEmail = async () => {
     await emailjs.send(STATE.emailjsServiceId, STATE.emailjsTemplateId, {
       to_email:   dest,
       to_name:    "Belle&Jolie",
+      subject:    "Sauvegarde données Belle&Jolie — " + dateLabel,
+      message:    `Sauvegarde automatique du ${dateLabel}<br><br>Nb produits : ${STATE.products.length}<br>Nb clients : ${STATE.clients.length}<br>Nb ventes : ${STATE.ventes.length}<br><br>[Données JSON en pièce jointe simulée - taille: ${Math.round(dataStr.length/1024)}Ko]`,
       date_achat: dateLabel,
       articles:   `Sauvegarde automatique du ${dateLabel}\n\nNb produits: ${STATE.products.length}\nNb clients: ${STATE.clients.length}\nNb ventes: ${STATE.ventes.length}`,
       total:      "Sauvegarde données Belle&Jolie",
@@ -10282,10 +10286,39 @@ window.envoyerEmailsPromo = async () => {
   let nb=0, erreurs=0;
   for(const c of seg) {
     const msgPersonnalise = message.replace(/\[Prénom\]/g, c.prenom);
+    const htmlPromo = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
+<body style="margin:0;padding:0;background:#f5f0f2;font-family:Georgia,serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0f2;padding:30px 0;">
+<tr><td align="center">
+<table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+  <tr><td style="background:#fff;border-radius:16px 16px 0 0;padding:24px 40px 16px;text-align:center;border-bottom:3px solid #993556;">
+    <img src="${LOGO_TICKET_B64}" width="100" height="100" alt="Belle&Jolie" style="border-radius:50%;"/>
+    <div style="font-size:22px;font-weight:700;color:#993556;font-family:Georgia,serif;margin-top:8px;">Belle&amp;Jolie</div>
+    <div style="font-size:12px;color:#aaa;margin-top:2px;">${BOUTIQUE_ADRESSE}</div>
+  </td></tr>
+  <tr><td style="background:#fff;padding:28px 40px 36px;">
+    <div style="font-size:14px;color:#555;line-height:1.8;white-space:pre-line;margin-bottom:28px;">${msgPersonnalise.replace(/\n/g,"<br/>")}</div>
+    <div style="text-align:center;margin-top:24px;">
+      <div style="display:inline-block;background:#993556;color:#fff;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:600;">Belle&amp;Jolie vous attend ! 🌸</div>
+    </div>
+  </td></tr>
+  <tr><td style="background:#f9f6f8;padding:16px 40px;text-align:center;border-radius:0 0 16px 16px;border-top:0.5px solid #e8e0e4;">
+    <div style="font-size:12px;color:#aaa;">Belle&amp;Jolie · ${BOUTIQUE_ADRESSE}</div>
+    <div style="font-size:11px;color:#bbb;margin-top:2px;">🕐 ${BOUTIQUE_HORAIRES}</div>
+    <div style="font-size:11px;color:#ccc;margin-top:4px;">⚠️ Merci de ne pas répondre à cet email. Contact : boutiquebelleetjolie@gmail.com</div>
+  </td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>`;
     try {
       await emailjs.send(STATE.emailjsServiceId, STATE.emailjsTemplateId, {
         to_email:   c.email,
         to_name:    c.prenom,
+        subject:    sujet,
+        message:    htmlPromo,
+        html_content: htmlPromo,
         date_achat: new Date().toLocaleDateString("fr-FR"),
         articles:   msgPersonnalise,
         total:      sujet,
@@ -11813,6 +11846,8 @@ window.validerReservation = async () => {
       await emailjs.send(STATE.emailjsServiceId, STATE.emailjsTemplateId, {
         to_email:   client.email,
         to_name:    client.prenom||client.nom,
+        subject:    `Votre réservation Belle&Jolie jusqu'au ${expiration.toLocaleDateString("fr-FR")}`,
+        message:    `Bonjour ${client.prenom||client.nom},<br><br>Voici la confirmation de votre réservation :<br><br>${articles.map(a=>`• ${a.name} — ${eur(a.price)}`).join("<br>")}<br><br>📌 Article${articles.length>1?"s":""} mis de côté jusqu'au ${expiration.toLocaleDateString("fr-FR")}<br>${note?"Note : "+note+"<br>":""}<br>Belle&amp;Jolie · ${BOUTIQUE_ADRESSE}<br>🕐 ${BOUTIQUE_HORAIRES}`,
         date_achat: now.toLocaleDateString("fr-FR"),
         articles:   articles.map(a=>`• ${a.name} — ${eur(a.price)}`).join("\n"),
         total:      `📌 Article${articles.length>1?"s":""} mis de côté jusqu'au ${expiration.toLocaleDateString("fr-FR")}`,
@@ -11839,6 +11874,8 @@ window.envoyerRappelReservation = async (resaId) => {
     await emailjs.send(STATE.emailjsServiceId, STATE.emailjsTemplateId, {
       to_email:   resa.clientEmail,
       to_name:    resa.clientNom.split(" ")[0],
+      subject:    `⏰ Votre réservation Belle&Jolie expire dans ${joursRest} jour${joursRest>1?"s":""}`,
+      message:    `Bonjour ${resa.clientNom.split(" ")[0]},<br><br>Petit rappel : votre réservation arrive bientôt à échéance !<br><br>${resa.articles.map(a=>`• ${a.name} — ${eur(a.price)}`).join("<br>")}<br><br>⏰ Expire dans ${joursRest} jour${joursRest>1?"s":""} — dernier délai : ${expDate.toLocaleDateString("fr-FR")}<br><br>Belle&amp;Jolie · ${BOUTIQUE_ADRESSE}<br>🕐 ${BOUTIQUE_HORAIRES}`,
       date_achat: new Date(resa.date).toLocaleDateString("fr-FR"),
       articles:   resa.articles.map(a=>`• ${a.name} — ${eur(a.price)}`).join("\n"),
       total:      `⏰ Votre réservation expire dans ${joursRest} jour${joursRest>1?"s":""}`,
