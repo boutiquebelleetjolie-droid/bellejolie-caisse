@@ -461,6 +461,7 @@ let STATE = {
   promoSujet:   "",
   promoMessage: "",      // transferts entre caisses
   annulLignes: ls("bj_annul_lignes", []),
+  panierVides: ls("bj_panier_vides", []),
   memos:    ls("bj_memos",    []),
   tab: "caisse",
   // Caisse
@@ -923,7 +924,28 @@ window.ajouterSac = () => {
 
 window.viderPanier = () => {
   if(!STATE.panier.length) return;
-  if(confirm("Vider le panier ?")) { STATE.panier=[]; render(); }
+  if(confirm("Vider le panier ?")) {
+    // Journaliser si ce n'est pas le compte principal qui vide un panier non vide
+    if(STATE.vendeur?.id !== "V1") {
+      const articles = STATE.panier.filter(x=>!x.avoirId).map(x=>({
+        nom: x.name, qty: x.qty||1, prix: x.price,
+        remise: x.remise||"", remiseType: x.remiseType||"",
+      }));
+      const total = STATE.panier.filter(x=>!x.avoirId).reduce((s,x)=>{
+        const rem = x.remiseType==="pct" ? x.price*(parseFloat(x.remise||0)/100) : x.remiseType==="eur" ? parseFloat(x.remise||0) : 0;
+        return s + Math.max(0, x.price-rem) * (x.qty||1);
+      }, 0);
+      const log = {
+        id: uid("PV"), date: new Date().toISOString(),
+        vendeur: STATE.vendeur?.nom || "?", articles, total,
+        client: STATE.client ? `${STATE.client.prenom} ${STATE.client.nom}` : "",
+      };
+      STATE.panierVides = [...(STATE.panierVides||[]), log];
+      lsSet("bj_panier_vides", STATE.panierVides);
+    }
+    STATE.panier=[];
+    render();
+  }
 };
 
 window.logout = () => {
@@ -1068,7 +1090,7 @@ window.exporterDonnees = () => {
     products:STATE.products, clients:STATE.clients,
     ventes:STATE.ventes, avoirs:STATE.avoirs,
     depenses:STATE.depenses, memos:STATE.memos,
-    caisseJour:STATE.caisseJour||[], annulLignes:STATE.annulLignes||[],
+    caisseJour:STATE.caisseJour||[], annulLignes:STATE.annulLignes||[], panierVides:STATE.panierVides||[],
     reservations:STATE.reservations||[], historiquePromo:STATE.historiquePromo||[],
     // Config EmailJS incluse pour ne pas la perdre si le navigateur efface ses données
     emailjsServiceId:STATE.emailjsServiceId||"", emailjsTemplateId:STATE.emailjsTemplateId||"", emailjsPublicKey:STATE.emailjsPublicKey||"",
@@ -1157,6 +1179,7 @@ window.importerDonnees = (input) => {
       if(data.memos)        {STATE.memos=data.memos;            lsSet("bj_memos",data.memos);}
       if(data.caisseJour)   {STATE.caisseJour=data.caisseJour;  lsSet("bj_caisse_jour",data.caisseJour);}
       if(data.annulLignes)  {STATE.annulLignes=data.annulLignes;lsSet("bj_annul_lignes",data.annulLignes);}
+      if(data.panierVides)  {STATE.panierVides=data.panierVides;lsSet("bj_panier_vides",data.panierVides);}
       if(data.reservations) {STATE.reservations=data.reservations;lsSet("bj_reservations",data.reservations);}
       if(data.historiquePromo){STATE.historiquePromo=data.historiquePromo;lsSet("bj_historique_promo",data.historiquePromo);}
       // Config EmailJS : restaurée si présente dans la sauvegarde (évite de la reperdre si le navigateur efface ses données)
@@ -8792,6 +8815,8 @@ function renderCaisseJour() {
   const retours = ventesJour.reduce((s,v)=>s+v.panier.filter(x=>x.retour&&!x.avoirId).reduce((ss,i)=>ss+i.price*i.qty,0),0);
   const annulJour = (STATE.annulLignes||[]).filter(a=>new Date(a.date).toDateString()===zDate.toDateString());
   const totalAnnul = annulJour.reduce((s,a)=>s+a.prix*a.qty,0);
+  const paniersVidesJour = (STATE.panierVides||[]).filter(p=>new Date(p.date).toDateString()===zDate.toDateString());
+  const totalPaniersVides = paniersVidesJour.reduce((s,p)=>s+(p.total||0),0);
 
   // Calcul totaux fond de caisse
   const totalOuv = Object.entries(STATE.fondOuverture||{}).reduce((s,[k,v])=>{const val=parseFloat(k.replace("ouv_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
@@ -8956,8 +8981,22 @@ function renderCaisseJour() {
           <div style="background:#f5f0f2;border-radius:8px;padding:8px;"><div style="color:#888;">Panier moyen</div><div style="font-weight:500;margin-top:2px;">${eur(pm)}</div></div>
           <div style="background:${retours>0?"#fff3e8":"#f5f0f2"};border-radius:8px;padding:8px;"><div style="color:#888;">Retours</div><div style="font-weight:500;color:${retours>0?"#e07c00":"inherit"};margin-top:2px;">−${eur(retours)}</div></div>
           <div style="background:${totalAnnul>0?"#fcebeb":"#f5f0f2"};border-radius:8px;padding:8px;"><div style="color:#888;">Lignes annulées</div><div style="font-weight:500;color:${totalAnnul>0?"#a32d2d":"inherit"};margin-top:2px;">−${eur(totalAnnul)}</div></div>
+          <div style="background:${paniersVidesJour.length>0?"#fcebeb":"#f5f0f2"};border-radius:8px;padding:8px;"><div style="color:#888;">Paniers vidés (hors vous)</div><div style="font-weight:500;color:${paniersVidesJour.length>0?"#a32d2d":"inherit"};margin-top:2px;">${paniersVidesJour.length} · −${eur(totalPaniersVides)}</div></div>
           <div style="background:#f5f0f2;border-radius:8px;padding:8px;"><div style="color:#888;">Nb ventes</div><div style="font-weight:500;margin-top:2px;">${nbV}</div></div>
         </div>
+        ${paniersVidesJour.length>0?`
+        <div style="margin-bottom:10px;">
+          <div style="font-size:12px;font-weight:600;color:#993556;margin-bottom:4px;">🗑️ Détail des paniers vidés</div>
+          ${paniersVidesJour.map(p=>`
+            <div style="background:#fcebeb;border-radius:8px;padding:8px;margin-bottom:4px;font-size:12px;">
+              <div style="display:flex;justify-content:space-between;font-weight:500;">
+                <span>${p.vendeur} — ${new Date(p.date).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}${p.client?" · "+p.client:""}</span>
+                <span style="color:#a32d2d;">${eur(p.total)}</span>
+              </div>
+              <div style="color:#888;margin-top:2px;">${p.articles.map(a=>`${a.qty}× ${a.nom}${a.remise?` (-${a.remise}${a.remiseType==="pct"?"%":"€"})`:""}`).join(", ")}</div>
+            </div>
+          `).join("")}
+        </div>`:""}
         ${!zDejàFait&&isToday?`
           <label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Note de clôture</label>
           <textarea id="z-note" rows="3" placeholder="Observations..." style="width:100%;box-sizing:border-box;border:1px solid #ddd;border-radius:7px;padding:7px;font-family:inherit;font-size:12px;resize:vertical;"></textarea>
@@ -9117,6 +9156,14 @@ window.envoyerReleveCloture = async (z, ventesJour, dateStr) => {
     const totalRemises = remises.reduce((s,r)=>s+(r.montant||0),0);
     const dateLocale = new Date(dateStr).toLocaleDateString('fr-FR', {weekday:'long',day:'numeric',month:'long',year:'numeric'});
 
+    // Paniers vidés par une autre vendeuse que le compte principal, ce jour
+    const zDateObj = new Date(dateStr);
+    const paniersVidesJour = (STATE.panierVides||[]).filter(p=>new Date(p.date).toDateString()===zDateObj.toDateString());
+    const totalPaniersVides = paniersVidesJour.reduce((s,p)=>s+(p.total||0),0);
+    const lignesPaniersVides = paniersVidesJour.length > 0
+      ? paniersVidesJour.map(p => `<tr><td style="padding:4px 8px;">${p.vendeur}${p.client?' · '+p.client:''}</td><td style="padding:4px 8px;">${new Date(p.date).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</td><td style="padding:4px 8px;font-size:12px;">${p.articles.map(a=>`${a.qty}× ${a.nom}${a.remise?` (-${a.remise}${a.remiseType==='pct'?'%':'€'})`:''}`).join(', ')}</td><td style="padding:4px 8px;font-weight:600;">${eur(p.total)}</td></tr>`).join('')
+      : '<tr><td colspan="4" style="padding:8px;color:#888;text-align:center;">Aucun panier vidé par une autre vendeuse ce jour</td></tr>';
+
     const lignesRemises = remises.length > 0
       ? remises.map(r => `<tr><td style="padding:4px 8px;">${r.article}${r.taille?' T.'+r.taille:''}${r.couleur?' '+r.couleur:''}</td><td style="padding:4px 8px;color:#993556;">${r.remise}</td><td style="padding:4px 8px;font-weight:600;">${eur(r.montant)}</td><td style="padding:4px 8px;font-size:11px;color:#888;">${r.ticket}</td></tr>`).join('')
       : '<tr><td colspan="4" style="padding:8px;color:#888;text-align:center;">Aucune remise manuelle ce jour</td></tr>';
@@ -9169,6 +9216,13 @@ window.envoyerReleveCloture = async (z, ventesJour, dateStr) => {
             <tbody>${lignesRemises}</tbody>
           </table>
           ${remises.length>0?`<div style="text-align:right;font-weight:700;color:#993556;padding:8px 0;">Total remises : ${eur(totalRemises)}</div>`:''}
+
+          <h2 style="color:#993556;font-size:16px;margin:20px 0 12px;">🗑️ Paniers vidés — hors vous (${paniersVidesJour.length})</h2>
+          <table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:13px;">
+            <thead><tr style="background:#f5f0f2;"><th style="padding:6px 8px;text-align:left;">Vendeuse</th><th style="padding:6px 8px;text-align:left;">Heure</th><th style="padding:6px 8px;text-align:left;">Articles</th><th style="padding:6px 8px;text-align:left;">Montant</th></tr></thead>
+            <tbody>${lignesPaniersVides}</tbody>
+          </table>
+          ${paniersVidesJour.length>0?`<div style="text-align:right;font-weight:700;color:#993556;padding:8px 0;">Total : ${eur(totalPaniersVides)}</div>`:''}
 
           <div style="margin-top:20px;padding:12px;background:#f9f6f8;border-radius:8px;font-size:11px;color:#888;text-align:center;">
             Belle&Jolie · ${BOUTIQUE_ADRESSE} · Clôturé par ${z.vendeur}
