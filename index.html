@@ -184,6 +184,10 @@ const PROMO_TEMPLATES = [
   ["👠 Vêtement → Chaussures","Bonjour [Prénom],\n\nOn a remarqué que vous êtes une fidèle cliente côté vêtements chez Belle&Jolie... mais qu'on ne vous a pas encore vue du côté chaussures ! 👠\n\nAlors pour l'occasion, on vous fait -15% sur toute notre sélection de chaussures, rien que pour vous.\n\nVenez essayer, on est sûres qu'il y en a une paire faite pour vous 😉\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres","Une offre rien que pour vous sur les chaussures 👠"],
 ];
 
+// Échappe une valeur JSON pour l'insérer sans risque dans un attribut HTML délimité par des guillemets doubles
+// (ex: onclick="..."). Sans ça, le premier " du JSON coupe l'attribut en plein milieu et casse le bouton.
+function jsonForAttr(v) { return JSON.stringify(v).replace(/"/g, "&quot;"); }
+
 // Motifs de retour prédéfinis
 const MOTIFS_RETOUR = [
   "Taille incorrecte",
@@ -4813,7 +4817,7 @@ window.ouvrirModalPromoClient = (clientId) => {
         <div style="font-size:12px;color:#888;margin-bottom:6px;">Templates rapides :</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           ${PROMO_TEMPLATES.map(([label,msg,sujet])=>`
-            <button onclick="document.getElementById('pcm-sujet').value=${JSON.stringify(sujet)};document.getElementById('pcm-msg').value=${JSON.stringify(msg)};"
+            <button onclick="document.getElementById('pcm-sujet').value=${jsonForAttr(sujet)};document.getElementById('pcm-msg').value=${jsonForAttr(msg)};"
               style="padding:5px 10px;background:#f5f0f2;border:none;border-radius:7px;cursor:pointer;font-size:11px;color:#555;">${label}</button>
           `).join("")}
         </div>
@@ -10072,7 +10076,7 @@ function renderPromo() {
 
       <!-- Préréglage rapide : segment croisé vêtements → chaussures -->
       <div style="margin-bottom:14px;">
-        <button onclick="STATE.promoFiltres={base:'actifs',inactivite:'',avecCategorie:'__VETEMENTS__',sansCategorie:'Chaussures'};STATE.promoMessage=${JSON.stringify(PROMO_TEMPLATES.find(t=>t[0].includes("Chaussures"))?.[1]||"")};STATE.promoSujet=${JSON.stringify(PROMO_TEMPLATES.find(t=>t[0].includes("Chaussures"))?.[2]||"")};render()"
+        <button onclick="STATE.promoFiltres={base:'actifs',inactivite:'',avecCategorie:'__VETEMENTS__',sansCategorie:'Chaussures'};STATE.promoMessage=${jsonForAttr(PROMO_TEMPLATES.find(t=>t[0].includes("Chaussures"))?.[1]||"")};STATE.promoSujet=${jsonForAttr(PROMO_TEMPLATES.find(t=>t[0].includes("Chaussures"))?.[2]||"")};render()"
           style="padding:8px 14px;background:#fbeaf0;border:1px solid #f0c0cc;border-radius:8px;cursor:pointer;font-size:12px;color:#993556;font-weight:500;">
           👠 Préréglage : achète des vêtements mais jamais de chaussures
         </button>
@@ -10104,7 +10108,7 @@ function renderPromo() {
         <div style="font-size:12px;color:#888;margin-bottom:6px;">Templates rapides :</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           ${PROMO_TEMPLATES.map(([label,msg,sujet])=>`
-            <button onclick="STATE.promoMessage=${JSON.stringify(msg)};STATE.promoSujet=${JSON.stringify(sujet)};render()"
+            <button onclick="STATE.promoMessage=${jsonForAttr(msg)};STATE.promoSujet=${jsonForAttr(sujet)};render()"
               style="padding:6px 12px;background:#f5f0f2;border:none;border-radius:7px;cursor:pointer;font-size:12px;color:#555;">
               ${label}
             </button>
