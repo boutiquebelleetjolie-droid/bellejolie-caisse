@@ -924,27 +924,29 @@ window.ajouterSac = () => {
 
 window.viderPanier = () => {
   if(!STATE.panier.length) return;
-  if(confirm("Vider le panier ?")) {
-    // Journaliser si ce n'est pas le compte principal qui vide un panier non vide
-    if(STATE.vendeur?.id !== "V1") {
-      const articles = STATE.panier.filter(x=>!x.avoirId).map(x=>({
-        nom: x.name, qty: x.qty||1, prix: x.price,
-        remise: x.remise||"", remiseType: x.remiseType||"",
-      }));
-      const total = STATE.panier.filter(x=>!x.avoirId).reduce((s,x)=>{
-        const rem = x.remiseType==="pct" ? x.price*(parseFloat(x.remise||0)/100) : x.remiseType==="eur" ? parseFloat(x.remise||0) : 0;
-        return s + Math.max(0, x.price-rem) * (x.qty||1);
-      }, 0);
-      const log = {
-        id: uid("PV"), date: new Date().toISOString(),
-        vendeur: STATE.vendeur?.nom || "?", articles, total,
-        client: STATE.client ? `${STATE.client.prenom} ${STATE.client.nom}` : "",
-      };
-      STATE.panierVides = [...(STATE.panierVides||[]), log];
-      lsSet("bj_panier_vides", STATE.panierVides);
-    }
+  // Journaliser si ce n'est pas le compte principal qui vide un panier non vide
+  if(STATE.vendeur?.id !== "V1") {
+    const motif = prompt("Motif obligatoire pour vider ce panier :", "") || "";
+    if(!motif.trim()) { alert("Un motif est obligatoire pour vider le panier."); return; }
+    const articles = STATE.panier.filter(x=>!x.avoirId).map(x=>({
+      nom: x.name, qty: x.qty||1, prix: x.price,
+      remise: x.remise||"", remiseType: x.remiseType||"",
+    }));
+    const total = STATE.panier.filter(x=>!x.avoirId).reduce((s,x)=>{
+      const rem = x.remiseType==="pct" ? x.price*(parseFloat(x.remise||0)/100) : x.remiseType==="eur" ? parseFloat(x.remise||0) : 0;
+      return s + Math.max(0, x.price-rem) * (x.qty||1);
+    }, 0);
+    const log = {
+      id: uid("PV"), date: new Date().toISOString(),
+      vendeur: STATE.vendeur?.nom || "?", articles, total, motif,
+      client: STATE.client ? `${STATE.client.prenom} ${STATE.client.nom}` : "",
+    };
+    STATE.panierVides = [...(STATE.panierVides||[]), log];
+    lsSet("bj_panier_vides", STATE.panierVides);
     STATE.panier=[];
     render();
+  } else {
+    if(confirm("Vider le panier ?")) { STATE.panier=[]; render(); }
   }
 };
 
@@ -8994,6 +8996,7 @@ function renderCaisseJour() {
                 <span style="color:#a32d2d;">${eur(p.total)}</span>
               </div>
               <div style="color:#888;margin-top:2px;">${p.articles.map(a=>`${a.qty}× ${a.nom}${a.remise?` (-${a.remise}${a.remiseType==="pct"?"%":"€"})`:""}`).join(", ")}</div>
+              ${p.motif?`<div style="color:#993556;font-style:italic;margin-top:2px;">Motif : ${p.motif}</div>`:""}
             </div>
           `).join("")}
         </div>`:""}
@@ -9161,8 +9164,8 @@ window.envoyerReleveCloture = async (z, ventesJour, dateStr) => {
     const paniersVidesJour = (STATE.panierVides||[]).filter(p=>new Date(p.date).toDateString()===zDateObj.toDateString());
     const totalPaniersVides = paniersVidesJour.reduce((s,p)=>s+(p.total||0),0);
     const lignesPaniersVides = paniersVidesJour.length > 0
-      ? paniersVidesJour.map(p => `<tr><td style="padding:4px 8px;">${p.vendeur}${p.client?' · '+p.client:''}</td><td style="padding:4px 8px;">${new Date(p.date).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</td><td style="padding:4px 8px;font-size:12px;">${p.articles.map(a=>`${a.qty}× ${a.nom}${a.remise?` (-${a.remise}${a.remiseType==='pct'?'%':'€'})`:''}`).join(', ')}</td><td style="padding:4px 8px;font-weight:600;">${eur(p.total)}</td></tr>`).join('')
-      : '<tr><td colspan="4" style="padding:8px;color:#888;text-align:center;">Aucun panier vidé par une autre vendeuse ce jour</td></tr>';
+      ? paniersVidesJour.map(p => `<tr><td style="padding:4px 8px;">${p.vendeur}${p.client?' · '+p.client:''}</td><td style="padding:4px 8px;">${new Date(p.date).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}</td><td style="padding:4px 8px;font-size:12px;">${p.articles.map(a=>`${a.qty}× ${a.nom}${a.remise?` (-${a.remise}${a.remiseType==='pct'?'%':'€'})`:''}`).join(', ')}</td><td style="padding:4px 8px;font-size:12px;color:#993556;font-style:italic;">${p.motif||'—'}</td><td style="padding:4px 8px;font-weight:600;">${eur(p.total)}</td></tr>`).join('')
+      : '<tr><td colspan="5" style="padding:8px;color:#888;text-align:center;">Aucun panier vidé par une autre vendeuse ce jour</td></tr>';
 
     const lignesRemises = remises.length > 0
       ? remises.map(r => `<tr><td style="padding:4px 8px;">${r.article}${r.taille?' T.'+r.taille:''}${r.couleur?' '+r.couleur:''}</td><td style="padding:4px 8px;color:#993556;">${r.remise}</td><td style="padding:4px 8px;font-weight:600;">${eur(r.montant)}</td><td style="padding:4px 8px;font-size:11px;color:#888;">${r.ticket}</td></tr>`).join('')
@@ -9219,7 +9222,7 @@ window.envoyerReleveCloture = async (z, ventesJour, dateStr) => {
 
           <h2 style="color:#993556;font-size:16px;margin:20px 0 12px;">🗑️ Paniers vidés — hors vous (${paniersVidesJour.length})</h2>
           <table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:13px;">
-            <thead><tr style="background:#f5f0f2;"><th style="padding:6px 8px;text-align:left;">Vendeuse</th><th style="padding:6px 8px;text-align:left;">Heure</th><th style="padding:6px 8px;text-align:left;">Articles</th><th style="padding:6px 8px;text-align:left;">Montant</th></tr></thead>
+            <thead><tr style="background:#f5f0f2;"><th style="padding:6px 8px;text-align:left;">Vendeuse</th><th style="padding:6px 8px;text-align:left;">Heure</th><th style="padding:6px 8px;text-align:left;">Articles</th><th style="padding:6px 8px;text-align:left;">Motif</th><th style="padding:6px 8px;text-align:left;">Montant</th></tr></thead>
             <tbody>${lignesPaniersVides}</tbody>
           </table>
           ${paniersVidesJour.length>0?`<div style="text-align:right;font-weight:700;color:#993556;padding:8px 0;">Total : ${eur(totalPaniersVides)}</div>`:''}
