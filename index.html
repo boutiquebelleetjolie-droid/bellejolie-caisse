@@ -9923,38 +9923,57 @@ function renderPromo() {
 
   const ejsOk = !!(STATE.emailjsServiceId&&STATE.emailjsTemplateId&&STATE.emailjsPublicKey);
   const maintenant = new Date();
-  const il3mois = new Date(maintenant.getTime() - 90*24*60*60*1000);
+
+  // ── Calcul last achat & catégories achetées par cliente ──
   const dernierAchat = {};
+  const catsAchetees = {}; // clientId → Set de catégories
   (STATE.ventes||[]).filter(v=>!v.annulee&&!v.test&&v.client?.id).forEach(v=>{
     const d = new Date(v.date);
     if(!dernierAchat[v.client.id] || d > dernierAchat[v.client.id]) dernierAchat[v.client.id] = d;
-  });
-  const clientsAvecEmail = STATE.clients.filter(c=>c.email&&(c.totalAchats||0)>0&&!c.pasDeMailPromo);
-  const clientsFideles   = STATE.clients.filter(c=>c.email&&(c.totalAchats||0)>=7&&!c.pasDeMailPromo);
-  const tousClients      = STATE.clients.filter(c=>c.email&&!c.pasDeMailPromo);
-  const clientsInactifs  = STATE.clients.filter(c=>{
-    if(!c.email||c.pasDeMailPromo) return false;
-    const da = dernierAchat[c.id];
-    return da && da < il3mois;
-  });
-  // Clientes avec 2+ passages récents < 40€
-  const clientsSous40 = STATE.clients.filter(c=>{
-    if(!c.email||c.pasDeMailPromo) return false;
-    return getNbPassagesSous40Recents(c) >= 2;
+    if(!catsAchetees[v.client.id]) catsAchetees[v.client.id] = new Set();
+    (v.panier||[]).filter(x=>!x.retour).forEach(it=>{
+      const p = STATE.products.find(x=>x.id===(it.prodIdOriginal||it.id));
+      if(p?.category) catsAchetees[v.client.id].add(p.category);
+    });
   });
 
-  if(!STATE.promoSegment) STATE.promoSegment = "fideles";
+  // ── Filtres actifs ──
+  if(!STATE.promoFiltres) STATE.promoFiltres = { base:"tous", inactivite:"", sansCategorie:"" };
+  const f = STATE.promoFiltres;
+
+  // Base
+  const bases = {
+    tous:     STATE.clients.filter(c=>c.email&&!c.pasDeMailPromo),
+    actifs:   STATE.clients.filter(c=>c.email&&(c.totalAchats||0)>0&&!c.pasDeMailPromo),
+    fideles:  STATE.clients.filter(c=>c.email&&(c.totalAchats||0)>=7&&!c.pasDeMailPromo),
+    nvelles:  STATE.clients.filter(c=>c.email&&(c.totalAchats||0)===0&&!c.pasDeMailPromo),
+  };
+  let liste = [...(bases[f.base]||bases.tous)];
+
+  // Filtre inactivité
+  if(f.inactivite) {
+    const jours = parseInt(f.inactivite);
+    const limite = new Date(maintenant.getTime() - jours*24*60*60*1000);
+    liste = liste.filter(c=>{
+      const da = dernierAchat[c.id];
+      if(!da) return jours===9999; // jamais acheté
+      return da < limite;
+    });
+  }
+
+  // Filtre "n'a jamais acheté cette catégorie"
+  if(f.sansCategorie) {
+    liste = liste.filter(c=>{
+      const cats = catsAchetees[c.id];
+      if(!cats) return true; // rien acheté du tout → inclure
+      return !cats.has(f.sansCategorie);
+    });
+  }
+
+  const toutes_cats = [...new Set(STATE.products.map(p=>p.category).filter(Boolean))].sort();
+
   if(!STATE.promoSujet)   STATE.promoSujet   = "";
   if(!STATE.promoMessage) STATE.promoMessage = "";
-
-  const segments = {
-    fideles:  {label:"Clients fidèles (programme -20%)",      list:clientsFideles},
-    actifs:   {label:"Clients avec compte & email",            list:clientsAvecEmail},
-    inactifs: {label:"Absentes depuis + 3 mois 😴",           list:clientsInactifs},
-    sous40:   {label:"2+ passages < 40€ (60 jours) 🎯",       list:clientsSous40},
-    tous:     {label:"Tous les clients avec email",             list:tousClients},
-  };
-  const seg = segments[STATE.promoSegment];
 
   return `
   <div>
@@ -9963,7 +9982,7 @@ function renderPromo() {
       ${ongletPromo("email","📣 Emails promo")}
     </div>
     <div style="font-weight:600;font-size:15px;margin-bottom:6px;">📣 Envoi d'emails promotionnels</div>
-    <div style="font-size:13px;color:#888;margin-bottom:16px;">Envoyez un email à vos clientes fidèles directement depuis l'appli.</div>
+    <div style="font-size:13px;color:#888;margin-bottom:16px;">Envoyez un email ciblé à vos clientes directement depuis l'appli.</div>
 
     ${!ejsOk?`
       <div style="background:#faeeda;border:1px solid #fac775;border-radius:10px;padding:14px;margin-bottom:14px;font-size:13px;color:#854f0b;">
@@ -9971,20 +9990,58 @@ function renderPromo() {
       </div>
     `:""}
 
-    <!-- Sélection segment -->
+    <!-- Filtres avancés -->
     <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:16px;margin-bottom:14px;">
-      <div style="font-weight:500;font-size:13px;margin-bottom:10px;">🎯 Destinataires</div>
-      ${Object.entries(segments).map(([k,s])=>`
-        <div onclick="STATE.promoSegment='${k}';render()"
-          style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-radius:9px;cursor:pointer;margin-bottom:6px;border:${STATE.promoSegment===k?"2px solid #993556":"1px solid #e8e0e4"};background:${STATE.promoSegment===k?"#fbeaf0":"#fff"};">
-          <span style="font-size:13px;font-weight:${STATE.promoSegment===k?500:400};color:${STATE.promoSegment===k?"#993556":"#333"};">${s.label}</span>
-          <span style="background:${STATE.promoSegment===k?"#993556":"#f5f0f2"};color:${STATE.promoSegment===k?"#fff":"#888"};padding:2px 10px;border-radius:10px;font-size:12px;font-weight:600;">${s.list.length}</span>
+      <div style="font-weight:500;font-size:13px;margin-bottom:12px;">🎯 Filtrer les destinataires</div>
+
+      <!-- Base -->
+      <div style="margin-bottom:12px;">
+        <div style="font-size:12px;color:#888;margin-bottom:6px;">Base de clientes</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${[["tous","🌍 Toutes avec email"],["actifs","🛍️ Ont déjà acheté"],["fideles","⭐ Fidèles (7+ visites)"],["nvelles","🌱 Jamais acheté"]].map(([k,l])=>`
+            <button onclick="STATE.promoFiltres.base='${k}';render()"
+              style="padding:6px 12px;background:${f.base===k?"#993556":"#f5f0f2"};color:${f.base===k?"#fff":"#555"};border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:${f.base===k?600:400};">${l}</button>
+          `).join("")}
         </div>
-      `).join("")}
-      ${seg.list.length>0?`
-        <div style="margin-top:10px;background:#f5f0f2;border-radius:8px;padding:10px;max-height:120px;overflow-y:auto;">
-          <div style="font-size:11px;color:#888;margin-bottom:6px;">Destinataires (${seg.list.length}) :</div>
-          ${seg.list.map(c=>{const da=dernierAchat[c.id];const info=da?` (dernier achat : ${new Date(da).toLocaleDateString('fr-FR')})`:'';return `<span style="font-size:12px;margin-right:8px;color:#555;">${c.prenom} ${c.nom}<span style="color:#aaa;font-size:10px;">${info}</span></span>`;}).join('')}
+      </div>
+
+      <!-- Inactivité -->
+      <div style="margin-bottom:12px;">
+        <div style="font-size:12px;color:#888;margin-bottom:6px;">🕐 Dernière visite</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${[["","Peu importe"],["30","+ 1 mois"],["60","+ 2 mois"],["90","+ 3 mois"],["180","+ 6 mois"],["365","+ 1 an"],["9999","Jamais venue"]].map(([k,l])=>`
+            <button onclick="STATE.promoFiltres.inactivite='${k}';render()"
+              style="padding:6px 12px;background:${f.inactivite===k?"#993556":"#f5f0f2"};color:${f.inactivite===k?"#fff":"#555"};border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:${f.inactivite===k?600:400};">${l}</button>
+          `).join("")}
+        </div>
+      </div>
+
+      <!-- Sans catégorie -->
+      <div style="margin-bottom:14px;">
+        <div style="font-size:12px;color:#888;margin-bottom:6px;">🏷️ N'a jamais acheté de…</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button onclick="STATE.promoFiltres.sansCategorie='';render()"
+            style="padding:6px 12px;background:${!f.sansCategorie?"#993556":"#f5f0f2"};color:${!f.sansCategorie?"#fff":"#555"};border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:${!f.sansCategorie?600:400};">Peu importe</button>
+          ${toutes_cats.map(cat=>`
+            <button onclick="STATE.promoFiltres.sansCategorie='${cat}';render()"
+              style="padding:6px 12px;background:${f.sansCategorie===cat?"#993556":"#f5f0f2"};color:${f.sansCategorie===cat?"#fff":"#555"};border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:${f.sansCategorie===cat?600:400};">${cat}</button>
+          `).join("")}
+        </div>
+      </div>
+
+      <!-- Résultat -->
+      <div style="background:${liste.length>0?"#fbeaf0":"#f5f0f2"};border-radius:10px;padding:12px;display:flex;justify-content:space-between;align-items:center;">
+        <div style="font-size:13px;font-weight:500;color:${liste.length>0?"#993556":"#888"};">
+          ${liste.length>0?`✅ ${liste.length} cliente${liste.length>1?"s":""} sélectionnée${liste.length>1?"s":""}`:
+          "⚠️ Aucune cliente ne correspond à ces critères"}
+        </div>
+        ${liste.length>0?`<button onclick="STATE.promoFiltres={base:'tous',inactivite:'',sansCategorie:''};render()" style="background:none;border:1px solid #f0c0cc;border-radius:6px;padding:3px 10px;font-size:11px;color:#993556;cursor:pointer;">Réinitialiser</button>`:""}
+      </div>
+      ${liste.length>0?`
+        <div style="margin-top:10px;background:#f9f6f8;border-radius:8px;padding:10px;max-height:100px;overflow-y:auto;">
+          <div style="font-size:11px;color:#aaa;margin-bottom:4px;">Aperçu des destinataires :</div>
+          ${liste.slice(0,30).map(c=>{const da=dernierAchat[c.id];const info=da?` · ${new Date(da).toLocaleDateString('fr-FR')}`:" · jamais venue";return `<span style="display:inline-block;font-size:12px;margin-right:8px;margin-bottom:2px;color:#555;">${c.prenom} ${c.nom}<span style="color:#bbb;font-size:10px;">${info}</span></span>`;}).join("")}
+          ${liste.length>30?`<span style="font-size:11px;color:#aaa;">... et ${liste.length-30} autres</span>`:""}
         </div>
       `:""}
     </div>
@@ -10031,8 +10088,8 @@ function renderPromo() {
       <!-- Aperçu -->
       ${STATE.promoMessage?`
         <div style="background:#e6f1fb;border-radius:8px;padding:12px;margin-bottom:12px;font-size:13px;color:#185fa5;">
-          <div style="font-weight:500;margin-bottom:4px;">📋 Aperçu pour ${seg.list[0]?.prenom||"Prénom"} :</div>
-          <div style="color:#333;white-space:pre-wrap;">${(STATE.promoMessage||"").replace(/\[Prénom\]/g,seg.list[0]?.prenom||"Prénom")}</div>
+          <div style="font-weight:500;margin-bottom:4px;">📋 Aperçu pour ${liste[0]?.prenom||"Prénom"} :</div>
+          <div style="color:#333;white-space:pre-wrap;">${(STATE.promoMessage||"").replace(/\[Prénom\]/g,liste[0]?.prenom||"Prénom")}</div>
           <div style="margin-top:8px;font-size:11px;color:#888;">---<br>⚠️ Merci de ne pas répondre à cet email.<br>Pour nous contacter : boutiquebelleetjolie@gmail.com</div>
         </div>
       `:""}
@@ -10041,9 +10098,9 @@ function renderPromo() {
 
       <div style="display:flex;gap:8px;align-items:center;">
         <button onclick="envoyerEmailsPromo()"
-          ${!ejsOk||!STATE.promoMessage||!STATE.promoSujet||seg.list.length===0?"disabled":""}
-          style="flex:1;padding:13px;background:${ejsOk&&STATE.promoMessage&&STATE.promoSujet&&seg.list.length>0?"#993556":"#ccc"};color:#fff;border:none;border-radius:9px;cursor:${ejsOk&&STATE.promoMessage?"pointer":"not-allowed"};font-weight:500;font-size:14px;">
-          📣 Envoyer à ${seg.list.length} cliente${seg.list.length>1?"s":""}
+          ${!ejsOk||!STATE.promoMessage||!STATE.promoSujet||liste.length===0?"disabled":""}
+          style="flex:1;padding:13px;background:${ejsOk&&STATE.promoMessage&&STATE.promoSujet&&liste.length>0?"#993556":"#ccc"};color:#fff;border:none;border-radius:9px;cursor:${ejsOk&&STATE.promoMessage?"pointer":"not-allowed"};font-weight:500;font-size:14px;">
+          📣 Envoyer à ${liste.length} cliente${liste.length>1?"s":""}
         </button>
       </div>
     </div>
@@ -10066,16 +10123,47 @@ function renderPromo() {
 }
 
 window.envoyerEmailsPromo = async () => {
-  const segments = {
-    fideles: STATE.clients.filter(c=>c.email&&(c.totalAchats||0)>=7),
-    actifs:  STATE.clients.filter(c=>c.email&&(c.totalAchats||0)>0),
-    tous:    STATE.clients.filter(c=>c.email),
+  // Recalculer la liste avec les filtres actifs
+  const f = STATE.promoFiltres || {base:"tous", inactivite:"", sansCategorie:""};
+  const maintenant = new Date();
+  const dernierAchat = {};
+  const catsAchetees = {};
+  (STATE.ventes||[]).filter(v=>!v.annulee&&!v.test&&v.client?.id).forEach(v=>{
+    const d = new Date(v.date);
+    if(!dernierAchat[v.client.id] || d > dernierAchat[v.client.id]) dernierAchat[v.client.id] = d;
+    if(!catsAchetees[v.client.id]) catsAchetees[v.client.id] = new Set();
+    (v.panier||[]).filter(x=>!x.retour).forEach(it=>{
+      const p = STATE.products.find(x=>x.id===(it.prodIdOriginal||it.id));
+      if(p?.category) catsAchetees[v.client.id].add(p.category);
+    });
+  });
+  const bases = {
+    tous:    STATE.clients.filter(c=>c.email&&!c.pasDeMailPromo),
+    actifs:  STATE.clients.filter(c=>c.email&&(c.totalAchats||0)>0&&!c.pasDeMailPromo),
+    fideles: STATE.clients.filter(c=>c.email&&(c.totalAchats||0)>=7&&!c.pasDeMailPromo),
+    nvelles: STATE.clients.filter(c=>c.email&&(c.totalAchats||0)===0&&!c.pasDeMailPromo),
   };
-  const seg     = segments[STATE.promoSegment||"fideles"];
+  let seg = [...(bases[f.base]||bases.tous)];
+  if(f.inactivite) {
+    const jours = parseInt(f.inactivite);
+    const limite = new Date(maintenant.getTime() - jours*24*60*60*1000);
+    seg = seg.filter(c=>{ const da=dernierAchat[c.id]; if(!da) return jours===9999; return da < limite; });
+  }
+  if(f.sansCategorie) {
+    seg = seg.filter(c=>{ const cats=catsAchetees[c.id]; if(!cats) return true; return !cats.has(f.sansCategorie); });
+  }
+
   const sujet   = STATE.promoSujet?.trim();
   const message = STATE.promoMessage?.trim();
   if(!sujet||!message||seg.length===0) return;
-  if(!confirm(`Envoyer cet email à ${seg.length} cliente${seg.length>1?"s":""} ?\n\nObjet : ${sujet}\n\nCette action est irréversible.`)) return;
+
+  // Libellé des filtres pour l'historique
+  const baseLabels = {tous:"Toutes",actifs:"Ont déjà acheté",fideles:"Fidèles 7+",nvelles:"Jamais acheté"};
+  let segLabel = baseLabels[f.base]||"Toutes";
+  if(f.inactivite) segLabel += ` · inactives +${f.inactivite}j`;
+  if(f.sansCategorie) segLabel += ` · sans ${f.sansCategorie}`;
+
+  if(!confirm(`Envoyer cet email à ${seg.length} cliente${seg.length>1?"s":""} ?\n\nObjet : ${sujet}\nSegment : ${segLabel}\n\nCette action est irréversible.`)) return;
 
   const statusEl = document.getElementById("promo-status");
   if(statusEl){ statusEl.style.display="block"; statusEl.style.background="#e6f1fb"; statusEl.style.color="#185fa5"; statusEl.textContent="⏳ Envoi en cours..."; }
@@ -10096,7 +10184,6 @@ window.envoyerEmailsPromo = async () => {
       });
       nb++;
       if(statusEl) statusEl.textContent = `⏳ Envoi en cours... ${nb}/${seg.length}`;
-      // Petite pause pour ne pas saturer l'API
       await new Promise(r=>setTimeout(r,300));
     } catch(err) {
       console.error(`Erreur envoi à ${c.email}:`, err);
@@ -10104,11 +10191,9 @@ window.envoyerEmailsPromo = async () => {
     }
   }
 
-  // Enregistrer dans l'historique
   STATE.historiquePromo = [...(STATE.historiquePromo||[]), {
     id:uid("PR"), date:new Date().toISOString(),
-    sujet, nb, erreurs,
-    segment: {fideles:"Clients fidèles",actifs:"Clients actifs",tous:"Tous les clients"}[STATE.promoSegment||"fideles"],
+    sujet, nb, erreurs, segment: segLabel,
   }];
   lsSet("bj_historique_promo", STATE.historiquePromo);
 
