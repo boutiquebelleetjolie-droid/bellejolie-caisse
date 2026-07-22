@@ -9675,11 +9675,26 @@ function renderPromoArticles() {
   const futurPromos   = promos.filter(p=>!promoPassee(p)&&!promoActive(p));
   const passeesPromos = promos.filter(p=>promoPassee(p));
 
+  // Articles candidats à une promo (jamais vendus, sans vente 2 mois+, ou peu vendus)
+  const articlesMalVendus = getArticlesAReassortir();
+
   return `<div>
     <div style="display:flex;gap:8px;margin-bottom:16px;">
       <button onclick="STATE.promoTab='articles';render()" style="padding:8px 18px;border-radius:8px;border:none;background:#993556;color:#fff;cursor:pointer;font-weight:600;font-size:13px;">🏷️ Promos articles</button>
       <button onclick="STATE.promoTab='email';render()" style="padding:8px 18px;border-radius:8px;border:none;background:#f5f0f2;color:#333;cursor:pointer;font-size:13px;">📣 Emails promo</button>
     </div>
+
+    <!-- Raccourci : promo rapide sur les invendus / articles +2 mois -->
+    ${articlesMalVendus.length>0?`
+    <div style="background:#fff8e1;border:1px solid #fac775;border-radius:12px;padding:14px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+      <div>
+        <div style="font-weight:600;font-size:13px;color:#854f0b;">⚡ ${articlesMalVendus.length} article${articlesMalVendus.length>1?"s":""} mal vendu${articlesMalVendus.length>1?"s":""} / sans vente depuis 2 mois+</div>
+        <div style="font-size:12px;color:#a5741a;margin-top:2px;">Pré-remplit directement une promo avec ces articles — il ne reste qu'à choisir le % et valider.</div>
+      </div>
+      <button onclick="creerPromoRapideInvendus()" style="padding:10px 16px;background:#e07c00;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;white-space:nowrap;">
+        ⚡ Créer une promo sur ces articles
+      </button>
+    </div>`:""}
 
     <!-- Promos actives -->
     ${activePromos.length?`
@@ -9891,6 +9906,30 @@ function renderPromoArticles() {
     </details>`:""}
   </div>`;
 }
+
+window.creerPromoRapideInvendus = () => {
+  const now = new Date();
+  const ids = getArticlesAReassortir().map(a => a.id);
+  if(!ids.length) { alert("Aucun article mal vendu détecté pour le moment."); return; }
+  STATE._newPromo = {
+    nom: `Déstockage invendus — ${now.toLocaleDateString("fr-FR")}`,
+    type: "pct",
+    remisePct: 20,
+    remiseEuro: 0,
+    dateDebut: now.toISOString().slice(0,10),
+    dateFin: new Date(now.getTime()+30*24*60*60*1000).toISOString().slice(0,10),
+    articles: ids,
+    tousArticles: false,
+    actif: true,
+    panierQty: 3,
+    panierRemisePct: 15,
+  };
+  render();
+  // Amène l'utilisateur directement sur le formulaire pré-rempli
+  setTimeout(() => {
+    document.querySelector('[onclick="creerPromo()"]')?.scrollIntoView({behavior:"smooth", block:"center"});
+  }, 50);
+};
 
 window.creerPromo = () => {
   const np = STATE._newPromo;
