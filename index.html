@@ -4896,21 +4896,21 @@ window.envoyerEmailPromoClient = async (clientId) => {
   const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
 <body style="margin:0;padding:0;background:#f5f0f2;font-family:Georgia,serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0f2;padding:30px 0;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0f2;padding:16px 8px;">
 <tr><td align="center">
-<table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
-  <tr><td style="background:#fff;border-radius:16px 16px 0 0;padding:24px 40px 16px;text-align:center;border-bottom:3px solid #993556;">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;">
+  <tr><td style="background:#fff;border-radius:16px 16px 0 0;padding:20px 20px 14px;text-align:center;border-bottom:3px solid #993556;">
     <img src="${LOGO_TICKET_B64}" width="100" height="100" alt="Belle&Jolie" style="border-radius:50%;"/>
     <div style="font-size:22px;font-weight:700;color:#993556;font-family:Georgia,serif;margin-top:8px;">Belle&amp;Jolie</div>
     <div style="font-size:12px;color:#aaa;margin-top:2px;">12 rue du Bois Merrain, 28000 Chartres</div>
   </td></tr>
-  <tr><td style="background:#fff;padding:28px 40px 36px;">
-    <div style="font-size:14px;color:#555;line-height:1.8;white-space:pre-line;margin-bottom:28px;">${msgPerso.replace(/\n/g,"<br/>")}</div>
+  <tr><td style="background:#fff;padding:24px 22px 30px;">
+    <div style="font-size:15px;color:#555;line-height:1.7;white-space:pre-line;margin-bottom:24px;">${msgPerso.replace(/\n/g,"<br/>")}</div>
     <div style="text-align:center;margin-top:24px;">
       <div style="display:inline-block;background:#993556;color:#fff;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:600;">Belle&amp;Jolie vous attend ! 🌸</div>
     </div>
   </td></tr>
-  <tr><td style="background:#f9f6f8;padding:16px 40px;text-align:center;border-radius:0 0 16px 16px;border-top:0.5px solid #e8e0e4;">
+  <tr><td style="background:#f9f6f8;padding:14px 22px;text-align:center;border-radius:0 0 16px 16px;border-top:0.5px solid #e8e0e4;">
     <div style="font-size:12px;color:#aaa;">Belle&amp;Jolie · ${BOUTIQUE_ADRESSE}</div>
     <div style="font-size:11px;color:#bbb;margin-top:2px;">🕐 ${BOUTIQUE_HORAIRES}</div>
     <div style="font-size:11px;color:#ccc;margin-top:4px;">⚠️ Merci de ne pas répondre à cet email. Contact : boutiquebelleetjolie@gmail.com</div>
@@ -5017,15 +5017,15 @@ window.envoyerEmailBienvenue = async (client, code, dateFin) => {
     const html = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
 <body style="margin:0;padding:0;background:#f5f0f2;font-family:Georgia,serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0f2;padding:30px 0;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0f2;padding:16px 8px;">
 <tr><td align="center">
-<table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;">
   <!-- Header -->
-  <tr><td style="background:#fff;border-radius:16px 16px 0 0;padding:24px 40px 16px;text-align:center;border-bottom:3px solid #993556;">
+  <tr><td style="background:#fff;border-radius:16px 16px 0 0;padding:20px 20px 14px;text-align:center;border-bottom:3px solid #993556;">
     <img src="${LOGO_TICKET_B64}" width="130" height="130" alt="Belle&Jolie" style="border-radius:50%;"/>
   </td></tr>
   <!-- Contenu -->
-  <tr><td style="background:#fff;padding:28px 40px 36px;">
+  <tr><td style="background:#fff;padding:24px 22px 30px;">
     <p style="font-size:22px;color:#993556;font-weight:700;margin:0 0 8px;">Bienvenue ${client.prenom} ! 🌸</p>
     <p style="font-size:15px;color:#555;line-height:1.7;margin:0 0 28px;">
       Nous sommes ravies de vous accueillir parmi nos clientes.<br>
@@ -7683,9 +7683,9 @@ function buildTicketEmailHTML(v) {
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
 <body style="margin:0;padding:0;background:#f5f0f2;font-family:Arial,sans-serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0f2;padding:30px 0;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0f2;padding:16px 8px;">
 <tr><td align="center">
-<table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;">
   <tr><td style="background:#fff;border-radius:16px 16px 0 0;padding:20px 40px 12px;text-align:center;border-bottom:3px solid #993556;">
     <img src="${LOGO_TICKET_B64}" width="110" height="110" alt="Belle&Jolie" style="border-radius:50%;"/>
   </td></tr>
@@ -9354,10 +9354,10 @@ window.envoyerBonAnniversaire = async (client, annee) => {
     const htmlAnniv = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
 <body style="margin:0;padding:0;background:#f5f0f2;font-family:Georgia,serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0f2;padding:30px 0;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0f2;padding:16px 8px;">
 <tr><td align="center">
-<table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
-  <tr><td style="background:#fff;border-radius:16px 16px 0 0;padding:24px 40px 16px;text-align:center;border-bottom:3px solid #993556;">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;">
+  <tr><td style="background:#fff;border-radius:16px 16px 0 0;padding:20px 20px 14px;text-align:center;border-bottom:3px solid #993556;">
     <img src="${LOGO_TICKET_B64}" width="130" height="130" alt="Belle&Jolie" style="border-radius:50%;"/>
   </td></tr>
   <tr><td style="background:#fff;padding:36px 40px;">
@@ -10342,21 +10342,21 @@ window.envoyerEmailsPromo = async () => {
     const htmlPromo = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
 <body style="margin:0;padding:0;background:#f5f0f2;font-family:Georgia,serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0f2;padding:30px 0;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0f2;padding:16px 8px;">
 <tr><td align="center">
-<table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
-  <tr><td style="background:#fff;border-radius:16px 16px 0 0;padding:24px 40px 16px;text-align:center;border-bottom:3px solid #993556;">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;">
+  <tr><td style="background:#fff;border-radius:16px 16px 0 0;padding:20px 20px 14px;text-align:center;border-bottom:3px solid #993556;">
     <img src="${LOGO_TICKET_B64}" width="100" height="100" alt="Belle&Jolie" style="border-radius:50%;"/>
     <div style="font-size:22px;font-weight:700;color:#993556;font-family:Georgia,serif;margin-top:8px;">Belle&amp;Jolie</div>
     <div style="font-size:12px;color:#aaa;margin-top:2px;">${BOUTIQUE_ADRESSE}</div>
   </td></tr>
-  <tr><td style="background:#fff;padding:28px 40px 36px;">
-    <div style="font-size:14px;color:#555;line-height:1.8;white-space:pre-line;margin-bottom:28px;">${msgPersonnalise.replace(/\n/g,"<br/>")}</div>
+  <tr><td style="background:#fff;padding:24px 22px 30px;">
+    <div style="font-size:15px;color:#555;line-height:1.7;white-space:pre-line;margin-bottom:24px;">${msgPersonnalise.replace(/\n/g,"<br/>")}</div>
     <div style="text-align:center;margin-top:24px;">
       <div style="display:inline-block;background:#993556;color:#fff;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:600;">Belle&amp;Jolie vous attend ! 🌸</div>
     </div>
   </td></tr>
-  <tr><td style="background:#f9f6f8;padding:16px 40px;text-align:center;border-radius:0 0 16px 16px;border-top:0.5px solid #e8e0e4;">
+  <tr><td style="background:#f9f6f8;padding:14px 22px;text-align:center;border-radius:0 0 16px 16px;border-top:0.5px solid #e8e0e4;">
     <div style="font-size:12px;color:#aaa;">Belle&amp;Jolie · ${BOUTIQUE_ADRESSE}</div>
     <div style="font-size:11px;color:#bbb;margin-top:2px;">🕐 ${BOUTIQUE_HORAIRES}</div>
     <div style="font-size:11px;color:#ccc;margin-top:4px;">⚠️ Merci de ne pas répondre à cet email. Contact : boutiquebelleetjolie@gmail.com</div>
@@ -10438,21 +10438,21 @@ window.envoyerFileAttentePromo = async () => {
     const htmlPromo = `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
 <body style="margin:0;padding:0;background:#f5f0f2;font-family:Georgia,serif;">
-<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0f2;padding:30px 0;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0f2;padding:16px 8px;">
 <tr><td align="center">
-<table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
-  <tr><td style="background:#fff;border-radius:16px 16px 0 0;padding:24px 40px 16px;text-align:center;border-bottom:3px solid #993556;">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:640px;width:100%;">
+  <tr><td style="background:#fff;border-radius:16px 16px 0 0;padding:20px 20px 14px;text-align:center;border-bottom:3px solid #993556;">
     <img src="${LOGO_TICKET_B64}" width="100" height="100" alt="Belle&Jolie" style="border-radius:50%;"/>
     <div style="font-size:22px;font-weight:700;color:#993556;font-family:Georgia,serif;margin-top:8px;">Belle&amp;Jolie</div>
     <div style="font-size:12px;color:#aaa;margin-top:2px;">${BOUTIQUE_ADRESSE}</div>
   </td></tr>
-  <tr><td style="background:#fff;padding:28px 40px 36px;">
-    <div style="font-size:14px;color:#555;line-height:1.8;white-space:pre-line;margin-bottom:28px;">${msgPersonnalise.replace(/\n/g,"<br/>")}</div>
+  <tr><td style="background:#fff;padding:24px 22px 30px;">
+    <div style="font-size:15px;color:#555;line-height:1.7;white-space:pre-line;margin-bottom:24px;">${msgPersonnalise.replace(/\n/g,"<br/>")}</div>
     <div style="text-align:center;margin-top:24px;">
       <div style="display:inline-block;background:#993556;color:#fff;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:600;">Belle&amp;Jolie vous attend ! 🌸</div>
     </div>
   </td></tr>
-  <tr><td style="background:#f9f6f8;padding:16px 40px;text-align:center;border-radius:0 0 16px 16px;border-top:0.5px solid #e8e0e4;">
+  <tr><td style="background:#f9f6f8;padding:14px 22px;text-align:center;border-radius:0 0 16px 16px;border-top:0.5px solid #e8e0e4;">
     <div style="font-size:12px;color:#aaa;">Belle&amp;Jolie · ${BOUTIQUE_ADRESSE}</div>
     <div style="font-size:11px;color:#bbb;margin-top:2px;">🕐 ${BOUTIQUE_HORAIRES}</div>
     <div style="font-size:11px;color:#ccc;margin-top:4px;">⚠️ Merci de ne pas répondre à cet email. Contact : boutiquebelleetjolie@gmail.com</div>
