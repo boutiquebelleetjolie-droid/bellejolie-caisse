@@ -1054,6 +1054,8 @@ window.exporterDonnees = () => {
     depenses:STATE.depenses, memos:STATE.memos,
     caisseJour:STATE.caisseJour||[], annulLignes:STATE.annulLignes||[],
     reservations:STATE.reservations||[], historiquePromo:STATE.historiquePromo||[],
+    // Config EmailJS incluse pour ne pas la perdre si le navigateur efface ses données
+    emailjsServiceId:STATE.emailjsServiceId||"", emailjsTemplateId:STATE.emailjsTemplateId||"", emailjsPublicKey:STATE.emailjsPublicKey||"",
   };
   const blob = new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
   const url  = URL.createObjectURL(blob);
@@ -1106,8 +1108,13 @@ window.importerDonnees = (input) => {
         const nvxAvoirs = (data.avoirs||[]).filter(a=>!idsAvoirs.has(a.id));
         STATE.avoirs = [...(STATE.avoirs||[]), ...nvxAvoirs];
         lsSet("bj_avoirs", STATE.avoirs);
+        // Config EmailJS : on la restaure si elle manque sur cet appareil (sans écraser une config déjà en place)
+        const ejsRestauree = (!STATE.emailjsServiceId&&data.emailjsServiceId)||(!STATE.emailjsTemplateId&&data.emailjsTemplateId)||(!STATE.emailjsPublicKey&&data.emailjsPublicKey);
+        if(!STATE.emailjsServiceId && data.emailjsServiceId)   { STATE.emailjsServiceId=data.emailjsServiceId;   lsSet("bj_ejs_service",data.emailjsServiceId); }
+        if(!STATE.emailjsTemplateId && data.emailjsTemplateId) { STATE.emailjsTemplateId=data.emailjsTemplateId; lsSet("bj_ejs_template",data.emailjsTemplateId); }
+        if(!STATE.emailjsPublicKey && data.emailjsPublicKey)   { STATE.emailjsPublicKey=data.emailjsPublicKey;   lsSet("bj_ejs_key",data.emailjsPublicKey); }
         render();
-        alert("✅ Fusion réussie !\n+"+nouveaux.length+" articles ajoutés\n+"+nvxCli.length+" clients ajoutés");
+        alert("✅ Fusion réussie !\n+"+nouveaux.length+" articles ajoutés\n+"+nvxCli.length+" clients ajoutés"+(ejsRestauree?"\n📧 Config EmailJS restaurée.":""));
         return;
       }
       // Mode remplacement
@@ -1136,8 +1143,12 @@ window.importerDonnees = (input) => {
       if(data.annulLignes)  {STATE.annulLignes=data.annulLignes;lsSet("bj_annul_lignes",data.annulLignes);}
       if(data.reservations) {STATE.reservations=data.reservations;lsSet("bj_reservations",data.reservations);}
       if(data.historiquePromo){STATE.historiquePromo=data.historiquePromo;lsSet("bj_historique_promo",data.historiquePromo);}
+      // Config EmailJS : restaurée si présente dans la sauvegarde (évite de la reperdre si le navigateur efface ses données)
+      if(data.emailjsServiceId)  { STATE.emailjsServiceId=data.emailjsServiceId;   lsSet("bj_ejs_service",data.emailjsServiceId); }
+      if(data.emailjsTemplateId) { STATE.emailjsTemplateId=data.emailjsTemplateId; lsSet("bj_ejs_template",data.emailjsTemplateId); }
+      if(data.emailjsPublicKey)  { STATE.emailjsPublicKey=data.emailjsPublicKey;   lsSet("bj_ejs_key",data.emailjsPublicKey); }
       render();
-      alert("✅ Données importées !\nDate sauvegarde : "+new Date(data.date).toLocaleString("fr-FR"));
+      alert("✅ Données importées !\nDate sauvegarde : "+new Date(data.date).toLocaleString("fr-FR")+(data.emailjsServiceId?"\n📧 Config EmailJS restaurée.":""));
     } catch(err) { alert("❌ Erreur import : "+err.message); }
   };
   reader.readAsText(file);
