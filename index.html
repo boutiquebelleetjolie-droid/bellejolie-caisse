@@ -12167,7 +12167,17 @@ function bindApp() {
 }
 
 // ─── PWA & INIT ─────────────────────────────────────────────────
-if("serviceWorker" in navigator){ navigator.serviceWorker.register("sw.js").catch(()=>{}); }
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("sw.js").catch(()=>{});
+  // Quand une nouvelle version du service worker prend le contrôle (= nouvelle mise à jour déployée),
+  // on recharge la page une seule fois pour afficher automatiquement la dernière version.
+  let bjSwRefreshed = false;
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (bjSwRefreshed) return;
+    bjSwRefreshed = true;
+    window.location.reload();
+  });
+}
 STATE.emailjsServiceId  = ls("bj_ejs_service","");
 STATE.emailjsTemplateId = ls("bj_ejs_template","");
 STATE.emailjsPublicKey  = ls("bj_ejs_key","");
