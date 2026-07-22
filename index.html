@@ -906,19 +906,19 @@ window.afficherInfoArticlePanier = (itemId) => {
 
 window.ajouterSac = () => {
   // Chercher si un article "Sac" existe déjà dans les produits
-  const sacProd = STATE.products.find(p => p.name.toLowerCase().includes('sac') && p.price <= 0.5);
-  if(sacProd) {
-    addToCart(sacProd.id);
-    return;
+  let sacProd = STATE.products.find(p => p.name.toLowerCase().includes('sac') && p.price <= 0.5);
+  if(!sacProd) {
+    // Créer un vrai article suivi en stock (une seule fois) au lieu d'une ligne fantôme sans stock
+    sacProd = {
+      id: "SAC_"+Date.now(),
+      name: "Sac", ref: "SAC-CAISSE", price: 0.20,
+      category: "Accessoires", stock: 200, tailles: [], couleurs: [],
+      grandeTaille: false,
+    };
+    STATE.products = [...STATE.products, sacProd];
+    lsSet("bj_products", STATE.products);
   }
-  // Sinon ajouter une ligne sac directement
-  const sacId = "SAC_"+Date.now();
-  STATE.panier = [...STATE.panier, {
-    id: sacId, name: "Sac", ref: "SAC", price: 0.20,
-    qty: 1, remise: "", remiseType: "", taille: "", couleur: "",
-    _sacRapide: true
-  }];
-  render();
+  addToCart(sacProd.id);
 };
 
 window.viderPanier = () => {
@@ -1396,8 +1396,8 @@ function renderCaisse() {
         <div style="font-weight:500;font-size:13px;margin-bottom:8px;">👤 Client</div>
         ${STATE.client?`
           <div style="display:flex;justify-content:space-between;align-items:flex-start;">
-            <div style="flex:1;min-width:0;">
-              <div style="font-weight:500;">${STATE.client.prenom} ${STATE.client.nom}</div>
+            <div style="flex:1;min-width:0;cursor:pointer;" onclick="STATE.showClientDetail=STATE.client;render();" title="Voir la fiche client">
+              <div style="font-weight:500;text-decoration:underline;text-decoration-style:dotted;">${STATE.client.prenom} ${STATE.client.nom} <span style="font-size:11px;color:#993556;">ℹ️</span></div>
               <div style="font-size:12px;color:#888;">${STATE.client.tel} · ${STATE.client.cp}</div>
               <div style="font-size:11px;margin-top:3px;">${STATE.client.totalAchats||0} achats · ${eur(STATE.client.montantCumule||0)}
                 ${(()=>{
