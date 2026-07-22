@@ -9709,7 +9709,10 @@ function renderPromoArticles() {
       <button onclick="creerPromoRapideInvendus()" style="padding:10px 16px;background:#e07c00;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;white-space:nowrap;">
         ⚡ Créer une promo sur ces articles
       </button>
-    </div>`:""}
+    </div>`:`
+    <div style="background:#eaf3de;border:1px solid #b5d89a;border-radius:12px;padding:12px 14px;margin-bottom:16px;font-size:12px;color:#3b6d11;">
+      ✅ Aucun article mal vendu / sans vente +2 mois détecté pour le moment — rien à mettre en promo côté invendus.
+    </div>`}
 
     <!-- Promos actives -->
     ${activePromos.length?`
