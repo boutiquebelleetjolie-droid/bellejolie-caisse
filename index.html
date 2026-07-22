@@ -4765,6 +4765,131 @@ function renderClientModal() {
   </div>`;
 }
 
+// ─── EMAIL PROMO INDIVIDUEL ──────────────────────────────────────
+window.ouvrirModalPromoClient = (clientId) => {
+  const c = STATE.clients.find(x=>x.id===clientId);
+  if(!c||!c.email) return;
+  if(!STATE.emailjsServiceId||!STATE.emailjsTemplateId||!STATE.emailjsPublicKey) {
+    alert("⚠️ Configurez EmailJS dans ⚙️ PIN pour envoyer des emails.");
+    return;
+  }
+  // Créer la modal
+  const existing = document.getElementById("promo-client-modal");
+  if(existing) existing.remove();
+  const div = document.createElement("div");
+  div.id = "promo-client-modal";
+  div.className = "modal-bg";
+  div.onclick = (e) => { if(e.target===div) div.remove(); };
+  div.innerHTML = `
+  <div class="modal" style="max-width:420px;">
+    <div class="modal-header">
+      <span style="font-weight:500;">📣 Email promo — ${c.prenom} ${c.nom}</span>
+      <button onclick="document.getElementById('promo-client-modal').remove()" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
+    </div>
+    <div class="modal-body">
+      <div style="font-size:12px;color:#888;margin-bottom:10px;">📧 Destinataire : <strong>${c.email}</strong></div>
+
+      <!-- Templates rapides -->
+      <div style="margin-bottom:10px;">
+        <div style="font-size:12px;color:#888;margin-bottom:6px;">Templates rapides :</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          ${[
+            ["🌸 Nouveautés","Bonjour [Prénom],\n\nNous avons de magnifiques nouveautés qui vous attendent en boutique ! Venez vite avant rupture de stock 😍\n\nOn vous attend avec le sourire !\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres","Nouvelles collections Belle&Jolie 🌸"],
+            ["🏷️ Promo exclusive","Bonjour [Prénom],\n\nParce que vous êtes une cliente fidèle, nous vous réservons une offre exclusive cette semaine !\n\nVenez nous rendre visite et mentionnez cet email pour en bénéficier 🎉\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres","Offre exclusive Belle&Jolie 🏷️"],
+            ["❤️ Vous nous manquez","Bonjour [Prénom],\n\nCela fait un moment que nous ne vous avons pas vue... Vous nous manquez ! 🌸\n\nDe très belles pièces vous attendent en boutique. Venez découvrir nos dernières arrivées !\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres","Vous nous manquez ! — Belle&Jolie ❤️"],
+          ].map(([label,msg,sujet])=>`
+            <button onclick="document.getElementById('pcm-sujet').value=${JSON.stringify(sujet)};document.getElementById('pcm-msg').value=${JSON.stringify(msg)};"
+              style="padding:5px 10px;background:#f5f0f2;border:none;border-radius:7px;cursor:pointer;font-size:11px;color:#555;">${label}</button>
+          `).join("")}
+        </div>
+      </div>
+
+      <div style="margin-bottom:8px;">
+        <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Objet</label>
+        <input id="pcm-sujet" type="text" placeholder="ex: Nouveautés chez Belle&Jolie !"
+          style="width:100%;box-sizing:border-box;font-size:13px;"/>
+      </div>
+      <div style="margin-bottom:12px;">
+        <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Message</label>
+        <textarea id="pcm-msg" rows="6"
+          placeholder="Bonjour [Prénom],&#10;&#10;Votre message..."
+          style="width:100%;box-sizing:border-box;border:1px solid #ddd;border-radius:8px;padding:10px;font-family:inherit;font-size:13px;resize:vertical;"></textarea>
+        <div style="font-size:11px;color:#aaa;margin-top:2px;">[Prénom] sera remplacé par le prénom de la cliente.</div>
+      </div>
+      <div id="pcm-status" style="display:none;margin-bottom:10px;padding:10px;border-radius:8px;font-size:13px;text-align:center;"></div>
+      <button onclick="envoyerEmailPromoClient('${c.id}')"
+        style="width:100%;padding:13px;background:#993556;color:#fff;border:none;border-radius:9px;cursor:pointer;font-weight:500;font-size:14px;">
+        📣 Envoyer à ${c.prenom}
+      </button>
+    </div>
+  </div>`;
+  document.body.appendChild(div);
+};
+
+window.envoyerEmailPromoClient = async (clientId) => {
+  const c = STATE.clients.find(x=>x.id===clientId);
+  if(!c||!c.email) return;
+  const sujet = document.getElementById("pcm-sujet")?.value?.trim();
+  const message = document.getElementById("pcm-msg")?.value?.trim();
+  if(!sujet||!message) { alert("Veuillez remplir l'objet et le message."); return; }
+
+  const statusEl = document.getElementById("pcm-status");
+  if(statusEl){ statusEl.style.display="block"; statusEl.style.background="#e6f1fb"; statusEl.style.color="#185fa5"; statusEl.textContent="⏳ Envoi en cours..."; }
+
+  const msgPerso = message.replace(/\[Prénom\]/g, c.prenom);
+  const html = `<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"/></head>
+<body style="margin:0;padding:0;background:#f5f0f2;font-family:Georgia,serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0f2;padding:30px 0;">
+<tr><td align="center">
+<table width="560" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+  <tr><td style="background:#fff;border-radius:16px 16px 0 0;padding:24px 40px 16px;text-align:center;border-bottom:3px solid #993556;">
+    <img src="https://i.imgur.com/NRbcVPO.png" width="100" height="100" alt="Belle&Jolie" style="border-radius:50%;"/>
+    <div style="font-size:22px;font-weight:700;color:#993556;font-family:Georgia,serif;margin-top:8px;">Belle&amp;Jolie</div>
+    <div style="font-size:12px;color:#aaa;margin-top:2px;">12 rue du Bois Merrain, 28000 Chartres</div>
+  </td></tr>
+  <tr><td style="background:#fff;padding:28px 40px 36px;">
+    <p style="font-size:16px;color:#333;margin:0 0 16px;">Bonjour ${c.prenom},</p>
+    <div style="font-size:14px;color:#555;line-height:1.8;white-space:pre-line;margin-bottom:28px;">${msgPerso.replace(/\n/g,"<br/>")}</div>
+    <div style="text-align:center;margin-top:24px;">
+      <div style="display:inline-block;background:#993556;color:#fff;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:600;">Belle&amp;Jolie vous attend ! 🌸</div>
+    </div>
+  </td></tr>
+  <tr><td style="background:#f9f6f8;padding:16px 40px;text-align:center;border-radius:0 0 16px 16px;border-top:0.5px solid #e8e0e4;">
+    <div style="font-size:12px;color:#aaa;">Belle&amp;Jolie · 12 rue du Bois Merrain, 28000 Chartres</div>
+    <div style="font-size:11px;color:#ccc;margin-top:4px;">⚠️ Merci de ne pas répondre à cet email. Contact : boutiquebelleetjolie@gmail.com</div>
+  </td></tr>
+</table>
+</td></tr>
+</table>
+</body></html>`;
+
+  try {
+    await emailjs.init(STATE.emailjsPublicKey);
+    await emailjs.send(STATE.emailjsServiceId, STATE.emailjsTemplateId, {
+      to_email: c.email,
+      to_name:  c.prenom,
+      articles: msgPerso,
+      total:    sujet,
+      paiement: "",
+      vendeur:  "Belle&Jolie",
+      html_content: html,
+    });
+    if(statusEl){ statusEl.style.background="#eaf3de"; statusEl.style.color="#3b6d11"; statusEl.textContent=`✅ Email envoyé à ${c.email} !`; }
+    // Historique
+    STATE.historiquePromo = [...(STATE.historiquePromo||[]), {
+      id:uid("PR"), date:new Date().toISOString(),
+      sujet, nb:1, erreurs:0,
+      segment:`Individuel — ${c.prenom} ${c.nom}`,
+    }];
+    lsSet("bj_historique_promo", STATE.historiquePromo);
+    setTimeout(()=>{ const m=document.getElementById("promo-client-modal"); if(m)m.remove(); }, 2000);
+  } catch(err) {
+    console.error("Erreur envoi promo:", err);
+    if(statusEl){ statusEl.style.background="#fcebeb"; statusEl.style.color="#a32d2d"; statusEl.textContent="❌ Erreur lors de l'envoi. Vérifiez la configuration EmailJS."; }
+  }
+};
+
 window.envoyerRappelFidelite = (clientId) => {
   const c = STATE.clients.find(x=>x.id===clientId);
   if(!c) return;
@@ -5027,6 +5152,11 @@ function renderClientDetail() {
             ${c.anniversaire&&c.email?"":"disabled"}
             style="padding:10px;background:#fbeaf0;color:#993556;border:1px solid #f0c0cc;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;opacity:${c.anniversaire&&c.email?1:0.4};grid-column:1/-1;">
             🎁 Envoyer bon anniversaire 5€
+          </button>
+          <button onclick="ouvrirModalPromoClient('${c.id}')"
+            ${c.email?"":"disabled"}
+            style="padding:10px;background:#993556;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;opacity:${c.email?1:0.4};grid-column:1/-1;">
+            📣 Envoyer un email promo personnalisé
           </button>
         </div>
         ${(()=>{
