@@ -1095,6 +1095,9 @@ window.exporterDonnees = () => {
     reservations:STATE.reservations||[], historiquePromo:STATE.historiquePromo||[],
     // Config EmailJS incluse pour ne pas la perdre si le navigateur efface ses données
     emailjsServiceId:STATE.emailjsServiceId||"", emailjsTemplateId:STATE.emailjsTemplateId||"", emailjsPublicKey:STATE.emailjsPublicKey||"",
+    // File d'attente d'emails promo (quota quotidien atteint) + compteur du jour, pour continuer l'envoi depuis un autre appareil
+    promoQueue: STATE.promoQueue || ls("bj_promo_queue", null),
+    envoisEmailJour: ls("bj_ejs_envois_jour", {date:"", count:0}),
   };
   const blob = new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
   const url  = URL.createObjectURL(blob);
@@ -1152,6 +1155,9 @@ window.importerDonnees = (input) => {
         if(!STATE.emailjsServiceId && data.emailjsServiceId)   { STATE.emailjsServiceId=data.emailjsServiceId;   lsSet("bj_ejs_service",data.emailjsServiceId); }
         if(!STATE.emailjsTemplateId && data.emailjsTemplateId) { STATE.emailjsTemplateId=data.emailjsTemplateId; lsSet("bj_ejs_template",data.emailjsTemplateId); }
         if(!STATE.emailjsPublicKey && data.emailjsPublicKey)   { STATE.emailjsPublicKey=data.emailjsPublicKey;   lsSet("bj_ejs_key",data.emailjsPublicKey); }
+        // File d'attente promo + compteur d'envoi du jour : permet de reprendre l'envoi depuis un autre appareil
+        if(data.promoQueue !== undefined) { STATE.promoQueue = data.promoQueue; if(data.promoQueue) lsSet("bj_promo_queue", data.promoQueue); else localStorage.removeItem("bj_promo_queue"); }
+        if(data.envoisEmailJour) { lsSet("bj_ejs_envois_jour", data.envoisEmailJour); }
         render();
         alert("✅ Fusion réussie !\n+"+nouveaux.length+" articles ajoutés\n+"+nvxCli.length+" clients ajoutés"+(ejsRestauree?"\n📧 Config EmailJS restaurée.":""));
         return;
@@ -1187,6 +1193,9 @@ window.importerDonnees = (input) => {
       if(data.emailjsServiceId)  { STATE.emailjsServiceId=data.emailjsServiceId;   lsSet("bj_ejs_service",data.emailjsServiceId); }
       if(data.emailjsTemplateId) { STATE.emailjsTemplateId=data.emailjsTemplateId; lsSet("bj_ejs_template",data.emailjsTemplateId); }
       if(data.emailjsPublicKey)  { STATE.emailjsPublicKey=data.emailjsPublicKey;   lsSet("bj_ejs_key",data.emailjsPublicKey); }
+      // File d'attente promo + compteur d'envoi du jour : permet de reprendre l'envoi depuis un autre appareil
+      if(data.promoQueue !== undefined) { STATE.promoQueue = data.promoQueue; if(data.promoQueue) lsSet("bj_promo_queue", data.promoQueue); else localStorage.removeItem("bj_promo_queue"); }
+      if(data.envoisEmailJour) { lsSet("bj_ejs_envois_jour", data.envoisEmailJour); }
       render();
       alert("✅ Données importées !\nDate sauvegarde : "+new Date(data.date).toLocaleString("fr-FR")+(data.emailjsServiceId?"\n📧 Config EmailJS restaurée.":""));
     } catch(err) { alert("❌ Erreur import : "+err.message); }
