@@ -164,6 +164,25 @@ const INITIAL_CLIENTS = [
   {id:"C002",nom:"Martin",prenom:"Sophie",tel:"0623456789",email:"",cp:"75008",totalAchats:0,montantCumule:0},
 ];
 const CATEGORIES = ["Robes","Hauts","Pantalons","Jupes","Shorts","Vestes","Manteaux","Pulls & Gilets","Ensembles","Combinaisons","Accessoires","Sacs","Chaussures","Beauté","Décoration"];
+// Regroupement "vêtements" utilisé pour les segments croisés (ex: achète des vêtements mais jamais de chaussures)
+const CATEGORIES_VETEMENTS = ["Robes","Hauts","Pantalons","Jupes","Shorts","Vestes","Manteaux","Pulls & Gilets","Ensembles","Combinaisons"];
+
+// Pack de templates prêts à l'emploi pour les emails promo (individuel et groupé)
+// Format : [label affiché sur le bouton, message (avec [Prénom] à remplacer), objet de l'email]
+const PROMO_TEMPLATES = [
+  ["🌸 Nouveautés","Bonjour [Prénom],\n\nDe nouvelles pièces viennent d'arriver en boutique et on a tout de suite pensé à vous ! 🌸\n\nVenez découvrir nos dernières nouveautés avant qu'elles ne partent — les tailles s'envolent vite chez nous 😉\n\nOn vous attend avec le sourire !\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres","Nouvelles collections Belle&Jolie 🌸"],
+  ["🏷️ Promo / Soldes","Bonjour [Prénom],\n\nPetite surprise cette semaine : -XX% sur une sélection d'articles jusqu'au [date] !\n\nUne belle occasion de se faire plaisir 😍 Venez vite, les meilleures pièces partent en premier !\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres","Offre exclusive Belle&Jolie 🏷️"],
+  ["❤️ Vous nous manquez","Bonjour [Prénom],\n\nCela fait un moment que nous ne vous avons pas vue... vous nous manquez ! 🌸\n\nDe très belles pièces vous attendent en boutique. Venez faire un tour, on serait ravies de vous revoir !\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres","Vous nous manquez ! — Belle&Jolie ❤️"],
+  ["🎁 Rappel fidélité","Bonjour [Prénom],\n\nSaviez-vous que vous êtes tout proche de débloquer votre remise fidélité de -20% ? 🎉\n\nEncore quelques achats chez Belle&Jolie et elle sera à vous. On vous attend en boutique !\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres","Plus que quelques achats avant votre récompense ! 🎁"],
+  ["🎂 Anniversaire","Bonjour [Prénom],\n\nToute l'équipe de Belle&Jolie vous souhaite un très joyeux anniversaire ! 🎉\n\nPour l'occasion, on serait ravies de vous voir en boutique et de fêter ça avec vous, autour d'un joli article qui vous fera plaisir 💕\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres","Joyeux anniversaire ! — Belle&Jolie 🎂"],
+  ["💎 VIP / Vente privée","Bonjour [Prénom],\n\nParce que vous faites partie de nos clientes les plus fidèles, on vous ouvre les portes de notre vente privée en avant-première, le [date] !\n\nVenez découvrir nos nouveautés avant tout le monde et profiter d'avantages exclusifs. On a hâte de vous voir 💕\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres","Un accès privilégié rien que pour vous 💎"],
+  ["👗 Réassort","Bonjour [Prénom],\n\nBonne nouvelle : [nom de l'article] est de nouveau disponible en boutique, dans votre taille !\n\nOn vous le garde volontiers si vous nous appelez, ou venez directement en profiter 🌸\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres","De retour en boutique ! 👗"],
+  ["🍂 Nouvelle saison","Bonjour [Prénom],\n\nLa nouvelle collection vient d'arriver chez Belle&Jolie et elle est superbe ! 🍁\n\nVenez découvrir les pièces phares de la saison, du 36 au 50, pour toutes les silhouettes.\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres","La collection est arrivée ! 🍂"],
+  ["⏳ Derniers articles","Bonjour [Prénom],\n\nIl ne reste que quelques exemplaires de [nom de l'article] et ils partent vite !\n\nSi vous aviez craqué dessus, c'est le moment de passer en boutique avant qu'il n'y en ait plus 😉\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres","Dernières pièces disponibles ⏳"],
+  ["👋 Bienvenue","Bonjour [Prénom],\n\nMerci de votre visite chez Belle&Jolie, ravies de vous compter parmi nos clientes !\n\nN'hésitez pas à revenir nous voir, on vous accueillera toujours avec plaisir. Et pensez à notre programme fidélité : plus vous venez, plus vous êtes récompensée 🎁\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres","Bienvenue chez Belle&Jolie ! 👋"],
+  ["🎄 Fêtes de fin d'année","Bonjour [Prénom],\n\nNoël approche et on a plein de jolies idées pour gâter vos proches (ou vous faire plaisir aussi, on ne dira rien 😉) !\n\nVenez découvrir notre sélection spéciale fêtes, en boutique dès maintenant.\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres","Nos idées cadeaux pour les fêtes 🎄"],
+  ["👠 Vêtement → Chaussures","Bonjour [Prénom],\n\nOn a remarqué que vous êtes une fidèle cliente côté vêtements chez Belle&Jolie... mais qu'on ne vous a pas encore vue du côté chaussures ! 👠\n\nAlors pour l'occasion, on vous fait -15% sur toute notre sélection de chaussures, rien que pour vous.\n\nVenez essayer, on est sûres qu'il y en a une paire faite pour vous 😉\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres","Une offre rien que pour vous sur les chaussures 👠"],
+];
 
 // Motifs de retour prédéfinis
 const MOTIFS_RETOUR = [
@@ -4793,11 +4812,7 @@ window.ouvrirModalPromoClient = (clientId) => {
       <div style="margin-bottom:10px;">
         <div style="font-size:12px;color:#888;margin-bottom:6px;">Templates rapides :</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          ${[
-            ["🌸 Nouveautés","Bonjour [Prénom],\n\nNous avons de magnifiques nouveautés qui vous attendent en boutique ! Venez vite avant rupture de stock 😍\n\nOn vous attend avec le sourire !\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres","Nouvelles collections Belle&Jolie 🌸"],
-            ["🏷️ Promo exclusive","Bonjour [Prénom],\n\nParce que vous êtes une cliente fidèle, nous vous réservons une offre exclusive cette semaine !\n\nVenez nous rendre visite et mentionnez cet email pour en bénéficier 🎉\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres","Offre exclusive Belle&Jolie 🏷️"],
-            ["❤️ Vous nous manquez","Bonjour [Prénom],\n\nCela fait un moment que nous ne vous avons pas vue... Vous nous manquez ! 🌸\n\nDe très belles pièces vous attendent en boutique. Venez découvrir nos dernières arrivées !\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres","Vous nous manquez ! — Belle&Jolie ❤️"],
-          ].map(([label,msg,sujet])=>`
+          ${PROMO_TEMPLATES.map(([label,msg,sujet])=>`
             <button onclick="document.getElementById('pcm-sujet').value=${JSON.stringify(sujet)};document.getElementById('pcm-msg').value=${JSON.stringify(msg)};"
               style="padding:5px 10px;background:#f5f0f2;border:none;border-radius:7px;cursor:pointer;font-size:11px;color:#555;">${label}</button>
           `).join("")}
@@ -4849,7 +4864,6 @@ window.envoyerEmailPromoClient = async (clientId) => {
     <div style="font-size:12px;color:#aaa;margin-top:2px;">12 rue du Bois Merrain, 28000 Chartres</div>
   </td></tr>
   <tr><td style="background:#fff;padding:28px 40px 36px;">
-    <p style="font-size:16px;color:#333;margin:0 0 16px;">Bonjour ${c.prenom},</p>
     <div style="font-size:14px;color:#555;line-height:1.8;white-space:pre-line;margin-bottom:28px;">${msgPerso.replace(/\n/g,"<br/>")}</div>
     <div style="text-align:center;margin-top:24px;">
       <div style="display:inline-block;background:#993556;color:#fff;padding:12px 28px;border-radius:8px;font-size:14px;font-weight:600;">Belle&amp;Jolie vous attend ! 🌸</div>
@@ -9938,7 +9952,8 @@ function renderPromo() {
   });
 
   // ── Filtres actifs ──
-  if(!STATE.promoFiltres) STATE.promoFiltres = { base:"tous", inactivite:"", sansCategorie:"" };
+  if(!STATE.promoFiltres) STATE.promoFiltres = { base:"tous", inactivite:"", avecCategorie:"", sansCategorie:"" };
+  if(STATE.promoFiltres.avecCategorie===undefined) STATE.promoFiltres.avecCategorie = "";
   const f = STATE.promoFiltres;
 
   // Base
@@ -9961,11 +9976,22 @@ function renderPromo() {
     });
   }
 
+  // Filtre "a déjà acheté cette catégorie" (utile pour les segments croisés, ex: vêtements → chaussures)
+  if(f.avecCategorie) {
+    liste = liste.filter(c=>{
+      const cats = catsAchetees[c.id];
+      if(!cats) return false; // rien acheté → exclure
+      if(f.avecCategorie==="__VETEMENTS__") return [...cats].some(cat=>CATEGORIES_VETEMENTS.includes(cat));
+      return cats.has(f.avecCategorie);
+    });
+  }
+
   // Filtre "n'a jamais acheté cette catégorie"
   if(f.sansCategorie) {
     liste = liste.filter(c=>{
       const cats = catsAchetees[c.id];
       if(!cats) return true; // rien acheté du tout → inclure
+      if(f.sansCategorie==="__VETEMENTS__") return ![...cats].some(cat=>CATEGORIES_VETEMENTS.includes(cat));
       return !cats.has(f.sansCategorie);
     });
   }
@@ -10016,8 +10042,23 @@ function renderPromo() {
         </div>
       </div>
 
+      <!-- Avec catégorie (segments croisés) -->
+      <div style="margin-bottom:12px;">
+        <div style="font-size:12px;color:#888;margin-bottom:6px;">🛍️ A déjà acheté…</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button onclick="STATE.promoFiltres.avecCategorie='';render()"
+            style="padding:6px 12px;background:${!f.avecCategorie?"#993556":"#f5f0f2"};color:${!f.avecCategorie?"#fff":"#555"};border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:${!f.avecCategorie?600:400};">Peu importe</button>
+          <button onclick="STATE.promoFiltres.avecCategorie='__VETEMENTS__';render()"
+            style="padding:6px 12px;background:${f.avecCategorie==='__VETEMENTS__'?"#993556":"#f5f0f2"};color:${f.avecCategorie==='__VETEMENTS__'?"#fff":"#555"};border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:${f.avecCategorie==='__VETEMENTS__'?600:400};">👗 Vêtements (toutes catégories)</button>
+          ${toutes_cats.map(cat=>`
+            <button onclick="STATE.promoFiltres.avecCategorie='${cat}';render()"
+              style="padding:6px 12px;background:${f.avecCategorie===cat?"#993556":"#f5f0f2"};color:${f.avecCategorie===cat?"#fff":"#555"};border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:${f.avecCategorie===cat?600:400};">${cat}</button>
+          `).join("")}
+        </div>
+      </div>
+
       <!-- Sans catégorie -->
-      <div style="margin-bottom:14px;">
+      <div style="margin-bottom:12px;">
         <div style="font-size:12px;color:#888;margin-bottom:6px;">🏷️ N'a jamais acheté de…</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
           <button onclick="STATE.promoFiltres.sansCategorie='';render()"
@@ -10029,13 +10070,21 @@ function renderPromo() {
         </div>
       </div>
 
+      <!-- Préréglage rapide : segment croisé vêtements → chaussures -->
+      <div style="margin-bottom:14px;">
+        <button onclick="STATE.promoFiltres={base:'actifs',inactivite:'',avecCategorie:'__VETEMENTS__',sansCategorie:'Chaussures'};STATE.promoMessage=${JSON.stringify(PROMO_TEMPLATES.find(t=>t[0].includes("Chaussures"))?.[1]||"")};STATE.promoSujet=${JSON.stringify(PROMO_TEMPLATES.find(t=>t[0].includes("Chaussures"))?.[2]||"")};render()"
+          style="padding:8px 14px;background:#fbeaf0;border:1px solid #f0c0cc;border-radius:8px;cursor:pointer;font-size:12px;color:#993556;font-weight:500;">
+          👠 Préréglage : achète des vêtements mais jamais de chaussures
+        </button>
+      </div>
+
       <!-- Résultat -->
       <div style="background:${liste.length>0?"#fbeaf0":"#f5f0f2"};border-radius:10px;padding:12px;display:flex;justify-content:space-between;align-items:center;">
         <div style="font-size:13px;font-weight:500;color:${liste.length>0?"#993556":"#888"};">
           ${liste.length>0?`✅ ${liste.length} cliente${liste.length>1?"s":""} sélectionnée${liste.length>1?"s":""}`:
           "⚠️ Aucune cliente ne correspond à ces critères"}
         </div>
-        ${liste.length>0?`<button onclick="STATE.promoFiltres={base:'tous',inactivite:'',sansCategorie:''};render()" style="background:none;border:1px solid #f0c0cc;border-radius:6px;padding:3px 10px;font-size:11px;color:#993556;cursor:pointer;">Réinitialiser</button>`:""}
+        ${liste.length>0?`<button onclick="STATE.promoFiltres={base:'tous',inactivite:'',avecCategorie:'',sansCategorie:''};render()" style="background:none;border:1px solid #f0c0cc;border-radius:6px;padding:3px 10px;font-size:11px;color:#993556;cursor:pointer;">Réinitialiser</button>`:""}
       </div>
       ${liste.length>0?`
         <div style="margin-top:10px;background:#f9f6f8;border-radius:8px;padding:10px;max-height:100px;overflow-y:auto;">
@@ -10054,14 +10103,7 @@ function renderPromo() {
       <div style="margin-bottom:12px;">
         <div style="font-size:12px;color:#888;margin-bottom:6px;">Templates rapides :</div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
-          ${[
-            ["🌸 Nouveautés","Découvrez nos nouvelles collections ! De belles pièces vous attendent en boutique. Venez vite avant rupture de stock 😍","Nouvelles collections Belle&Jolie 🌸"],
-            ["🏷️ Soldes","Les soldes sont là ! Profitez de remises exceptionnelles sur une sélection d'articles. On vous attend en boutique avec le sourire 🎉","Soldes chez Belle&Jolie 🏷️"],
-            ["🎁 Offre spéciale","Parce que vous êtes une cliente fidèle, nous vous réservons une surprise ! Venez nous rendre visite cette semaine pour en profiter 🎁","Offre réservée à nos clientes fidèles 🎁"],
-            ["❤️ Fidélité","Merci pour votre fidélité ! Votre programme de fidélité avance bien. N'oubliez pas que votre prochaine remise de -20% arrive bientôt 💕","Votre fidélité Belle&Jolie ❤️"],
-            ["🎯 Rejoignez notre programme fidélité","Bonjour [Prénom],\n\nNous avons remarqué que vous nous rendez visite régulièrement, et nous en sommes ravies !\n\nSaviez-vous que notre programme de fidélité vous offre -20% tous les 8 passages dès 40€ d'achat par visite ?\n\nLa prochaine fois, n'hésitez pas à compléter votre panier pour atteindre les 40€ et faire valider votre passage fidélité.\n\nBelle&Jolie vous remercie de votre fidélité 💕\n\nBelle&Jolie — Mode & Élégance\n⚠️ Ne pas répondre. Contact : boutiquebelleetjolie@gmail.com","Votre programme fidélité Belle&Jolie 🎯"],
-            ["😴 On vous manque ?","Bonjour [Prénom],\n\nCela fait un moment que nous ne vous avons pas vue en boutique...\n\nNous avons de très belles nouveautés qui vous attendent !\nVenez nous rendre visite, nous serons ravies de vous retrouver 🌸\n\nEn cadeau de retour, mentionnez cet email en boutique et bénéficiez de 10% sur votre prochain achat.\n\nBelle&Jolie — Mode & Élégance\n⚠️ Ne pas répondre. Contact : boutiquebelleetjolie@gmail.com","Vous nous manquez ! Revenez chez Belle&Jolie 🌸"],
-          ].map(([label,msg,sujet])=>`
+          ${PROMO_TEMPLATES.map(([label,msg,sujet])=>`
             <button onclick="STATE.promoMessage=${JSON.stringify(msg)};STATE.promoSujet=${JSON.stringify(sujet)};render()"
               style="padding:6px 12px;background:#f5f0f2;border:none;border-radius:7px;cursor:pointer;font-size:12px;color:#555;">
               ${label}
@@ -10124,7 +10166,7 @@ function renderPromo() {
 
 window.envoyerEmailsPromo = async () => {
   // Recalculer la liste avec les filtres actifs
-  const f = STATE.promoFiltres || {base:"tous", inactivite:"", sansCategorie:""};
+  const f = STATE.promoFiltres || {base:"tous", inactivite:"", avecCategorie:"", sansCategorie:""};
   const maintenant = new Date();
   const dernierAchat = {};
   const catsAchetees = {};
@@ -10149,8 +10191,19 @@ window.envoyerEmailsPromo = async () => {
     const limite = new Date(maintenant.getTime() - jours*24*60*60*1000);
     seg = seg.filter(c=>{ const da=dernierAchat[c.id]; if(!da) return jours===9999; return da < limite; });
   }
+  if(f.avecCategorie) {
+    seg = seg.filter(c=>{
+      const cats=catsAchetees[c.id]; if(!cats) return false;
+      if(f.avecCategorie==="__VETEMENTS__") return [...cats].some(cat=>CATEGORIES_VETEMENTS.includes(cat));
+      return cats.has(f.avecCategorie);
+    });
+  }
   if(f.sansCategorie) {
-    seg = seg.filter(c=>{ const cats=catsAchetees[c.id]; if(!cats) return true; return !cats.has(f.sansCategorie); });
+    seg = seg.filter(c=>{
+      const cats=catsAchetees[c.id]; if(!cats) return true;
+      if(f.sansCategorie==="__VETEMENTS__") return ![...cats].some(cat=>CATEGORIES_VETEMENTS.includes(cat));
+      return !cats.has(f.sansCategorie);
+    });
   }
 
   const sujet   = STATE.promoSujet?.trim();
@@ -10159,9 +10212,11 @@ window.envoyerEmailsPromo = async () => {
 
   // Libellé des filtres pour l'historique
   const baseLabels = {tous:"Toutes",actifs:"Ont déjà acheté",fideles:"Fidèles 7+",nvelles:"Jamais acheté"};
+  const catLabel = (v) => v==="__VETEMENTS__" ? "Vêtements" : v;
   let segLabel = baseLabels[f.base]||"Toutes";
   if(f.inactivite) segLabel += ` · inactives +${f.inactivite}j`;
-  if(f.sansCategorie) segLabel += ` · sans ${f.sansCategorie}`;
+  if(f.avecCategorie) segLabel += ` · achète ${catLabel(f.avecCategorie)}`;
+  if(f.sansCategorie) segLabel += ` · sans ${catLabel(f.sansCategorie)}`;
 
   if(!confirm(`Envoyer cet email à ${seg.length} cliente${seg.length>1?"s":""} ?\n\nObjet : ${sujet}\nSegment : ${segLabel}\n\nCette action est irréversible.`)) return;
 
