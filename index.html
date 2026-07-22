@@ -1416,6 +1416,16 @@ function renderCaisse() {
                 const montantActuel = STATE.client.montantCumule||0;
                 const montantAvecPanier = montantActuel + panierTotal;
                 const achatsAvecPanier = achatsActuels + (panierTotal>=40?1:0);
+                // Compter les achats >= 40€ sur les 8 derniers passages (même logique que calcPanier)
+                const nbPassages40 = STATE.client ? (STATE.ventes||[])
+                  .filter(v=>!v.annulee&&!v.test&&v.client?.id===STATE.client.id)
+                  .sort((a,b)=>new Date(b.date)-new Date(a.date))
+                  .slice(0,8)
+                  .filter(v=>{
+                    const net=(v.panier||[]).filter(x=>!x.retour).reduce((s,x)=>s+x.price*(x.qty||1),0)
+                             -(v.panier||[]).filter(x=>x.retour&&!x.avoirId).reduce((s,x)=>s+x.price*(x.qty||1),0);
+                    return net>=40;
+                  }).length : 0;
                 // Programme -20% : 8 passages × 40€
                 const passagesVers20 = Math.min(nbPassages40 + (panierTotal>=40?1:0), 8);
                 const manqueVers20 = 8 - passagesVers20;
@@ -4905,7 +4915,6 @@ window.envoyerEmailPromoClient = async (clientId) => {
       total:    sujet,
       paiement: "",
       vendeur:  "Belle&Jolie",
-      html_content: html,
     });
     if(statusEl){ statusEl.style.background="#eaf3de"; statusEl.style.color="#3b6d11"; statusEl.textContent=`✅ Email envoyé à ${c.email} !`; }
     // Historique
@@ -5096,7 +5105,6 @@ window.envoyerEmailBienvenue = async (client, code, dateFin) => {
       to_email:    (client.email||"").trim().toLowerCase(),
       to_name:     client.prenom,
       subject:     "Bienvenue chez Belle&Jolie - Votre bon cadeau de 5 euros",
-      html_content: html,
       message:     html,
     });
   } catch(err) {
@@ -7985,7 +7993,6 @@ window.envoyerEmailJS = async () => {
       to_email:    dest,
       to_name:     v?.client?.prenom||(v?.avoir?.client?.prenom)||"Madame",
       subject:     sujet,
-      html_content: msgHtml,
       message:     msgHtml,
     });
     
@@ -9156,7 +9163,6 @@ window.envoyerReleveCloture = async (z, ventesJour, dateStr) => {
       to_name: 'Belle&Jolie',
       subject: 'Relevé clôture ' + dateLocale + ' — CA ' + eur(z.caTTC),
       message: html,
-      html_content: html,
     });
     console.log('✅ Relevé clôture envoyé');
   } catch(err) {
@@ -9431,7 +9437,6 @@ window.envoyerBonAnniversaire = async (client, annee) => {
       to_email:    client.email,
       to_name:     client.prenom,
       subject:     "Joyeux Anniversaire " + client.prenom + " 🎂 — Votre cadeau Belle&Jolie",
-      html_content: htmlAnniv,
       message:     htmlAnniv,
     });
     console.log(`✅ Bon anniversaire envoyé à ${client.email}`);
@@ -10321,7 +10326,6 @@ window.envoyerEmailsPromo = async () => {
         to_name:    c.prenom,
         subject:    sujet,
         message:    htmlPromo,
-        html_content: htmlPromo,
         date_achat: new Date().toLocaleDateString("fr-FR"),
         articles:   msgPersonnalise,
         total:      sujet,
