@@ -218,22 +218,36 @@ const MOTIFS_RETOUR = [
 ];
 
 // ── OBJECTIFS CA ─────────────────────────────────────────────────────────
+// Objectifs principaux revus à +6% le 23/07/2026 (base précédente : 170 000€ → 180 200€)
 const OBJECTIFS_MENSUEL = {
-  0:14000,  // Janvier  — soldes d'hiver
-  1: 9000,  // Février  — creux
-  2:13000,  // Mars     — printemps
-  3:15000,  // Avril    — printemps
-  4:18000,  // Mai      — beau temps
-  5:18000,  // Juin     — été
-  6:14000,  // Juillet  — vacances
+  0:14840,  // Janvier  — soldes d'hiver
+  1: 9540,  // Février  — creux
+  2:13780,  // Mars     — printemps
+  3:15900,  // Avril    — printemps
+  4:19080,  // Mai      — beau temps
+  5:19080,  // Juin     — été
+  6:14840,  // Juillet  — vacances
   7:    0,  // Août     — fermé
-  8:13000,  // Septembre— rentrée
-  9:14000,  // Octobre  — automne
-  10:18000, // Novembre — Black Friday/Noël
-  11:24000, // Décembre — fêtes
-}; // CA annuel objectif : 170 000€
-// Objectifs boostés +17%
-const OBJECTIFS_BOOST = Object.fromEntries(Object.entries(OBJECTIFS_MENSUEL).map(([k,v])=>[k,Math.round(v*1.17)]));
+  8:13780,  // Septembre— rentrée
+  9:14840,  // Octobre  — automne
+  10:19080, // Novembre — Black Friday/Noël
+  11:25440, // Décembre — fêtes
+}; // CA annuel objectif (11 mois actifs) : 180 200€
+// Objectifs secondaires (anciennement "boostés +17%") revus à +6% le 23/07/2026 (base précédente : 198 900€ → 210 834€)
+const OBJECTIFS_BOOST = {
+  0:17363,
+  1:11162,
+  2:16123,
+  3:18603,
+  4:22324,
+  5:22324,
+  6:17363,
+  7:    0,
+  8:16123,
+  9:17363,
+  10:22324,
+  11:29765,
+}; // Total annuel objectif secondaire : 210 834€
 // % du CA hebdo par jour — samedi à 28%, semaine réduite en conséquence
 // Total = 100% (dimanche fermé)
 const PCT_JOUR = {0:7, 1:11, 2:19, 3:13, 4:21, 5:29, 6:0};
