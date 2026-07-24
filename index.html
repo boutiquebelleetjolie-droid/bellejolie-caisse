@@ -532,6 +532,8 @@ let STATE = {
   emailjsServiceId:  ls("bj_ejs_service",""),
   emailjsTemplateId: ls("bj_ejs_template",""),
   emailjsPublicKey:  ls("bj_ejs_key",""),
+  // Clé API Gemini (pour la lecture automatique des factures fournisseurs)
+  geminiApiKey: ls("bj_gemini_key",""),
   // Erreur login
   loginError: "",
   loginPin: "",
@@ -1087,6 +1089,27 @@ function renderVendeurSettings() {
           ${ejsOk?`<div style="font-size:11px;color:#3b6d11;margin-top:6px;text-align:center;">✅ EmailJS actif — les emails s'envoient directement</div>`:""}
         </div>
 
+        <!-- Config Gemini (lecture auto des factures) -->
+        <div style="border-top:0.5px solid #e8e0e4;padding-top:14px;">
+          <div style="font-weight:500;font-size:13px;margin-bottom:4px;">🧾 Clé API Gemini (lecture auto des factures)</div>
+          <div style="font-size:12px;color:#888;margin-bottom:10px;">
+            Utilisée pour lire automatiquement le contenu des factures fournisseurs (Stock → Réception facture).
+            <a href="https://aistudio.google.com" target="_blank" style="color:#185fa5;">→ aistudio.google.com (gratuit)</a>
+          </div>
+          <div style="margin-bottom:10px;">
+            <label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Clé API</label>
+            <input type="text" value="${STATE.geminiApiKey||''}"
+              oninput="STATE.geminiApiKey=this.value"
+              placeholder="ex: AQ.Ab8RN6..."
+              style="width:100%;box-sizing:border-box;"/>
+          </div>
+          <button onclick="sauvegarderGeminiKey()"
+            style="width:100%;padding:10px;background:${STATE.geminiApiKey?"#3b6d11":"#185fa5"};color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">
+            ${STATE.geminiApiKey?"✅ Clé Gemini configurée — Mettre à jour":"💾 Sauvegarder la clé Gemini"}
+          </button>
+          ${STATE.geminiApiKey?`<div style="font-size:11px;color:#3b6d11;margin-top:6px;text-align:center;">✅ Lecture automatique des factures active</div>`:""}
+        </div>
+
       </div>
     </div>
   </div>`;
@@ -1100,6 +1123,12 @@ window.sauvegarderEmailJS = () => {
   render();
 };
 
+window.sauvegarderGeminiKey = () => {
+  lsSet('bj_gemini_key', STATE.geminiApiKey||"");
+  alert("✅ Clé API Gemini sauvegardée !");
+  render();
+};
+
 window.exporterDonnees = () => {
   const data = {
     version:"2.0", date:new Date().toISOString(),
@@ -1110,6 +1139,7 @@ window.exporterDonnees = () => {
     reservations:STATE.reservations||[], historiquePromo:STATE.historiquePromo||[],
     // Config EmailJS incluse pour ne pas la perdre si le navigateur efface ses données
     emailjsServiceId:STATE.emailjsServiceId||"", emailjsTemplateId:STATE.emailjsTemplateId||"", emailjsPublicKey:STATE.emailjsPublicKey||"",
+    geminiApiKey:STATE.geminiApiKey||"",
     // File d'attente d'emails promo (quota quotidien atteint) + compteur du jour, pour continuer l'envoi depuis un autre appareil
     promoQueue: STATE.promoQueue || ls("bj_promo_queue", null),
     envoisEmailJour: ls("bj_ejs_envois_jour", {date:"", count:0}),
@@ -1170,6 +1200,7 @@ window.importerDonnees = (input) => {
         if(!STATE.emailjsServiceId && data.emailjsServiceId)   { STATE.emailjsServiceId=data.emailjsServiceId;   lsSet("bj_ejs_service",data.emailjsServiceId); }
         if(!STATE.emailjsTemplateId && data.emailjsTemplateId) { STATE.emailjsTemplateId=data.emailjsTemplateId; lsSet("bj_ejs_template",data.emailjsTemplateId); }
         if(!STATE.emailjsPublicKey && data.emailjsPublicKey)   { STATE.emailjsPublicKey=data.emailjsPublicKey;   lsSet("bj_ejs_key",data.emailjsPublicKey); }
+        if(!STATE.geminiApiKey && data.geminiApiKey) { STATE.geminiApiKey=data.geminiApiKey; lsSet("bj_gemini_key",data.geminiApiKey); }
         // File d'attente promo + compteur d'envoi du jour : permet de reprendre l'envoi depuis un autre appareil
         if(data.promoQueue !== undefined) { STATE.promoQueue = data.promoQueue; if(data.promoQueue) lsSet("bj_promo_queue", data.promoQueue); else localStorage.removeItem("bj_promo_queue"); }
         if(data.envoisEmailJour) { lsSet("bj_ejs_envois_jour", data.envoisEmailJour); }
@@ -1208,6 +1239,7 @@ window.importerDonnees = (input) => {
       if(data.emailjsServiceId)  { STATE.emailjsServiceId=data.emailjsServiceId;   lsSet("bj_ejs_service",data.emailjsServiceId); }
       if(data.emailjsTemplateId) { STATE.emailjsTemplateId=data.emailjsTemplateId; lsSet("bj_ejs_template",data.emailjsTemplateId); }
       if(data.emailjsPublicKey)  { STATE.emailjsPublicKey=data.emailjsPublicKey;   lsSet("bj_ejs_key",data.emailjsPublicKey); }
+      if(data.geminiApiKey) { STATE.geminiApiKey=data.geminiApiKey; lsSet("bj_gemini_key",data.geminiApiKey); }
       // File d'attente promo + compteur d'envoi du jour : permet de reprendre l'envoi depuis un autre appareil
       if(data.promoQueue !== undefined) { STATE.promoQueue = data.promoQueue; if(data.promoQueue) lsSet("bj_promo_queue", data.promoQueue); else localStorage.removeItem("bj_promo_queue"); }
       if(data.envoisEmailJour) { lsSet("bj_ejs_envois_jour", data.envoisEmailJour); }
@@ -3572,7 +3604,13 @@ window.scannerFacture = async (input) => {
     });
 
     const mediaType = file.type || "image/jpeg";
-    const GEMINI_KEY = "AQ.Ab8RN6IrfEXHmL3rr6QbrMzRv8k-KdAxWudBKXCbPsXXXrobJg";
+    const GEMINI_KEY = STATE.geminiApiKey || "";
+    if(!GEMINI_KEY) {
+      STATE.receptionScanLoading = false;
+      STATE.receptionScanError = "Configurez votre clé API Gemini dans ⚙️ PIN pour utiliser la lecture automatique des factures.";
+      render();
+      return;
+    }
 
     const callGemini = async (parts, maxTokens) => {
       const MODELS = ["gemini-2.5-flash","gemini-2.5-pro","gemini-2.0-flash","gemini-2.0-flash-001","gemini-2.0-flash-lite-001"];
