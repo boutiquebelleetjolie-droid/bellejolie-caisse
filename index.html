@@ -3613,7 +3613,8 @@ window.scannerFacture = async (input) => {
     }
 
     const callGemini = async (parts, maxTokens) => {
-      const MODELS = ["gemini-2.5-flash","gemini-2.5-pro","gemini-2.0-flash","gemini-2.0-flash-001","gemini-2.0-flash-lite-001"];
+      // gemini-2.0-* retirés (arrêtés le 01/06/2026) ; gemini-2.5-pro payant uniquement depuis avril 2026 (quota gratuit = 0)
+      const MODELS = ["gemini-flash-latest","gemini-2.5-flash","gemini-2.5-flash-lite","gemini-flash-lite-latest"];
       let lastErr = "Aucun modèle disponible";
       for(let mi = 0; mi < MODELS.length; mi++) {
         const model = MODELS[mi];
@@ -3623,8 +3624,10 @@ window.scannerFacture = async (input) => {
         });
         const d = await resp.json();
         const errMsg = (d.error && d.error.message) ? d.error.message : "";
-        if(errMsg.indexOf("no longer available") >= 0 || errMsg.indexOf("not found") >= 0) {
-          lastErr = errMsg;
+        const isRetryable = errMsg.indexOf("no longer available")>=0 || errMsg.indexOf("not found")>=0
+          || errMsg.indexOf("quota")>=0 || errMsg.indexOf("RESOURCE_EXHAUSTED")>=0 || resp.status===429 || resp.status===404;
+        if(isRetryable) {
+          lastErr = errMsg || ("Erreur HTTP "+resp.status);
           continue;
         }
         if(d.error) throw new Error(d.error.message);
