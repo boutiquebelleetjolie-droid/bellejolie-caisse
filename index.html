@@ -3944,7 +3944,7 @@ function renderStock() {
             html += '</div></div>';
           }
 
-          const catKey = ('cat_'+cat).replace(/[^a-zA-Z0-9_]/g,'_');
+          const catKey = ('cat_'+groupe+'_'+cat).replace(/[^a-zA-Z0-9_]/g,'_');
           if(STATE[catKey]===undefined) STATE[catKey] = false;
           const catOuvert = STATE[catKey];
           html += '<div data-k="'+catKey+'" onclick="toggleCatStock(this.dataset.k)" style="cursor:pointer;padding:6px 24px;font-size:12px;color:#185fa5;user-select:none;">'+(catOuvert?'▲ Masquer les articles':'▼ Voir les '+prodCat.length+' article'+(prodCat.length>1?'s':''))+'</div>';
