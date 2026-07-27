@@ -3795,7 +3795,7 @@ prods.forEach(p=>{
   t += '<td style="padding:9px 6px;">'+photo+'</td>';
   t += '<td style="padding:9px 6px;font-family:monospace;font-size:12px;">'+p.ref+'</td>';
   const dernierReassort = p.dernierReassort ? new Date(p.dernierReassort).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}) : null;
-  t += '<td style="padding:9px 6px;"><div style="font-weight:500;">'+p.name+'</div><div style="font-size:11px;color:#888;">'+p.barcode+(dernierReassort?' · 📦 '+dernierReassort:'')+'</div></td>';
+  t += '<td style="padding:9px 6px;"><div style="font-weight:500;">'+p.name+'</div>'+(p.marque?'<div style="font-size:10px;color:#993556;font-weight:600;text-transform:uppercase;">'+p.marque+'</div>':'')+'<div style="font-size:11px;color:#888;">'+p.barcode+(dernierReassort?' · 📦 '+dernierReassort:'')+'</div></td>';
   const moisEnReserve = p.enReserve && p.dateReserve ? Math.floor((Date.now()-new Date(p.dateReserve))/(1000*60*60*24*30)) : 0;
   const alerteReserve = moisEnReserve >= 5;
   // Vérifier si l'article a des réservations clients actives
@@ -4165,6 +4165,7 @@ window.saveProd = () => {
   const prod = {
     id:             STATE.editProdId || uid("P"),
     name:           f.name.trim(),
+    marque:         (f.marque||"").trim(),
     category:       f.category||"",
     price:          parseFloat(f.price),
     stock:          nouveauStock,
@@ -4219,8 +4220,8 @@ window.openProdModal = id => {
   }
   STATE.editProdId=id;
   STATE._newCouleur = "";
-  if(id){const p=STATE.products.find(x=>x.id===id);STATE.prodForm={name:p.name,category:p.category,price:p.price,prixAchat:p.prixAchat||"",_coeffSaisi:"",stock:p.stock,ref:p.ref,barcode:p.barcode,tailles:p.tailles||[],couleurs:p.couleurs||[],photo:p.photo||"",stockVariantes:{...(p.stockVariantes||{})},grandeTaille:p.grandeTaille||false};}
-  else STATE.prodForm={name:"",category:"",price:"",prixAchat:"",_coeffSaisi:"",stock:0,ref:uid("REF-"),barcode:genBC(),tailles:[],couleurs:[],photo:"",stockVariantes:{},grandeTaille:false,enReserve:false};
+  if(id){const p=STATE.products.find(x=>x.id===id);STATE.prodForm={name:p.name,marque:p.marque||"",category:p.category,price:p.price,prixAchat:p.prixAchat||"",_coeffSaisi:"",stock:p.stock,ref:p.ref,barcode:p.barcode,tailles:p.tailles||[],couleurs:p.couleurs||[],photo:p.photo||"",stockVariantes:{...(p.stockVariantes||{})},grandeTaille:p.grandeTaille||false};}
+  else STATE.prodForm={name:"",marque:"",category:"",price:"",prixAchat:"",_coeffSaisi:"",stock:0,ref:uid("REF-"),barcode:genBC(),tailles:[],couleurs:[],photo:"",stockVariantes:{},grandeTaille:false,enReserve:false};
   STATE.showProdModal=true; render();
 };
 window.openBCModal  = id => { STATE.showBCModal=STATE.products.find(p=>p.id===id); STATE.etiquetteTailleVal=''; STATE.etiquetteCouleurVal=''; render(); };
@@ -4378,6 +4379,7 @@ function renderProdModal() {
     +'<div class="modal-body">'
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">'
     +'<div style="grid-column:1/-1;"><label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Nom *</label><input value="'+f.name+'" oninput="STATE.prodForm.name=this.value" style="width:100%;box-sizing:border-box;margin-bottom:10px;"/></div>'
+    +'<div style="grid-column:1/-1;"><label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Marque</label><input value="'+(f.marque||'')+'" oninput="STATE.prodForm.marque=this.value" placeholder="Ex: Naf Naf, Zara..." style="width:100%;box-sizing:border-box;margin-bottom:10px;"/></div>'
     +'<div><label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Catégorie</label><select onchange="STATE.prodForm.category=this.value;render()" style="width:100%;box-sizing:border-box;margin-bottom:6px;"><option></option>'+catHTML+'</select>'      +(['Robes','Hauts','Pantalons','Jupes','Shorts','Vestes','Manteaux','Pulls & Gilets','Ensembles','Combinaisons'].includes(f.category)?'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#555;cursor:pointer;margin-bottom:10px;"><input type="checkbox" '+(f.grandeTaille?'checked':'')+' onchange="STATE.prodForm.grandeTaille=this.checked" style="width:16px;height:16px;"/> Grande taille (à partir du 42/44)</label>':'<div style="margin-bottom:6px;"></div>')      +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#854f0b;cursor:pointer;margin-bottom:10px;background:#fff3e8;border-radius:7px;padding:6px 10px;"><input type="checkbox" '+(f.enReserve?'checked':'')+' onchange="STATE.prodForm.enReserve=this.checked" style="width:16px;height:16px;"/> 📦 En réserve (pas encore en vente)</label>'      +'</div>'
     +'<div></div>'
     +(isV1?blocPrix:"")
@@ -4692,7 +4694,7 @@ window.imprimerToutStock = () => {
     const infos = [ligne.taille?'T.'+ligne.taille:'', ligne.couleur&&ligne.couleur!=='_'?ligne.couleur:''].filter(Boolean).join(' · ');
     for(let i=0;i<ligne.qty;i++) {
       etiqHtml += `<div class="etiq">
-        <div class="etiq-name">${p.name.length>26?p.name.slice(0,26)+"…":p.name}</div>
+        <div class="etiq-name">${(()=>{const full=(p.marque?p.marque+" — ":"")+p.name;return full.length>26?full.slice(0,26)+"…":full;})()}</div>
         <div class="etiq-ref">${(p.ref+(infos?" · "+infos:"")).slice(0,30)}${p.grandeTaille?" · GT":""}</div>
         <img src="${bcImg}" class="etiq-bc"/>
         ${ligneItem&&ligneItem.prixOriginal ? `<div class="etiq-prix"><span style="text-decoration:line-through;color:#aaa;font-size:9px;">${eur(ligneItem.prixOriginal)}</span> ${eur(p.price)}</div>` : `<div class="etiq-prix">${eur(p.price)}</div>`}
@@ -4767,6 +4769,7 @@ window.imprimerEtiquettes = () => {
   const etiq = `
   <div class="etiq">
     <div class="nom">${p.name}</div>
+    ${p.marque?`<div class="marque">${p.marque}</div>`:""}
     ${desig?`<div class="desig">${desig}</div>`:""}
     <div class="ref">${p.ref}${p.category?" · "+p.category:""}${tailleVal?" · T."+tailleVal:""}${couleurVal?" · "+couleurVal:""}</div>
     <svg width="${svgW}" height="${cfg.bcH+4}" viewBox="${viewBox||'0 0 '+svgW+' '+cfg.bcH}" preserveAspectRatio="none" style="display:block;margin:2px auto 0;max-width:100%;">${rects}</svg>
@@ -4786,6 +4789,7 @@ window.imprimerEtiquettes = () => {
     page-break-inside:avoid;margin:1mm;}
   .nom{font-weight:700;font-size:${cfg.nomSize};line-height:1.2;margin-bottom:0.5mm;
     overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
+  .marque{font-size:${cfg.desigSize};color:#993556;font-weight:600;text-transform:uppercase;letter-spacing:0.3px;margin-bottom:0.5mm;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
   .desig{font-size:${cfg.desigSize};color:#333;font-style:italic;margin-bottom:0.5mm;}
   .ref{font-size:${cfg.refSize};color:#666;margin-bottom:1mm;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
   .bc{font-family:monospace;font-size:${cfg.refSize};color:#555;margin-top:0.5mm;}
@@ -11679,7 +11683,7 @@ window.imprimerLotEtiquettes = () => {
     const bc = miniBarcode(bcCode);
     const bcImg = btoa_svg(bc);
     return `<div class="etiq">
-      <div class="etiq-name">${p.name.length>26?p.name.slice(0,26)+"…":p.name}</div>
+      <div class="etiq-name">${(()=>{const full=(p.marque?p.marque+" — ":"")+p.name;return full.length>26?full.slice(0,26)+"…":full;})()}</div>
       <div class="etiq-ref">${(p.ref+(infos?" · "+infos:"")).slice(0,30)}${p.grandeTaille?" · GT":""}</div>
       <img src="${bcImg}" class="etiq-bc"/>
       ${ligneItem&&ligneItem.prixOriginal ? `<div class="etiq-prix"><span style="text-decoration:line-through;color:#aaa;font-size:9px;">${eur(ligneItem.prixOriginal)}</span> ${eur(p.price)}</div>` : `<div class="etiq-prix">${eur(p.price)}</div>`}
