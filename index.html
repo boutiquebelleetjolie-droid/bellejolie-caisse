@@ -4473,10 +4473,9 @@ function makeBarcodeRects(data, h, barW) {
   codes.slice(1,-1).forEach(c=>{ if(C128B[c]) draw(C128B[c]); });
   draw(C128B[codes[codes.length-1]]); // checksum
   draw(STOP);
-  // Toujours forcer la largeur max à 128px via viewBox — rien ne sera jamais coupé
-  const maxW = 128;
+  // Largeur naturelle du code-barres (pas de compression forcée qui déformait les barres)
   const finalW = x+1;
-  return {rects, svgW: maxW, viewBox: '0 0 '+finalW+' '+h};
+  return {rects, svgW: finalW, viewBox: '0 0 '+finalW+' '+h};
 }
 
 function renderBCModal() {
@@ -4771,7 +4770,7 @@ window.imprimerEtiquettes = () => {
     <div class="nom">${p.name}</div>
     ${desig?`<div class="desig">${desig}</div>`:""}
     <div class="ref">${p.ref}${p.category?" · "+p.category:""}${tailleVal?" · T."+tailleVal:""}${couleurVal?" · "+couleurVal:""}</div>
-    <svg width="${svgW}" height="${cfg.bcH+4}" viewBox="${viewBox||'0 0 '+svgW+' '+cfg.bcH}" preserveAspectRatio="none" style="display:block;margin:2px auto 0;max-width:100%;">${rects}</svg>
+    <svg width="${svgW}" height="${cfg.bcH+4}" viewBox="${viewBox||'0 0 '+svgW+' '+cfg.bcH}" style="display:block;margin:2px auto 0;max-width:100%;">${rects}</svg>
     <div class="bc">${p.barcode}</div>
     <div class="prix">${eur(p.price)}</div>
   </div>`;
