@@ -2198,14 +2198,39 @@ window.imprimerViaBluetooth = async () => {
         '0000ff00-0000-1000-8000-00805f9b34fb',
         '0000ffe0-0000-1000-8000-00805f9b34fb',
         '0000fee7-0000-1000-8000-00805f9b34fb',
+        '0000fff0-0000-1000-8000-00805f9b34fb',
+        '0000ae30-0000-1000-8000-00805f9b34fb',
+        '000035f0-0000-1000-8000-00805f9b34fb',
+        '18f0',
       ]
     });
 
     const statusMsg = (t) => { if(STATE.showTicket) { STATE._btStatus = t; render(); } };
     statusMsg("⏳ Connexion à "+(device.name||"l'imprimante")+"...");
 
-    const server = await device.gatt.connect();
-    const services = await server.getPrimaryServices();
+    // Timeout de sécurité : si la connexion reste bloquée plus de 12s, on prévient au lieu de rester silencieux
+    const withTimeout = (promise, ms, label) => Promise.race([
+      promise,
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error("Délai dépassé ("+label+"). L'appareil ne répond pas.")), ms))
+    ]);
+
+    const server = await withTimeout(device.gatt.connect(), 12000, "connexion GATT");
+
+    let services = [];
+    try {
+      services = await withTimeout(server.getPrimaryServices(), 8000, "recherche des services");
+    } catch(svcErr) {
+      alert("❌ Connecté à \""+(device.name||"l'appareil")+"\", mais impossible de lister ses services :\n"+svcErr.message+"\n\nC'est un signe fort que cette imprimante utilise un identifiant technique non standard, différent de ceux que la caisse essaie. Elle est probablement fermée à sa propre appli.");
+      STATE._btStatus = null; render();
+      return;
+    }
+
+    if(services.length===0) {
+      alert("❌ Connecté à \""+(device.name||"l'appareil")+"\", mais aucun service Bluetooth compatible n'a été détecté (0 service trouvé parmi ceux que la caisse connaît).\n\nCela confirme que cette imprimante utilise un protocole propriétaire fermé, non standard ESC/POS. Elle ne peut malheureusement pas être utilisée en impression directe depuis un navigateur.");
+      STATE._btStatus = null; render();
+      return;
+    }
+
     let writeChar = null;
     for(const service of services) {
       const chars = await service.getCharacteristics();
@@ -2215,7 +2240,7 @@ window.imprimerViaBluetooth = async () => {
       if(writeChar) break;
     }
     if(!writeChar) {
-      alert("❌ Connecté à \""+(device.name||"l'appareil")+"\" mais aucun canal d'écriture compatible n'a été trouvé.\n\nCette imprimante utilise très probablement un protocole propriétaire fermé (comme ton X18) et ne peut pas recevoir d'impression directe depuis un navigateur — seule son appli dédiée le peut.");
+      alert("❌ Connecté à \""+(device.name||"l'appareil")+"\" ("+services.length+" service(s) trouvé(s)) mais aucun canal d'écriture compatible n'a été trouvé.\n\nCette imprimante utilise très probablement un protocole propriétaire fermé (comme ton X18) et ne peut pas recevoir d'impression directe depuis un navigateur — seule son appli dédiée le peut.");
       STATE._btStatus = null; render();
       return;
     }
@@ -4875,8 +4900,8 @@ window.imprimerToutStock = () => {
     const infos = [ligne.taille?'T.'+ligne.taille:'', ligne.couleur&&ligne.couleur!=='_'?ligne.couleur:''].filter(Boolean).join(' · ');
     for(let i=0;i<ligne.qty;i++) {
       etiqHtml += `<div class="etiq">
-        <div class="etiq-name">${(()=>{const full=(p.marque?p.marque+" — ":"")+p.name;return full.length>26?full.slice(0,26)+"…":full;})()}</div>
-        <div class="etiq-ref">${(p.ref+(infos?" · "+infos:"")).slice(0,30)}${p.grandeTaille?" · GT":""}</div>
+        <div class="etiq-name">${p.name.length>26?p.name.slice(0,26)+"…":p.name}</div>
+        <div class="etiq-ref">${(p.marque?p.marque+" · ":"")+(p.ref+(infos?" · "+infos:"")).slice(0,30)}${p.grandeTaille?" · GT":""}</div>
         <img src="${bcImg}" class="etiq-bc"/>
         ${ligneItem&&ligneItem.prixOriginal ? `<div class="etiq-prix"><span style="text-decoration:line-through;color:#aaa;font-size:9px;">${eur(ligneItem.prixOriginal)}</span> ${eur(p.price)}</div>` : `<div class="etiq-prix">${eur(p.price)}</div>`}
       </div>`;
@@ -4950,9 +4975,8 @@ window.imprimerEtiquettes = () => {
   const etiq = `
   <div class="etiq">
     <div class="nom">${p.name}</div>
-    ${p.marque?`<div class="marque">${p.marque}</div>`:""}
     ${desig?`<div class="desig">${desig}</div>`:""}
-    <div class="ref">${p.ref}${p.category?" · "+p.category:""}${tailleVal?" · T."+tailleVal:""}${couleurVal?" · "+couleurVal:""}</div>
+    <div class="ref">${p.marque?p.marque+" · ":""}${p.ref}${p.category?" · "+p.category:""}${tailleVal?" · T."+tailleVal:""}${couleurVal?" · "+couleurVal:""}</div>
     <svg width="${svgW}" height="${cfg.bcH+4}" viewBox="${viewBox||'0 0 '+svgW+' '+cfg.bcH}" preserveAspectRatio="none" style="display:block;margin:2px auto 0;max-width:100%;">${rects}</svg>
     <div class="bc">${p.barcode}</div>
     <div class="prix">${eur(p.price)}</div>
@@ -11488,6 +11512,19 @@ window.ajouterToutStockSelection = () => {
         });
       }
     }
+
+    // Exclure le stock réservé si la case "Imprimer aussi le stock réservé" est décochée
+    if(STATE._imprimerStockReserve===false && (p.reserveQty||0)>0) {
+      let aRetirer = p.reserveQty;
+      for(let i=STATE.etiqLignes.length-1; i>=0 && aRetirer>0; i--) {
+        const l = STATE.etiqLignes[i];
+        if(l.prodId!==prodId) continue;
+        const retire = Math.min(l.qty, aRetirer);
+        l.qty -= retire;
+        aRetirer -= retire;
+      }
+      STATE.etiqLignes = STATE.etiqLignes.filter(l => l.prodId!==prodId || l.qty>0);
+    }
   });
 };
 
@@ -11798,6 +11835,12 @@ function renderLotEtiqModal() {
   html += '<div style="display:flex;justify-content:space-between;margin-top:4px;"><span style="color:#888;">Pages A4 (65/page)</span><span style="font-weight:500;">'+Math.ceil(totalEtiq/65)+'</span></div>';
   html += '</div>';
 
+  // Case à cocher : inclure ou non le stock réservé lors de l'impression "Tout le stock sélectionné"
+  html += '<label style="display:flex;align-items:center;gap:8px;margin-bottom:12px;cursor:pointer;background:#fff8e1;border:1px solid #fac775;border-radius:8px;padding:10px;">';
+  html += '<input type="checkbox" '+(STATE._imprimerStockReserve!==false?"checked":"")+' onchange="STATE._imprimerStockReserve=this.checked;render()" style="width:16px;height:16px;accent-color:#993556;"/>';
+  html += '<span style="font-size:12px;">📦 Imprimer aussi le stock réservé (utilisé par "Tout le stock sélectionné + Imprimer")</span>';
+  html += '</label>';
+
   // Sélecteur position de départ (grille 3×8 = 24 positions)
   html += '<div style="background:#fff;border:1px solid #e8e0e4;border-radius:8px;padding:10px;margin-bottom:12px;">';
   html += '<div style="font-size:12px;color:#555;font-weight:500;margin-bottom:8px;">📍 Position de départ sur la feuille</div>';
@@ -11865,8 +11908,8 @@ window.imprimerLotEtiquettes = () => {
     const bc = miniBarcode(bcCode);
     const bcImg = btoa_svg(bc);
     return `<div class="etiq">
-      <div class="etiq-name">${(()=>{const full=(p.marque?p.marque+" — ":"")+p.name;return full.length>26?full.slice(0,26)+"…":full;})()}</div>
-      <div class="etiq-ref">${(p.ref+(infos?" · "+infos:"")).slice(0,30)}${p.grandeTaille?" · GT":""}</div>
+      <div class="etiq-name">${p.name.length>26?p.name.slice(0,26)+"…":p.name}</div>
+      <div class="etiq-ref">${(p.marque?p.marque+" · ":"")+(p.ref+(infos?" · "+infos:"")).slice(0,30)}${p.grandeTaille?" · GT":""}</div>
       <img src="${bcImg}" class="etiq-bc"/>
       ${ligneItem&&ligneItem.prixOriginal ? `<div class="etiq-prix"><span style="text-decoration:line-through;color:#aaa;font-size:9px;">${eur(ligneItem.prixOriginal)}</span> ${eur(p.price)}</div>` : `<div class="etiq-prix">${eur(p.price)}</div>`}
     </div>`;
