@@ -3891,6 +3891,11 @@ function getMarqueCandidats() {
   return candidats;
 }
 
+window.retirerCandidatMarque = (id) => {
+  STATE._marqueCandidats = (STATE._marqueCandidats||[]).filter(c=>c.id!==id);
+  render();
+};
+
 window.ouvrirApercuExtractionMarque = () => {
   STATE._marqueCandidats = getMarqueCandidats();
   STATE.showExtractionMarque = true;
@@ -3917,9 +3922,12 @@ function renderApercuExtractionMarque() {
           </div>
           <div style="max-height:340px;overflow-y:auto;border:1px solid #eee;border-radius:8px;padding:8px;margin-bottom:14px;">
             ${candidats.map(c=>`
-              <div style="padding:8px;border-bottom:0.5px solid #f0ebee;font-size:12px;">
-                <div style="color:#aaa;text-decoration:line-through;">${c.ancienNom}</div>
-                <div style="margin-top:2px;">→ <strong>${c.nouveauNom}</strong> <span style="background:#993556;color:#fff;padding:1px 7px;border-radius:6px;font-size:11px;margin-left:4px;">${c.marque}</span></div>
+              <div style="padding:8px;border-bottom:0.5px solid #f0ebee;font-size:12px;display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                <div style="flex:1;min-width:0;">
+                  <div style="color:#aaa;text-decoration:line-through;">${c.ancienNom}</div>
+                  <div style="margin-top:2px;">→ <strong>${c.nouveauNom}</strong> <span style="background:#993556;color:#fff;padding:1px 7px;border-radius:6px;font-size:11px;margin-left:4px;">${c.marque}</span></div>
+                </div>
+                <button data-cid="${c.id}" onclick="retirerCandidatMarque(this.dataset.cid)" title="Retirer celui-ci" style="flex-shrink:0;background:none;border:1px solid #ddd;border-radius:6px;width:26px;height:26px;cursor:pointer;color:#a32d2d;font-size:14px;">✕</button>
               </div>
             `).join("")}
           </div>
