@@ -856,6 +856,7 @@ function renderApp() {
   ${STATE.showProdModal    ? renderProdModal()       : ""}
   ${STATE.showClientModal  ? renderClientModal()     : ""}
   ${STATE.showClientDetail ? renderClientDetail()    : ""}
+  ${STATE.showExtractionMarque ? renderApercuExtractionMarque() : ""}
   ${STATE.showVendeurSettings ? renderVendeurSettings() : ""}
   ${STATE.showAnnulLigne ? renderAnnulLigneModal() : ""}
   ${STATE.showVarianteModal ? renderVarianteModal() : ""}
@@ -3874,6 +3875,80 @@ t += '</tbody></table></div>';
   return t;
 } // fin renderStockTableau
 
+// ─── Extraction automatique de la marque depuis le dernier mot en MAJUSCULES du nom ──
+function getMarqueCandidats() {
+  const candidats = [];
+  STATE.products.forEach(p => {
+    if(p.marque) return; // déjà renseignée, on ne touche pas
+    const nom = (p.name||"").trim();
+    const m = nom.match(/^(.*?)\s+([A-ZÀÂÄÉÈÊËÏÎÔÖÙÛÜÇ]{2,}(?:\s[A-ZÀÂÄÉÈÊËÏÎÔÖÙÛÜÇ]{2,})*)$/);
+    if(!m) return;
+    const reste = m[1], motMaj = m[2];
+    // Le reste du nom ne doit pas être vide ni lui-même tout en majuscules
+    if(!reste || reste === reste.toUpperCase()) return;
+    candidats.push({ id:p.id, ancienNom:nom, nouveauNom:reste, marque:motMaj });
+  });
+  return candidats;
+}
+
+window.ouvrirApercuExtractionMarque = () => {
+  STATE._marqueCandidats = getMarqueCandidats();
+  STATE.showExtractionMarque = true;
+  render();
+};
+
+function renderApercuExtractionMarque() {
+  const candidats = STATE._marqueCandidats || [];
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)setState({showExtractionMarque:false})">
+    <div class="modal" style="max-width:560px;">
+      <div class="modal-header">
+        <span style="font-weight:500;">🔧 Extraction automatique des marques</span>
+        <button onclick="setState({showExtractionMarque:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
+      </div>
+      <div class="modal-body">
+        ${candidats.length===0?`
+          <div style="text-align:center;color:#888;padding:30px 10px;">
+            Aucun article détecté avec un dernier mot en MAJUSCULES à extraire (ou toutes les marques sont déjà renseignées).
+          </div>
+        `:`
+          <div style="font-size:13px;color:#555;margin-bottom:14px;">
+            ${candidats.length} article${candidats.length>1?"s":""} détecté${candidats.length>1?"s":""} — le dernier mot en majuscules sera déplacé vers le champ "Marque". Vérifie la liste avant de valider.
+          </div>
+          <div style="max-height:340px;overflow-y:auto;border:1px solid #eee;border-radius:8px;padding:8px;margin-bottom:14px;">
+            ${candidats.map(c=>`
+              <div style="padding:8px;border-bottom:0.5px solid #f0ebee;font-size:12px;">
+                <div style="color:#aaa;text-decoration:line-through;">${c.ancienNom}</div>
+                <div style="margin-top:2px;">→ <strong>${c.nouveauNom}</strong> <span style="background:#993556;color:#fff;padding:1px 7px;border-radius:6px;font-size:11px;margin-left:4px;">${c.marque}</span></div>
+              </div>
+            `).join("")}
+          </div>
+          <button onclick="appliquerExtractionMarque()" style="width:100%;padding:12px;background:#993556;color:#fff;border:none;border-radius:9px;cursor:pointer;font-weight:600;font-size:14px;">
+            ✅ Appliquer à ces ${candidats.length} article${candidats.length>1?"s":""}
+          </button>
+        `}
+      </div>
+    </div>
+  </div>`;
+}
+
+window.appliquerExtractionMarque = () => {
+  const candidats = STATE._marqueCandidats || [];
+  const parId = {};
+  candidats.forEach(c => { parId[c.id] = c; });
+  STATE.products = STATE.products.map(p => {
+    const c = parId[p.id];
+    if(!c) return p;
+    return { ...p, name: c.nouveauNom, marque: c.marque };
+  });
+  lsSet("bj_products", STATE.products);
+  STATE.showExtractionMarque = false;
+  STATE._marqueCandidats = [];
+  render();
+  alert("✅ "+candidats.length+" article(s) mis à jour avec leur marque.");
+};
+
+
 function renderStock() {
   // Sous-onglets Stock
   if(!STATE.stockTab) STATE.stockTab = "liste";
@@ -3894,6 +3969,7 @@ function renderStock() {
   if(nbEtiq>0) html += renderBoutonLotEtiq(nbEtiq);
   if(STATE.vendeur.role!=="apprenti") html += '<button onclick="openProdModal(null)" class="btn-primary" style="width:auto;padding:8px 16px;">+ Nouvel article</button>';
   if(isV1) html += '<button onclick="STATE.stockTab=\'reception\';render()" class="btn-ghost" style="white-space:nowrap;">📦 Réception facture</button>';
+  if(isV1) html += '<button onclick="ouvrirApercuExtractionMarque()" class="btn-ghost" style="white-space:nowrap;">🔧 Extraire les marques</button>';
   const dateEtiq = STATE.dateEtiq || new Date().toISOString().slice(0,10);
   const articlesJour = STATE.products.filter(p => p.createdAt && p.createdAt.slice(0,10)===dateEtiq);
   html += '<div style="display:flex;align-items:center;gap:6px;">';
@@ -4736,7 +4812,7 @@ window.imprimerToutStock = () => {
     @media print{
       .no-print{display:none;}
       @page{margin:0;size:210mm 297mm;}
-      .page{margin:10mm 10mm 10mm 10.7mm;}
+      .page{margin:10mm 10mm 10mm 10.95mm;}
       .page-suivante{margin-top:10mm;}
     }
   </style></head><body>
@@ -4794,7 +4870,7 @@ window.imprimerEtiquettes = () => {
   .ref{font-size:${cfg.refSize};color:#666;margin-bottom:1mm;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;}
   .bc{font-family:monospace;font-size:${cfg.refSize};color:#555;margin-top:0.5mm;}
   .prix{font-size:${cfg.prixSize};font-weight:700;margin-top:1mm;}
-  @media print{@page{margin:3mm 3mm 3mm 3.7mm;size:auto;}.no-print{display:none;}}
+  @media print{@page{margin:3mm 3mm 3mm 3.95mm;size:auto;}.no-print{display:none;}}
 </style>
 </head><body>
 <div class="no-print" style="text-align:center;padding:10px;background:#993556;color:#fff;font-family:Arial;font-size:14px;cursor:pointer;" onclick="window.print()">
@@ -4872,7 +4948,8 @@ function renderCRM() {
     </div>
   </div>
   ${STATE.showClientModal  ? renderClientModal()  : ""}
-  ${STATE.showClientDetail ? renderClientDetail() : ""}`;
+  ${STATE.showClientDetail ? renderClientDetail() : ""}
+  ${STATE.showExtractionMarque ? renderApercuExtractionMarque() : ""}`;
 }
 
 window.openClientModal = id => {
@@ -11731,7 +11808,7 @@ window.imprimerLotEtiquettes = () => {
     @media print{
       .no-print{display:none;}
       @page{margin:0;size:210mm 297mm;}
-      .page{margin:10mm 10mm 10mm 10.7mm;}
+      .page{margin:10mm 10mm 10mm 10.95mm;}
       .page-suivante{margin-top:10mm;}
     }
   </style></head><body>
