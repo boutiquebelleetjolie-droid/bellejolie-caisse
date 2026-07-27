@@ -12822,10 +12822,11 @@ render();
   let buf = "";
   let timer = null;
   document.addEventListener("keydown", e => {
-    // Ignorer si on est dans un champ texte (sauf bc-input)
+    // Ignorer si on est dans un champ texte — bc-input a déjà son propre gestionnaire (bcKeyDown),
+    // le traiter ici aussi causait un double traitement (ajout en double, champ qui ne se vide pas correctement)
     const tag = document.activeElement?.tagName;
     const id  = document.activeElement?.id;
-    if((tag==="INPUT"||tag==="TEXTAREA") && id!=="bc-input") return;
+    if(tag==="INPUT"||tag==="TEXTAREA") return;
     // Le scanner envoie les touches très vite puis Enter
     if(e.key==="Enter") {
       const code = buf.trim();
