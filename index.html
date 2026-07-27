@@ -2547,7 +2547,7 @@ window.bcKeyDown = e => {
   const p=STATE.products.find(x=>x.barcode===q||x.ref===q);
   if(p&&p.stock>0){addToCart(p.id);STATE.searchBC="";}
   else if(p){alert("Stock insuffisant pour : "+p.name);STATE.searchBC="";}
-  else alert("Produit introuvable : "+q);
+  else {alert("Produit introuvable : "+q);STATE.searchBC="";}
   render();
 };
 
