@@ -2177,6 +2177,100 @@ window.utiliserAvoir = () => {
 
 
 // ─── TICKET ─────────────────────────────────────────────────────
+// ─── Impression directe via Bluetooth (Web Bluetooth API — ESC/POS) ──────
+// Fonctionne uniquement sur Chrome Android/Desktop. Compatible avec les imprimantes
+// qui exposent un vrai service Bluetooth Low Energy ESC/POS (pas les imprimantes
+// "app uniquement" au protocole propriétaire fermé).
+window.imprimerViaBluetooth = async () => {
+  const v = STATE.showTicket;
+  if(!v) return;
+  if(!navigator.bluetooth) {
+    alert("⚠️ L'impression Bluetooth directe n'est disponible que sur Chrome (Android ou ordinateur). Utilise le bouton \"Imprimer le ticket\" classique à la place.");
+    return;
+  }
+  try {
+    const device = await navigator.bluetooth.requestDevice({
+      acceptAllDevices: true,
+      optionalServices: [
+        '000018f0-0000-1000-8000-00805f9b34fb',
+        '49535343-fe7d-4ae5-8fa9-9fafd205e455',
+        'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
+        '0000ff00-0000-1000-8000-00805f9b34fb',
+        '0000ffe0-0000-1000-8000-00805f9b34fb',
+        '0000fee7-0000-1000-8000-00805f9b34fb',
+      ]
+    });
+
+    const statusMsg = (t) => { if(STATE.showTicket) { STATE._btStatus = t; render(); } };
+    statusMsg("⏳ Connexion à "+(device.name||"l'imprimante")+"...");
+
+    const server = await device.gatt.connect();
+    const services = await server.getPrimaryServices();
+    let writeChar = null;
+    for(const service of services) {
+      const chars = await service.getCharacteristics();
+      for(const ch of chars) {
+        if(ch.properties.write || ch.properties.writeWithoutResponse) { writeChar = ch; break; }
+      }
+      if(writeChar) break;
+    }
+    if(!writeChar) {
+      alert("❌ Connecté à \""+(device.name||"l'appareil")+"\" mais aucun canal d'écriture compatible n'a été trouvé.\n\nCette imprimante utilise très probablement un protocole propriétaire fermé (comme ton X18) et ne peut pas recevoir d'impression directe depuis un navigateur — seule son appli dédiée le peut.");
+      STATE._btStatus = null; render();
+      return;
+    }
+
+    statusMsg("⏳ Envoi du ticket...");
+
+    // Construction du contenu au format ESC/POS
+    const encoder = new TextEncoder();
+    const bytes = [];
+    const push = (arr) => { arr.forEach(b=>bytes.push(b)); };
+    const pushText = (txt) => { push(Array.from(encoder.encode(txt))); };
+    const mLbt = {cb:"Carte bleue",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Carte cadeau",mixte:"Paiement mixte"};
+
+    push([0x1B,0x40]);          // init
+    push([0x1B,0x61,0x01]);     // centré
+    pushText("Belle&Jolie\n");
+    pushText(BOUTIQUE_ADRESSE+"\n");
+    push([0x1B,0x61,0x00]);     // gauche
+    pushText("--------------------------------\n");
+    pushText(new Date(v.date).toLocaleString("fr-FR")+"\n");
+    if(v.vendeur?.nom) pushText("Vendeuse : "+v.vendeur.nom+"\n");
+    if(v.client) pushText("Client : "+v.client.prenom+" "+v.client.nom+"\n");
+    pushText("--------------------------------\n");
+    (v.panier||[]).filter(x=>!x.retour).forEach(it=>{
+      pushText((it.qty||1)+"x "+String(it.name||"").slice(0,26)+"\n");
+      pushText("    "+eur(it.price*(it.qty||1))+"\n");
+    });
+    pushText("--------------------------------\n");
+    push([0x1B,0x45,0x01]);     // gras ON
+    pushText("TOTAL : "+eur(v.total)+"\n");
+    push([0x1B,0x45,0x00]);     // gras OFF
+    if(v.payMode) pushText("Règlement : "+(mLbt[v.payMode]||v.payMode)+"\n");
+    pushText("\nMerci de votre visite !\n");
+    pushText("Belle&Jolie\n\n\n\n");
+
+    const data = new Uint8Array(bytes);
+    const chunkSize = 100;
+    for(let i=0;i<data.length;i+=chunkSize) {
+      const chunk = data.slice(i,i+chunkSize);
+      if(writeChar.properties.writeWithoutResponse) await writeChar.writeValueWithoutResponse(chunk);
+      else await writeChar.writeValue(chunk);
+      await new Promise(r=>setTimeout(r,60));
+    }
+
+    STATE._btStatus = null; render();
+    alert("✅ Ticket envoyé à l'imprimante !\n\nSi rien ne s'imprime malgré ce message de succès, c'est que cette imprimante accepte la connexion Bluetooth mais utilise un format de commandes différent d'ESC/POS standard — dans ce cas il faudra passer par une vraie imprimante ESC/POS.");
+  } catch(err) {
+    STATE._btStatus = null; render();
+    console.error("Erreur Bluetooth:", err);
+    if(err.name==="NotFoundError") return; // utilisateur a annulé la sélection
+    alert("❌ Erreur de connexion Bluetooth :\n"+err.message+"\n\nSi le message mentionne un problème d'appairage, vérifie que l'imprimante est bien allumée et à proximité.");
+  }
+};
+
+
 function renderTicketModal() {
   const v = STATE.showTicket;
   const mL = {cb:"Carte bleue",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Carte cadeau",mixte:"Paiement mixte"};
@@ -2439,6 +2533,9 @@ function renderTicketModal() {
           </div>
         </div>
         <button onclick="window.print()" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le ticket</button>
+        <button onclick="imprimerViaBluetooth()" style="width:100%;padding:10px;background:#eaf3de;color:#3b6d11;border:1px solid #b5d89a;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:8px;">
+          🔵 Imprimer via Bluetooth (essai)
+        </button>
         <button onclick="ouvrirEnvoiTicket()" style="width:100%;padding:10px;background:#e6f1fb;color:#185fa5;border:1px solid #b3d0f0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:8px;">
           📧 Envoyer le ticket par Email
         </button>
