@@ -2744,9 +2744,7 @@ window.removeFromCartAvecJournal = (id, nom, prix, qty) => {
   };
   STATE.panier = STATE.panier.filter(x=>x.id!==id);
   if(STATE.vendeur.id==="V1") {
-    if(confirm("Enregistrer cette suppression dans le journal des annulations ?")) {
-      logAnnulation(prompt("Motif (optionnel) :","") || "");
-    }
+    // Compte principal : suppression directe, sans confirmation ni motif
   } else {
     // Vendeurs : motif réellement obligatoire, impossible de continuer sans le renseigner
     let motif = "";
