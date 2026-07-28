@@ -2366,73 +2366,44 @@ window.utiliserAvoir = () => {
 
 
 // ─── TICKET ─────────────────────────────────────────────────────
-// ─── Impression directe via Bluetooth (Web Bluetooth API — ESC/POS) ──────
-// Fonctionne uniquement sur Chrome Android/Desktop. Compatible avec les imprimantes
-// qui exposent un vrai service Bluetooth Low Energy ESC/POS (pas les imprimantes
-// "app uniquement" au protocole propriétaire fermé).
-window.imprimerViaBluetooth = async () => {
+// ─── Impression directe via USB (WebUSB API — ESC/POS) ──────
+// Fonctionne uniquement sur Chrome (ordinateur, ou Android avec hub USB-OTG).
+// Compatible avec les imprimantes de tickets USB qui utilisent le protocole ESC/POS standard.
+window.imprimerViaUSB = async () => {
   const v = STATE.showTicket;
   if(!v) return;
-  if(!navigator.bluetooth) {
-    alert("⚠️ L'impression Bluetooth directe n'est disponible que sur Chrome (Android ou ordinateur). Utilise le bouton \"Imprimer le ticket\" classique à la place.");
+  if(!navigator.usb) {
+    alert("⚠️ L'impression USB directe n'est disponible que sur Chrome (ordinateur, ou tablette Android avec hub USB-OTG). Utilise le bouton \"Imprimer le ticket\" classique à la place.");
     return;
   }
   try {
-    const device = await navigator.bluetooth.requestDevice({
-      acceptAllDevices: true,
-      optionalServices: [
-        '000018f0-0000-1000-8000-00805f9b34fb',
-        '49535343-fe7d-4ae5-8fa9-9fafd205e455',
-        'e7810a71-73ae-499d-8c15-faa9aef0c3f2',
-        '0000ff00-0000-1000-8000-00805f9b34fb',
-        '0000ffe0-0000-1000-8000-00805f9b34fb',
-        '0000fee7-0000-1000-8000-00805f9b34fb',
-        '0000fff0-0000-1000-8000-00805f9b34fb',
-        '0000ae30-0000-1000-8000-00805f9b34fb',
-        '000035f0-0000-1000-8000-00805f9b34fb',
-        0x18f0,
-      ]
-    });
+    const device = await navigator.usb.requestDevice({ filters: [] });
 
-    const statusMsg = (t) => { if(STATE.showTicket) { STATE._btStatus = t; render(); } };
-    statusMsg("⏳ Connexion à "+(device.name||"l'imprimante")+"...");
+    const statusMsg = (t) => { if(STATE.showTicket) { STATE._usbStatus = t; render(); } };
+    statusMsg("⏳ Connexion à "+(device.productName||"l'imprimante")+"...");
 
-    // Timeout de sécurité : si la connexion reste bloquée plus de 12s, on prévient au lieu de rester silencieux
     const withTimeout = (promise, ms, label) => Promise.race([
       promise,
       new Promise((_,rej)=>setTimeout(()=>rej(new Error("Délai dépassé ("+label+"). L'appareil ne répond pas.")), ms))
     ]);
 
-    const server = await withTimeout(device.gatt.connect(), 12000, "connexion GATT");
+    await withTimeout(device.open(), 8000, "ouverture du périphérique");
+    if(!device.configuration) await device.selectConfiguration(1);
 
-    let services = [];
-    try {
-      services = await withTimeout(server.getPrimaryServices(), 8000, "recherche des services");
-    } catch(svcErr) {
-      alert("❌ Connecté à \""+(device.name||"l'appareil")+"\", mais impossible de lister ses services :\n"+svcErr.message+"\n\nC'est un signe fort que cette imprimante utilise un identifiant technique non standard, différent de ceux que la caisse essaie. Elle est probablement fermée à sa propre appli.");
-      STATE._btStatus = null; render();
-      return;
-    }
-
-    if(services.length===0) {
-      alert("❌ Connecté à \""+(device.name||"l'appareil")+"\", mais aucun service Bluetooth compatible n'a été détecté (0 service trouvé parmi ceux que la caisse connaît).\n\nCela confirme que cette imprimante utilise un protocole propriétaire fermé, non standard ESC/POS. Elle ne peut malheureusement pas être utilisée en impression directe depuis un navigateur.");
-      STATE._btStatus = null; render();
-      return;
-    }
-
-    let writeChar = null;
-    for(const service of services) {
-      const chars = await service.getCharacteristics();
-      for(const ch of chars) {
-        if(ch.properties.write || ch.properties.writeWithoutResponse) { writeChar = ch; break; }
+    let ifaceNum = null, epOut = null;
+    for(const iface of device.configuration.interfaces) {
+      for(const alt of iface.alternates) {
+        const out = alt.endpoints.find(e => e.direction==="out");
+        if(out) { ifaceNum = iface.interfaceNumber; epOut = out.endpointNumber; break; }
       }
-      if(writeChar) break;
+      if(epOut!==null) break;
     }
-    if(!writeChar) {
-      alert("❌ Connecté à \""+(device.name||"l'appareil")+"\" ("+services.length+" service(s) trouvé(s)) mais aucun canal d'écriture compatible n'a été trouvé.\n\nCette imprimante utilise très probablement un protocole propriétaire fermé (comme ton X18) et ne peut pas recevoir d'impression directe depuis un navigateur — seule son appli dédiée le peut.");
-      STATE._btStatus = null; render();
+    if(epOut===null) {
+      alert("❌ Connecté à \""+(device.productName||"l'appareil")+"\" mais aucun canal d'écriture USB compatible n'a été trouvé.\n\nCette imprimante n'est probablement pas compatible avec l'impression directe depuis un navigateur.");
+      STATE._usbStatus = null; render();
       return;
     }
+    await device.claimInterface(ifaceNum);
 
     statusMsg("⏳ Envoi du ticket...");
 
@@ -2466,21 +2437,16 @@ window.imprimerViaBluetooth = async () => {
     pushText("Belle&Jolie\n\n\n\n");
 
     const data = new Uint8Array(bytes);
-    const chunkSize = 100;
-    for(let i=0;i<data.length;i+=chunkSize) {
-      const chunk = data.slice(i,i+chunkSize);
-      if(writeChar.properties.writeWithoutResponse) await writeChar.writeValueWithoutResponse(chunk);
-      else await writeChar.writeValue(chunk);
-      await new Promise(r=>setTimeout(r,60));
-    }
+    await withTimeout(device.transferOut(epOut, data), 10000, "envoi des données");
+    await device.close();
 
-    STATE._btStatus = null; render();
-    alert("✅ Ticket envoyé à l'imprimante !\n\nSi rien ne s'imprime malgré ce message de succès, c'est que cette imprimante accepte la connexion Bluetooth mais utilise un format de commandes différent d'ESC/POS standard — dans ce cas il faudra passer par une vraie imprimante ESC/POS.");
+    STATE._usbStatus = null; render();
+    alert("✅ Ticket envoyé à l'imprimante via USB !\n\nSi rien ne s'imprime malgré ce message de succès, c'est que cette imprimante accepte la connexion USB mais utilise un format de commandes différent d'ESC/POS standard.");
   } catch(err) {
-    STATE._btStatus = null; render();
-    console.error("Erreur Bluetooth:", err);
+    STATE._usbStatus = null; render();
+    console.error("Erreur USB:", err);
     if(err.name==="NotFoundError") return; // utilisateur a annulé la sélection
-    alert("❌ Erreur de connexion Bluetooth :\n"+err.message+"\n\nSi le message mentionne un problème d'appairage, vérifie que l'imprimante est bien allumée et à proximité.");
+    alert("❌ Erreur de connexion USB :\n"+err.message+"\n\nVérifie que l'imprimante est bien branchée et allumée.");
   }
 };
 
@@ -2747,8 +2713,8 @@ function renderTicketModal() {
           </div>
         </div>
         <button onclick="window.print()" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le ticket</button>
-        <button onclick="imprimerViaBluetooth()" style="width:100%;padding:10px;background:#eaf3de;color:#3b6d11;border:1px solid #b5d89a;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:8px;">
-          🔵 Imprimer via Bluetooth (essai)
+        <button onclick="imprimerViaUSB()" style="width:100%;padding:10px;background:#eaf3de;color:#3b6d11;border:1px solid #b5d89a;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:8px;">
+          🔌 Imprimer via USB (essai)
         </button>
         <button onclick="ouvrirEnvoiTicket()" style="width:100%;padding:10px;background:#e6f1fb;color:#185fa5;border:1px solid #b3d0f0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:8px;">
           📧 Envoyer le ticket par Email
