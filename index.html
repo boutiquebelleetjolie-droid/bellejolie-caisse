@@ -476,6 +476,7 @@ let STATE = {
   promoMessage: "",      // transferts entre caisses
   annulLignes: ls("bj_annul_lignes", []),
   panierVides: ls("bj_panier_vides", []),
+  evenementsPerso: ls("bj_evenements", []),
   memos:    ls("bj_memos",    []),
   tab: "caisse",
   // Caisse
@@ -857,6 +858,7 @@ function renderApp() {
   ${STATE.showClientModal  ? renderClientModal()     : ""}
   ${STATE.showClientDetail ? renderClientDetail()    : ""}
   ${STATE.showExtractionMarque ? renderApercuExtractionMarque() : ""}
+  ${STATE.showAjoutEvenement ? renderAjoutEvenementModal() : ""}
   ${STATE.showVendeurSettings ? renderVendeurSettings() : ""}
   ${STATE.showAnnulLigne ? renderAnnulLigneModal() : ""}
   ${STATE.showVarianteModal ? renderVarianteModal() : ""}
@@ -1342,6 +1344,142 @@ function calcPanier() {
 function getCaisseTotal()    { return calcPanier().total; } // peut être négatif
 function getCaisseSousTotal(){ return calcPanier().stTotal; }
 
+// ─── Calendrier des événements commerciaux + événements personnalisés ──
+// Trouve le n-ième jour de semaine d'un mois (ex: 3e dimanche de juin). n=-1 pour le dernier.
+function nieJourSemaine(annee, mois, jourSemaine, n) {
+  if(n>0) {
+    const d = new Date(annee, mois, 1);
+    let count = 0;
+    while(true) {
+      if(d.getDay()===jourSemaine) { count++; if(count===n) return new Date(d); }
+      d.setDate(d.getDate()+1);
+    }
+  } else {
+    const d = new Date(annee, mois+1, 0); // dernier jour du mois
+    while(d.getDay()!==jourSemaine) d.setDate(d.getDate()-1);
+    return new Date(d);
+  }
+}
+
+function getEvenementsCommerciaux(annee) {
+  return [
+    {nom:"Soldes d'hiver", emoji:"🏷️", date: nieJourSemaine(annee,0,3,2), approx:true},
+    {nom:"Saint-Valentin", emoji:"💝", date: new Date(annee,1,14)},
+    {nom:"Fête des Grands-Mères", emoji:"👵", date: nieJourSemaine(annee,2,0,1)},
+    {nom:"Fête des Mères", emoji:"💐", date: nieJourSemaine(annee,4,0,-1), approx:true},
+    {nom:"Fête des Pères", emoji:"👔", date: nieJourSemaine(annee,5,0,3)},
+    {nom:"Soldes d'été", emoji:"🏷️", date: nieJourSemaine(annee,5,3,-1), approx:true},
+    {nom:"Rentrée scolaire", emoji:"🎒", date: new Date(annee,7,dateRentreeApprox(annee))},
+    {nom:"Halloween", emoji:"🎃", date: new Date(annee,9,31)},
+    {nom:"Black Friday", emoji:"🛍️", date: nieJourSemaine(annee,10,5,4)},
+    {nom:"Noël", emoji:"🎄", date: new Date(annee,11,25)},
+    {nom:"Saint-Sylvestre", emoji:"🎉", date: new Date(annee,11,31)},
+  ];
+}
+function dateRentreeApprox(annee) { return 31; } // ~1er septembre (approx, affiché comme fin août/début sept)
+
+window.ouvrirAjoutEvenement = () => {
+  STATE._newEvenement = { nom:"", date:new Date().toISOString().slice(0,10), recurrent:false };
+  STATE.showAjoutEvenement = true;
+  render();
+};
+window.enregistrerEvenementPerso = () => {
+  const e = STATE._newEvenement;
+  if(!e.nom.trim()) { alert("Donne un nom à l'événement."); return; }
+  if(!e.date) { alert("Choisis une date."); return; }
+  STATE.evenementsPerso = [...(STATE.evenementsPerso||[]), { id:uid("EVT"), nom:e.nom.trim(), date:e.date, recurrent:!!e.recurrent }];
+  lsSet("bj_evenements", STATE.evenementsPerso);
+  STATE.showAjoutEvenement = false;
+  render();
+};
+window.supprimerEvenementPerso = (id) => {
+  STATE.evenementsPerso = (STATE.evenementsPerso||[]).filter(e=>e.id!==id);
+  lsSet("bj_evenements", STATE.evenementsPerso);
+  render();
+};
+
+function getEvenementsAVenir(joursFenetre) {
+  const now = new Date(); now.setHours(0,0,0,0);
+  const limite = new Date(now.getTime() + joursFenetre*86400000);
+  const items = [];
+
+  [now.getFullYear(), now.getFullYear()+1].forEach(an => {
+    getEvenementsCommerciaux(an).forEach(ev => {
+      const d = new Date(ev.date); d.setHours(0,0,0,0);
+      if(d>=now && d<=limite) items.push({ nom:ev.nom, emoji:ev.emoji, date:d, approx:ev.approx, perso:false });
+    });
+  });
+
+  (STATE.evenementsPerso||[]).forEach(ev => {
+    let d = new Date(ev.date+"T00:00:00");
+    if(ev.recurrent) d = new Date(now.getFullYear(), d.getMonth(), d.getDate());
+    if(ev.recurrent && d<now) d = new Date(now.getFullYear()+1, new Date(ev.date+"T00:00:00").getMonth(), new Date(ev.date+"T00:00:00").getDate());
+    if(d>=now && d<=limite) items.push({ nom:ev.nom, emoji:"📌", date:d, perso:true, id:ev.id });
+  });
+
+  return items.sort((a,b)=>a.date-b.date);
+}
+
+function renderBandeauEvenements() {
+  const evts = getEvenementsAVenir(60);
+  if(evts.length===0 && !STATE._calendrierOuvert) return `
+    <div style="margin-bottom:10px;">
+      <button onclick="STATE._calendrierOuvert=true;render()" style="width:100%;text-align:left;background:#f5f0f2;border:none;border-radius:9px;padding:8px 14px;cursor:pointer;font-size:12px;color:#888;">
+        📅 Aucun événement dans les 2 prochains mois — cliquer pour ajouter
+      </button>
+    </div>`;
+  return `
+  <div style="background:#fff8e1;border:1px solid #fac775;border-radius:9px;padding:10px 14px;margin-bottom:10px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;" onclick="STATE._calendrierOuvert=!STATE._calendrierOuvert;render()">
+      <span style="font-size:13px;font-weight:600;color:#854f0b;">📅 Événements à venir (2 mois) — ${evts.length}</span>
+      <span style="font-size:11px;color:#a5741a;">${STATE._calendrierOuvert?"▲ Réduire":"▼ Détails"}</span>
+    </div>
+    ${STATE._calendrierOuvert?`
+      <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px;">
+        ${evts.map(ev=>`
+          <div style="display:flex;justify-content:space-between;align-items:center;background:#fff;border-radius:7px;padding:6px 10px;font-size:12px;">
+            <span>${ev.emoji} <strong>${ev.nom}</strong>${ev.approx?' <span style="color:#bbb;">(date approx.)</span>':''} — ${ev.date.toLocaleDateString("fr-FR",{weekday:"short",day:"numeric",month:"long"})}</span>
+            ${ev.perso?`<button onclick="supprimerEvenementPerso('${ev.id}')" style="background:none;border:none;color:#a32d2d;cursor:pointer;font-size:13px;">✕</button>`:""}
+          </div>
+        `).join("")}
+        <button onclick="ouvrirAjoutEvenement()" style="margin-top:4px;padding:7px;background:#993556;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:500;">➕ Ajouter un événement (braderie, fête d'école...)</button>
+      </div>
+    `:""}
+  </div>`;
+}
+
+function renderAjoutEvenementModal() {
+  const e = STATE._newEvenement || {nom:"",date:"",recurrent:false};
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)setState({showAjoutEvenement:false})">
+    <div class="modal" style="max-width:400px;">
+      <div class="modal-header">
+        <span style="font-weight:500;">📅 Nouvel événement</span>
+        <button onclick="setState({showAjoutEvenement:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
+      </div>
+      <div class="modal-body">
+        <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Nom de l'événement *</label>
+        <input value="${e.nom}" oninput="STATE._newEvenement.nom=this.value" placeholder="Ex: Braderie, Fête de fin d'année scolaire..."
+          style="width:100%;box-sizing:border-box;margin-bottom:12px;"/>
+
+        <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Date *</label>
+        <input type="date" value="${e.date}" onchange="STATE._newEvenement.date=this.value"
+          style="width:100%;box-sizing:border-box;margin-bottom:12px;"/>
+
+        <label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;cursor:pointer;">
+          <input type="checkbox" ${e.recurrent?"checked":""} onchange="STATE._newEvenement.recurrent=this.checked" style="width:16px;height:16px;accent-color:#993556;"/>
+          <span style="font-size:13px;">Se répète chaque année (même jour/mois)</span>
+        </label>
+
+        <button onclick="enregistrerEvenementPerso()" style="width:100%;padding:12px;background:#993556;color:#fff;border:none;border-radius:9px;cursor:pointer;font-weight:600;font-size:14px;">
+          ✅ Ajouter l'événement
+        </button>
+      </div>
+    </div>
+  </div>`;
+}
+
+
 function renderCaisse() {
   const panier = STATE.panier;
   const {stTotal, remGlobal, fidPct, total} = calcPanier();
@@ -1367,10 +1505,12 @@ function renderCaisse() {
   if(!ouvertureToday) alerteHtml += '<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:9px;padding:10px 14px;margin-bottom:6px;font-size:13px;color:#856404;display:flex;align-items:center;justify-content:space-between;"><span>⚠️ Fond de caisse du matin non validé — comptez votre caisse dans 🏦 Z Caisse</span><button onclick="setState({tab:\"caisse_jour\"})" style="padding:4px 10px;background:#ffc107;color:#856404;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;">→ Z Caisse</button></div>';
   if(!cloturHier && now.getHours()>=6) alerteHtml += '<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:9px;padding:10px 14px;margin-bottom:6px;font-size:13px;color:#856404;">⚠️ Clôture du '+hier.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})+' non faite → 🏦 Z Caisse</div>';
   const alerteBloc = alerteHtml ? '<div style="margin-bottom:10px;">'+alerteHtml+'</div>' : '';
+  const bandeauEvenements = renderBandeauEvenements();
 
   return `
   <div>
   ${alerteBloc}
+  ${bandeauEvenements}
   <div style="display:grid;grid-template-columns:1fr 360px;gap:14px;height:calc(100vh - 140px);">
 
     <!-- GAUCHE -->
@@ -5078,7 +5218,8 @@ function renderCRM() {
   </div>
   ${STATE.showClientModal  ? renderClientModal()  : ""}
   ${STATE.showClientDetail ? renderClientDetail() : ""}
-  ${STATE.showExtractionMarque ? renderApercuExtractionMarque() : ""}`;
+  ${STATE.showExtractionMarque ? renderApercuExtractionMarque() : ""}
+  ${STATE.showAjoutEvenement ? renderAjoutEvenementModal() : ""}`;
 }
 
 window.openClientModal = id => {
