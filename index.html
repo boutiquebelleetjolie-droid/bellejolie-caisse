@@ -1378,7 +1378,11 @@ function getEvenementsCommerciaux(annee) {
 }
 function dateRentreeApprox(annee) { return 31; } // ~1er septembre (approx, affiché comme fin août/début sept)
 
-window.ouvrirAjoutEvenement = () => {
+window.ouvrirAjoutEvenement = (id) => {
+  if(id) {
+    const ex = (STATE.evenementsPerso||[]).find(e=>e.id===id);
+    if(ex) { STATE._newEvenement = { id:ex.id, nom:ex.nom, date:ex.date, recurrent:!!ex.recurrent }; STATE.showAjoutEvenement = true; render(); return; }
+  }
   STATE._newEvenement = { nom:"", date:new Date().toISOString().slice(0,10), recurrent:false };
   STATE.showAjoutEvenement = true;
   render();
@@ -1387,7 +1391,11 @@ window.enregistrerEvenementPerso = () => {
   const e = STATE._newEvenement;
   if(!e.nom.trim()) { alert("Donne un nom à l'événement."); return; }
   if(!e.date) { alert("Choisis une date."); return; }
-  STATE.evenementsPerso = [...(STATE.evenementsPerso||[]), { id:uid("EVT"), nom:e.nom.trim(), date:e.date, recurrent:!!e.recurrent }];
+  if(e.id) {
+    STATE.evenementsPerso = (STATE.evenementsPerso||[]).map(ev => ev.id===e.id ? {...ev, nom:e.nom.trim(), date:e.date, recurrent:!!e.recurrent} : ev);
+  } else {
+    STATE.evenementsPerso = [...(STATE.evenementsPerso||[]), { id:uid("EVT"), nom:e.nom.trim(), date:e.date, recurrent:!!e.recurrent }];
+  }
   lsSet("bj_evenements", STATE.evenementsPerso);
   STATE.showAjoutEvenement = false;
   render();
@@ -1437,9 +1445,9 @@ function renderBandeauEvenements() {
     ${STATE._calendrierOuvert?`
       <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px;">
         ${evts.map(ev=>`
-          <div style="display:flex;justify-content:space-between;align-items:center;background:#fff;border-radius:7px;padding:6px 10px;font-size:12px;">
-            <span>${ev.emoji} <strong>${ev.nom}</strong>${ev.approx?' <span style="color:#bbb;">(date approx.)</span>':''} — ${ev.date.toLocaleDateString("fr-FR",{weekday:"short",day:"numeric",month:"long"})}</span>
-            ${ev.perso?`<button onclick="supprimerEvenementPerso('${ev.id}')" style="background:none;border:none;color:#a32d2d;cursor:pointer;font-size:13px;">✕</button>`:""}
+          <div style="display:flex;justify-content:space-between;align-items:center;background:#fff;border-radius:7px;padding:6px 10px;font-size:12px;${ev.perso?"cursor:pointer;":""}" ${ev.perso?`onclick="ouvrirAjoutEvenement('${ev.id}')"`:""}>
+            <span>${ev.emoji} <strong>${ev.nom}</strong>${ev.approx?' <span style="color:#bbb;">(date approx.)</span>':''} — ${ev.date.toLocaleDateString("fr-FR",{weekday:"short",day:"numeric",month:"long"})}${ev.perso?' <span style="color:#bbb;">✏️</span>':''}</span>
+            ${ev.perso?`<button onclick="event.stopPropagation();supprimerEvenementPerso('${ev.id}')" style="background:none;border:none;color:#a32d2d;cursor:pointer;font-size:13px;">✕</button>`:""}
           </div>
         `).join("")}
         <button onclick="ouvrirAjoutEvenement()" style="margin-top:4px;padding:7px;background:#993556;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:500;">➕ Ajouter un événement (braderie, fête d'école...)</button>
@@ -1454,7 +1462,7 @@ function renderAjoutEvenementModal() {
   <div class="modal-bg" onclick="if(event.target===this)setState({showAjoutEvenement:false})">
     <div class="modal" style="max-width:400px;">
       <div class="modal-header">
-        <span style="font-weight:500;">📅 Nouvel événement</span>
+        <span style="font-weight:500;">📅 ${e.id?"Modifier l'événement":"Nouvel événement"}</span>
         <button onclick="setState({showAjoutEvenement:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
       </div>
       <div class="modal-body">
@@ -1472,7 +1480,7 @@ function renderAjoutEvenementModal() {
         </label>
 
         <button onclick="enregistrerEvenementPerso()" style="width:100%;padding:12px;background:#993556;color:#fff;border:none;border-radius:9px;cursor:pointer;font-weight:600;font-size:14px;">
-          ✅ Ajouter l'événement
+          ${e.id?"✅ Enregistrer les modifications":"✅ Ajouter l'événement"}
         </button>
       </div>
     </div>
