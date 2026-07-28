@@ -477,6 +477,7 @@ let STATE = {
   annulLignes: ls("bj_annul_lignes", []),
   panierVides: ls("bj_panier_vides", []),
   evenementsPerso: ls("bj_evenements", []),
+  evtOverrides: ls("bj_evt_overrides", {}),
   memos:    ls("bj_memos",    []),
   tab: "caisse",
   // Caisse
@@ -1139,6 +1140,7 @@ window.exporterDonnees = () => {
     ventes:STATE.ventes, avoirs:STATE.avoirs,
     depenses:STATE.depenses, memos:STATE.memos,
     caisseJour:STATE.caisseJour||[], annulLignes:STATE.annulLignes||[], panierVides:STATE.panierVides||[],
+    evenementsPerso:STATE.evenementsPerso||[], evtOverrides:STATE.evtOverrides||{},
     reservations:STATE.reservations||[], historiquePromo:STATE.historiquePromo||[],
     // Config EmailJS incluse pour ne pas la perdre si le navigateur efface ses données
     emailjsServiceId:STATE.emailjsServiceId||"", emailjsTemplateId:STATE.emailjsTemplateId||"", emailjsPublicKey:STATE.emailjsPublicKey||"",
@@ -1236,6 +1238,8 @@ window.importerDonnees = (input) => {
       if(data.caisseJour)   {STATE.caisseJour=data.caisseJour;  lsSet("bj_caisse_jour",data.caisseJour);}
       if(data.annulLignes)  {STATE.annulLignes=data.annulLignes;lsSet("bj_annul_lignes",data.annulLignes);}
       if(data.panierVides)  {STATE.panierVides=data.panierVides;lsSet("bj_panier_vides",data.panierVides);}
+      if(data.evenementsPerso) {STATE.evenementsPerso=data.evenementsPerso;lsSet("bj_evenements",data.evenementsPerso);}
+      if(data.evtOverrides) {STATE.evtOverrides=data.evtOverrides;lsSet("bj_evt_overrides",data.evtOverrides);}
       if(data.reservations) {STATE.reservations=data.reservations;lsSet("bj_reservations",data.reservations);}
       if(data.historiquePromo){STATE.historiquePromo=data.historiquePromo;lsSet("bj_historique_promo",data.historiquePromo);}
       // Config EmailJS : restaurée si présente dans la sauvegarde (évite de la reperdre si le navigateur efface ses données)
@@ -1362,7 +1366,8 @@ function nieJourSemaine(annee, mois, jourSemaine, n) {
 }
 
 function getEvenementsCommerciaux(annee) {
-  return [
+  const overrides = STATE.evtOverrides || {};
+  const brut = [
     {nom:"Soldes d'hiver", emoji:"🏷️", date: nieJourSemaine(annee,0,3,2), approx:true},
     {nom:"Saint-Valentin", emoji:"💝", date: new Date(annee,1,14)},
     {nom:"Fête des Grands-Mères", emoji:"👵", date: nieJourSemaine(annee,2,0,1)},
@@ -1375,8 +1380,28 @@ function getEvenementsCommerciaux(annee) {
     {nom:"Noël", emoji:"🎄", date: new Date(annee,11,25)},
     {nom:"Saint-Sylvestre", emoji:"🎉", date: new Date(annee,11,31)},
   ];
+  return brut.map(ev => {
+    const cle = ev.nom+"_"+annee;
+    if(overrides[cle]) return { ...ev, date: new Date(overrides[cle]+"T00:00:00"), approx:false, corrige:true };
+    return ev;
+  });
 }
 function dateRentreeApprox(annee) { return 31; } // ~1er septembre (approx, affiché comme fin août/début sept)
+
+window.ouvrirCorrectionDateCommerciale = (nom, dateActuelleISO) => {
+  const annee = new Date(dateActuelleISO).getFullYear();
+  STATE._newEvenement = { commercial:true, nom, annee, date:dateActuelleISO, recurrent:false };
+  STATE.showAjoutEvenement = true;
+  render();
+};
+window.reinitialiserDateCommerciale = (nom, annee) => {
+  const cle = nom+"_"+annee;
+  const ov = {...(STATE.evtOverrides||{})};
+  delete ov[cle];
+  STATE.evtOverrides = ov;
+  lsSet("bj_evt_overrides", ov);
+  render();
+};
 
 window.ouvrirAjoutEvenement = (id) => {
   if(id) {
@@ -1389,8 +1414,17 @@ window.ouvrirAjoutEvenement = (id) => {
 };
 window.enregistrerEvenementPerso = () => {
   const e = STATE._newEvenement;
-  if(!e.nom.trim()) { alert("Donne un nom à l'événement."); return; }
   if(!e.date) { alert("Choisis une date."); return; }
+  if(e.commercial) {
+    const cle = e.nom+"_"+e.annee;
+    const ov = {...(STATE.evtOverrides||{}), [cle]: e.date};
+    STATE.evtOverrides = ov;
+    lsSet("bj_evt_overrides", ov);
+    STATE.showAjoutEvenement = false;
+    render();
+    return;
+  }
+  if(!e.nom.trim()) { alert("Donne un nom à l'événement."); return; }
   if(e.id) {
     STATE.evenementsPerso = (STATE.evenementsPerso||[]).map(ev => ev.id===e.id ? {...ev, nom:e.nom.trim(), date:e.date, recurrent:!!e.recurrent} : ev);
   } else {
@@ -1414,7 +1448,7 @@ function getEvenementsAVenir(joursFenetre) {
   [now.getFullYear(), now.getFullYear()+1].forEach(an => {
     getEvenementsCommerciaux(an).forEach(ev => {
       const d = new Date(ev.date); d.setHours(0,0,0,0);
-      if(d>=now && d<=limite) items.push({ nom:ev.nom, emoji:ev.emoji, date:d, approx:ev.approx, perso:false });
+      if(d>=now && d<=limite) items.push({ nom:ev.nom, emoji:ev.emoji, date:d, approx:ev.approx, corrige:ev.corrige, annee:an, perso:false });
     });
   });
 
@@ -1445,9 +1479,10 @@ function renderBandeauEvenements() {
     ${STATE._calendrierOuvert?`
       <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px;">
         ${evts.map(ev=>`
-          <div style="display:flex;justify-content:space-between;align-items:center;background:#fff;border-radius:7px;padding:6px 10px;font-size:12px;${ev.perso?"cursor:pointer;":""}" ${ev.perso?`onclick="ouvrirAjoutEvenement('${ev.id}')"`:""}>
-            <span>${ev.emoji} <strong>${ev.nom}</strong>${ev.approx?' <span style="color:#bbb;">(date approx.)</span>':''} — ${ev.date.toLocaleDateString("fr-FR",{weekday:"short",day:"numeric",month:"long"})}${ev.perso?' <span style="color:#bbb;">✏️</span>':''}</span>
+          <div style="display:flex;justify-content:space-between;align-items:center;background:#fff;border-radius:7px;padding:6px 10px;font-size:12px;cursor:pointer;" onclick="${ev.perso?`ouvrirAjoutEvenement('${ev.id}')`:`ouvrirCorrectionDateCommerciale('${ev.nom}','${ev.date.toISOString().slice(0,10)}')`}">
+            <span>${ev.emoji} <strong>${ev.nom}</strong>${ev.approx?' <span style="color:#bbb;">(date approx.)</span>':''}${ev.corrige?' <span style="color:#3b6d11;">(corrigée)</span>':''} — ${ev.date.toLocaleDateString("fr-FR",{weekday:"short",day:"numeric",month:"long"})} <span style="color:#bbb;">✏️</span></span>
             ${ev.perso?`<button onclick="event.stopPropagation();supprimerEvenementPerso('${ev.id}')" style="background:none;border:none;color:#a32d2d;cursor:pointer;font-size:13px;">✕</button>`:""}
+            ${ev.corrige?`<button onclick="event.stopPropagation();reinitialiserDateCommerciale('${ev.nom}',${ev.annee})" title="Revenir à la date par défaut" style="background:none;border:none;color:#888;cursor:pointer;font-size:11px;">↺</button>`:""}
           </div>
         `).join("")}
         <button onclick="ouvrirAjoutEvenement()" style="margin-top:4px;padding:7px;background:#993556;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:12px;font-weight:500;">➕ Ajouter un événement (braderie, fête d'école...)</button>
@@ -1462,25 +1497,31 @@ function renderAjoutEvenementModal() {
   <div class="modal-bg" onclick="if(event.target===this)setState({showAjoutEvenement:false})">
     <div class="modal" style="max-width:400px;">
       <div class="modal-header">
-        <span style="font-weight:500;">📅 ${e.id?"Modifier l'événement":"Nouvel événement"}</span>
+        <span style="font-weight:500;">📅 ${e.commercial?"Corriger la date de \""+e.nom+"\"":e.id?"Modifier l'événement":"Nouvel événement"}</span>
         <button onclick="setState({showAjoutEvenement:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
       </div>
       <div class="modal-body">
+        ${!e.commercial?`
         <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Nom de l'événement *</label>
         <input value="${e.nom}" oninput="STATE._newEvenement.nom=this.value" placeholder="Ex: Braderie, Fête de fin d'année scolaire..."
           style="width:100%;box-sizing:border-box;margin-bottom:12px;"/>
+        `:`
+        <div style="font-size:12px;color:#888;margin-bottom:12px;">Cette date est calculée automatiquement chaque année (date approximative) — tu peux la corriger ici pour ${e.annee}.</div>
+        `}
 
         <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Date *</label>
         <input type="date" value="${e.date}" onchange="STATE._newEvenement.date=this.value"
           style="width:100%;box-sizing:border-box;margin-bottom:12px;"/>
 
+        ${!e.commercial?`
         <label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;cursor:pointer;">
           <input type="checkbox" ${e.recurrent?"checked":""} onchange="STATE._newEvenement.recurrent=this.checked" style="width:16px;height:16px;accent-color:#993556;"/>
           <span style="font-size:13px;">Se répète chaque année (même jour/mois)</span>
         </label>
+        `:""}
 
         <button onclick="enregistrerEvenementPerso()" style="width:100%;padding:12px;background:#993556;color:#fff;border:none;border-radius:9px;cursor:pointer;font-weight:600;font-size:14px;">
-          ${e.id?"✅ Enregistrer les modifications":"✅ Ajouter l'événement"}
+          ${e.commercial?"✅ Corriger la date":e.id?"✅ Enregistrer les modifications":"✅ Ajouter l'événement"}
         </button>
       </div>
     </div>
