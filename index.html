@@ -478,6 +478,7 @@ let STATE = {
   panierVides: ls("bj_panier_vides", []),
   evenementsPerso: ls("bj_evenements", []),
   evtOverrides: ls("bj_evt_overrides", {}),
+  remiseProgressive: ls("bj_remise_progressive", { active:false, dateDebut:"", dateFin:"", paliers:[{qty:2,pct:10},{qty:3,pct:15},{qty:4,pct:20}] }),
   memos:    ls("bj_memos",    []),
   tab: "caisse",
   // Caisse
@@ -1141,6 +1142,7 @@ window.exporterDonnees = () => {
     depenses:STATE.depenses, memos:STATE.memos,
     caisseJour:STATE.caisseJour||[], annulLignes:STATE.annulLignes||[], panierVides:STATE.panierVides||[],
     evenementsPerso:STATE.evenementsPerso||[], evtOverrides:STATE.evtOverrides||{},
+    remiseProgressive:STATE.remiseProgressive||{},
     reservations:STATE.reservations||[], historiquePromo:STATE.historiquePromo||[],
     // Config EmailJS incluse pour ne pas la perdre si le navigateur efface ses données
     emailjsServiceId:STATE.emailjsServiceId||"", emailjsTemplateId:STATE.emailjsTemplateId||"", emailjsPublicKey:STATE.emailjsPublicKey||"",
@@ -1240,6 +1242,7 @@ window.importerDonnees = (input) => {
       if(data.panierVides)  {STATE.panierVides=data.panierVides;lsSet("bj_panier_vides",data.panierVides);}
       if(data.evenementsPerso) {STATE.evenementsPerso=data.evenementsPerso;lsSet("bj_evenements",data.evenementsPerso);}
       if(data.evtOverrides) {STATE.evtOverrides=data.evtOverrides;lsSet("bj_evt_overrides",data.evtOverrides);}
+      if(data.remiseProgressive) {STATE.remiseProgressive=data.remiseProgressive;lsSet("bj_remise_progressive",data.remiseProgressive);}
       if(data.reservations) {STATE.reservations=data.reservations;lsSet("bj_reservations",data.reservations);}
       if(data.historiquePromo){STATE.historiquePromo=data.historiquePromo;lsSet("bj_historique_promo",data.historiquePromo);}
       // Config EmailJS : restaurée si présente dans la sauvegarde (évite de la reperdre si le navigateur efface ses données)
@@ -1341,8 +1344,37 @@ function calcPanier() {
   const pct15 = bonFid400Actif ? 15 : 0;
   const remiseFidMontant = fidPct>0 ? Math.max(stTotalSansRemise,0)*fidPct/100 : (pct15>0 ? Math.max(stTotalSansRemise,0)*pct15/100 : 0);
   const fidPctFinal = fidPct>0 ? fidPct : pct15;
-  const total = stTotal - remGlobal - remiseFidMontant;
-  return {stTotal, stTotalSansRemise, remGlobal, fidPct, remiseFidMontant, total};
+
+  // ── Remise progressive automatique par quantité (ex: 2 art. -10%, 3 art. -15%, 4+ -20%) ──
+  // S'applique sur les articles plein tarif uniquement, hors sac (ref SAC-CAISSE) et hors retours.
+  let remiseProgPct = 0, remiseProgMontant = 0, remiseProgPalier = null;
+  const rp = STATE.remiseProgressive;
+  if(rp && rp.active) {
+    const now = new Date();
+    const debutOk = !rp.dateDebut || now >= new Date(rp.dateDebut+"T00:00:00");
+    const finOk = !rp.dateFin || now <= new Date(rp.dateFin+"T23:59:59");
+    if(debutOk && finOk) {
+      let qtyEligible = 0, baseEligible = 0;
+      panier.forEach(x=>{
+        if(x.retour || x.avoirId) return;
+        if(x.ref==="SAC-CAISSE" || x.name==="Sac") return;
+        const aRemiseArt = parseFloat(x.remise||0)>0 || x._promoAuto;
+        if(aRemiseArt) return; // déjà en promo, ne compte pas pour le palier
+        qtyEligible += (x.qty||1);
+        baseEligible += x.price*(x.qty||1);
+      });
+      const paliers = [...(rp.paliers||[])].sort((a,b)=>b.qty-a.qty); // du plus grand au plus petit
+      const palierAtteint = paliers.find(p => qtyEligible >= p.qty);
+      if(palierAtteint) {
+        remiseProgPct = palierAtteint.pct;
+        remiseProgMontant = baseEligible * remiseProgPct/100;
+        remiseProgPalier = palierAtteint;
+      }
+    }
+  }
+
+  const total = stTotal - remGlobal - remiseFidMontant - remiseProgMontant;
+  return {stTotal, stTotalSansRemise, remGlobal, fidPct, remiseFidMontant, remiseProgPct, remiseProgMontant, remiseProgPalier, total};
 }
 
 function getCaisseTotal()    { return calcPanier().total; } // peut être négatif
@@ -1531,7 +1563,7 @@ function renderAjoutEvenementModal() {
 
 function renderCaisse() {
   const panier = STATE.panier;
-  const {stTotal, remGlobal, fidPct, total} = calcPanier();
+  const {stTotal, remGlobal, fidPct, remiseProgMontant, remiseProgPct, remiseProgPalier, total} = calcPanier();
 
   // ── Alertes caisse ──────────────────────────────────────────────────
   const now      = new Date();
@@ -1999,6 +2031,7 @@ function renderCaisse() {
           <div style="display:flex;justify-content:space-between;"><span style="color:#888;">Sous-total</span><span>${eur(stTotal)}</span></div>
           ${remGlobal>0?`<div style="display:flex;justify-content:space-between;color:#3b6d11;"><span>Remise globale (${STATE.remType==="pct"?STATE.remVal+"%":"fixe"})</span><span>-${eur(remGlobal)}</span></div>`:""}
           ${fidPct>0?`<div style="display:flex;justify-content:space-between;color:#3b6d11;"><span>Fidélité -20%</span><span>-${eur(stTotal*0.2)}</span></div>`:""}
+          ${remiseProgMontant>0?`<div style="display:flex;justify-content:space-between;color:#993556;"><span>🎉 Offre quantité (${remiseProgPalier?.qty}+ art. -${remiseProgPct}%)</span><span>-${eur(remiseProgMontant)}</span></div>`:""}
           <div style="display:flex;justify-content:space-between;font-weight:500;font-size:20px;padding-top:8px;border-top:0.5px solid #e8e0e4;margin-top:4px;">
             <span>${total<0?"Avoir à rendre":"Total TTC"}</span>
             <span style="color:${total<0?"#e07c00":"#993556"};">${total<0?eur(-total):eur(total)}</span>
@@ -3184,7 +3217,7 @@ window.validerPaiement = () => {
     const vente = {
       id:uid("V"), date:new Date().toISOString(),
       panier:[...STATE.panier], client:STATE.client, vendeur:STATE.vendeur,
-      remise:calcPanier().remGlobal, remiseFid:calcPanier().remiseFidMontant||0,
+      remise:calcPanier().remGlobal, remiseFid:calcPanier().remiseFidMontant||0, remiseProg:calcPanier().remiseProgMontant||0,
       remType:STATE.remType||"", remVal:STATE.remVal||"", remiseMotif:STATE.remGlobalMotif||"",
       total:getCaisseTotal(), mixed:STATE.payMixed,
       pays:JSON.parse(JSON.stringify(STATE.pays)),
@@ -3197,7 +3230,7 @@ window.validerPaiement = () => {
     render(); return;
   }
 
-  const {stTotal, remGlobal, fidPct, total} = calcPanier();
+  const {stTotal, remGlobal, fidPct, remiseFidMontant, remiseProgMontant, remiseProgPct, total} = calcPanier();
 
   // ── Vérification avoir/cadeau en mode simple ──
   const mode1 = STATE.pays[0].mode;
@@ -3314,7 +3347,7 @@ window.validerPaiement = () => {
     id:uid("V"), date:new Date().toISOString(),
     boutiqueId: BOUTIQUE_CONFIG.id,   // Identifiant boutique pour future synchro multi-boutiques
     panier:[...STATE.panier], client:STATE.client, vendeur:STATE.vendeur,
-    remise:remGlobal, remiseFid:remiseFidMontant||0,
+    remise:remGlobal, remiseFid:remiseFidMontant||0, remiseProg:remiseProgMontant||0,
     remType:STATE.remType||"", remVal:STATE.remVal||"", remiseMotif:STATE.remGlobalMotif||"",
     total:Math.max(0,total), mixed:STATE.payMixed,
     pays:JSON.parse(JSON.stringify(STATE.pays)),
@@ -10238,6 +10271,64 @@ function renderFidelite() {
 }
 
 // ─── ENVOI PROMOS ─────────────────────────────────────────────────
+function renderRemiseProgressive() {
+  const rp = STATE.remiseProgressive;
+  const paliers = rp.paliers||[];
+  const now = new Date();
+  const enCours = rp.active && (!rp.dateDebut || now>=new Date(rp.dateDebut+"T00:00:00")) && (!rp.dateFin || now<=new Date(rp.dateFin+"T23:59:59"));
+
+  return `<div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+      <button onclick="STATE.promoTab='articles';render()" style="padding:8px 18px;border-radius:8px;border:none;background:#f5f0f2;color:#333;cursor:pointer;font-size:13px;">🏷️ Promos articles</button>
+      <button onclick="STATE.promoTab='email';render()" style="padding:8px 18px;border-radius:8px;border:none;background:#f5f0f2;color:#333;cursor:pointer;font-size:13px;">📣 Emails promo</button>
+      <button onclick="STATE.promoTab='quantite';render()" style="padding:8px 18px;border-radius:8px;border:none;background:#993556;color:#fff;cursor:pointer;font-weight:600;font-size:13px;">🎉 Remise quantité</button>
+    </div>
+
+    <div style="font-weight:600;font-size:15px;margin-bottom:6px;">🎉 Remise progressive par quantité</div>
+    <div style="font-size:13px;color:#888;margin-bottom:16px;">S'applique automatiquement en caisse dès qu'une cliente atteint le palier — sur les articles plein tarif, hors sac à 0,20€ et hors articles déjà en promo.</div>
+
+    ${enCours?`<div style="background:#eaf3de;border:1px solid #b5d89a;border-radius:10px;padding:12px;margin-bottom:16px;font-size:13px;color:#3b6d11;font-weight:600;">✅ Offre active en ce moment en caisse</div>`:""}
+
+    <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:16px;">
+      <label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;cursor:pointer;">
+        <input type="checkbox" ${rp.active?"checked":""} onchange="STATE.remiseProgressive.active=this.checked;sauvegarderRemiseProgressive()" style="width:18px;height:18px;accent-color:#993556;"/>
+        <span style="font-size:14px;font-weight:600;">Activer la remise progressive</span>
+      </label>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+        <div>
+          <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Date de début (optionnel)</label>
+          <input type="date" value="${rp.dateDebut||''}" onchange="STATE.remiseProgressive.dateDebut=this.value;sauvegarderRemiseProgressive()" style="width:100%;box-sizing:border-box;"/>
+        </div>
+        <div>
+          <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Date de fin (optionnel)</label>
+          <input type="date" value="${rp.dateFin||''}" onchange="STATE.remiseProgressive.dateFin=this.value;sauvegarderRemiseProgressive()" style="width:100%;box-sizing:border-box;"/>
+        </div>
+      </div>
+      <div style="font-size:11px;color:#aaa;margin-bottom:16px;">Laisse les dates vides pour une offre permanente, ou renseigne-les pour un week-end précis (ex: 5-6 septembre).</div>
+
+      <div style="font-size:13px;font-weight:600;margin-bottom:8px;">Paliers</div>
+      ${paliers.map((p,i)=>`
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <span style="font-size:13px;color:#555;">Dès</span>
+          <input type="number" min="2" value="${p.qty}" onchange="STATE.remiseProgressive.paliers[${i}].qty=parseInt(this.value)||2;sauvegarderRemiseProgressive()" style="width:60px;text-align:center;"/>
+          <span style="font-size:13px;color:#555;">articles achetés →</span>
+          <input type="number" min="1" max="90" value="${p.pct}" onchange="STATE.remiseProgressive.paliers[${i}].pct=parseInt(this.value)||0;sauvegarderRemiseProgressive()" style="width:60px;text-align:center;font-weight:600;color:#993556;"/>
+          <span style="font-size:13px;color:#555;">%</span>
+          <button onclick="STATE.remiseProgressive.paliers=STATE.remiseProgressive.paliers.filter((_,idx)=>idx!==${i});sauvegarderRemiseProgressive()" style="margin-left:auto;background:none;border:none;color:#a32d2d;cursor:pointer;font-size:14px;">✕</button>
+        </div>
+      `).join("")}
+      <button onclick="STATE.remiseProgressive.paliers=[...STATE.remiseProgressive.paliers,{qty:2,pct:10}];sauvegarderRemiseProgressive()" style="width:100%;padding:8px;background:#f5f0f2;border:none;border-radius:7px;cursor:pointer;font-size:12px;color:#555;margin-top:4px;">➕ Ajouter un palier</button>
+    </div>
+  </div>`;
+}
+
+window.sauvegarderRemiseProgressive = () => {
+  lsSet("bj_remise_progressive", STATE.remiseProgressive);
+  render();
+};
+
+
 function renderPromoArticles() {
   const now = new Date();
   const promos = STATE.promotions||[];
@@ -10276,9 +10367,10 @@ function renderPromoArticles() {
   const articlesMalVendus = getArticlesAReassortir();
 
   return `<div>
-    <div style="display:flex;gap:8px;margin-bottom:16px;">
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
       <button onclick="STATE.promoTab='articles';render()" style="padding:8px 18px;border-radius:8px;border:none;background:#993556;color:#fff;cursor:pointer;font-weight:600;font-size:13px;">🏷️ Promos articles</button>
       <button onclick="STATE.promoTab='email';render()" style="padding:8px 18px;border-radius:8px;border:none;background:#f5f0f2;color:#333;cursor:pointer;font-size:13px;">📣 Emails promo</button>
+      <button onclick="STATE.promoTab='quantite';render()" style="padding:8px 18px;border-radius:8px;border:none;background:#f5f0f2;color:#333;cursor:pointer;font-size:13px;">🎉 Remise quantité</button>
     </div>
 
     <!-- Raccourci : promo rapide sur les invendus / articles +2 mois -->
@@ -10600,6 +10692,9 @@ function renderPromo() {
 
   if(STATE.promoTab==="articles") {
     return renderPromoArticles();
+  }
+  if(STATE.promoTab==="quantite") {
+    return renderRemiseProgressive();
   }
 
   const ejsOk = !!(STATE.emailjsServiceId&&STATE.emailjsTemplateId&&STATE.emailjsPublicKey);
