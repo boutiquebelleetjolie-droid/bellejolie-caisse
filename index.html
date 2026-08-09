@@ -1351,8 +1351,8 @@ function calcPanier() {
   const rp = STATE.remiseProgressive;
   if(rp && rp.active) {
     const now = new Date();
-    const debutOk = !rp.dateDebut || now >= new Date(rp.dateDebut+"T00:00:00");
-    const finOk = !rp.dateFin || now <= new Date(rp.dateFin+"T23:59:59");
+    const debutOk = rp.testMode || !rp.dateDebut || now >= new Date(rp.dateDebut+"T00:00:00");
+    const finOk = rp.testMode || !rp.dateFin || now <= new Date(rp.dateFin+"T23:59:59");
     if(debutOk && finOk) {
       let qtyEligible = 0, baseEligible = 0;
       panier.forEach(x=>{
@@ -1438,9 +1438,9 @@ window.reinitialiserDateCommerciale = (nom, annee) => {
 window.ouvrirAjoutEvenement = (id) => {
   if(id) {
     const ex = (STATE.evenementsPerso||[]).find(e=>e.id===id);
-    if(ex) { STATE._newEvenement = { id:ex.id, nom:ex.nom, date:ex.date, recurrent:!!ex.recurrent }; STATE.showAjoutEvenement = true; render(); return; }
+    if(ex) { STATE._newEvenement = { id:ex.id, nom:ex.nom, date:ex.date, dateFin:ex.dateFin||"", recurrent:!!ex.recurrent }; STATE.showAjoutEvenement = true; render(); return; }
   }
-  STATE._newEvenement = { nom:"", date:new Date().toISOString().slice(0,10), recurrent:false };
+  STATE._newEvenement = { nom:"", date:new Date().toISOString().slice(0,10), dateFin:"", recurrent:false };
   STATE.showAjoutEvenement = true;
   render();
 };
@@ -1457,10 +1457,11 @@ window.enregistrerEvenementPerso = () => {
     return;
   }
   if(!e.nom.trim()) { alert("Donne un nom à l'événement."); return; }
+  if(e.dateFin && e.dateFin<e.date) { alert("La date de fin doit être après la date de début."); return; }
   if(e.id) {
-    STATE.evenementsPerso = (STATE.evenementsPerso||[]).map(ev => ev.id===e.id ? {...ev, nom:e.nom.trim(), date:e.date, recurrent:!!e.recurrent} : ev);
+    STATE.evenementsPerso = (STATE.evenementsPerso||[]).map(ev => ev.id===e.id ? {...ev, nom:e.nom.trim(), date:e.date, dateFin:e.dateFin||"", recurrent:!!e.recurrent} : ev);
   } else {
-    STATE.evenementsPerso = [...(STATE.evenementsPerso||[]), { id:uid("EVT"), nom:e.nom.trim(), date:e.date, recurrent:!!e.recurrent }];
+    STATE.evenementsPerso = [...(STATE.evenementsPerso||[]), { id:uid("EVT"), nom:e.nom.trim(), date:e.date, dateFin:e.dateFin||"", recurrent:!!e.recurrent }];
   }
   lsSet("bj_evenements", STATE.evenementsPerso);
   STATE.showAjoutEvenement = false;
@@ -1486,9 +1487,19 @@ function getEvenementsAVenir(joursFenetre) {
 
   (STATE.evenementsPerso||[]).forEach(ev => {
     let d = new Date(ev.date+"T00:00:00");
-    if(ev.recurrent) d = new Date(now.getFullYear(), d.getMonth(), d.getDate());
-    if(ev.recurrent && d<now) d = new Date(now.getFullYear()+1, new Date(ev.date+"T00:00:00").getMonth(), new Date(ev.date+"T00:00:00").getDate());
-    if(d>=now && d<=limite) items.push({ nom:ev.nom, emoji:"📌", date:d, perso:true, id:ev.id });
+    let dFin = ev.dateFin ? new Date(ev.dateFin+"T00:00:00") : null;
+    if(ev.recurrent) {
+      const decalage = dFin ? (dFin - d) : 0;
+      d = new Date(now.getFullYear(), new Date(ev.date+"T00:00:00").getMonth(), new Date(ev.date+"T00:00:00").getDate());
+      if(dFin) dFin = new Date(d.getTime()+decalage);
+      if(d<now) {
+        d = new Date(now.getFullYear()+1, new Date(ev.date+"T00:00:00").getMonth(), new Date(ev.date+"T00:00:00").getDate());
+        if(dFin) dFin = new Date(d.getTime()+decalage);
+      }
+    }
+    // Visible si le début OU la fin (OU aujourd'hui pendant la période) tombe dans la fenêtre
+    const dansLaFenetre = (d>=now && d<=limite) || (dFin && dFin>=now && dFin<=limite) || (dFin && d<now && dFin>=now);
+    if(dansLaFenetre) items.push({ nom:ev.nom, emoji:"📌", date:d, dateFin:dFin, perso:true, id:ev.id });
   });
 
   return items.sort((a,b)=>a.date-b.date);
@@ -1512,7 +1523,7 @@ function renderBandeauEvenements() {
       <div style="margin-top:8px;display:flex;flex-direction:column;gap:5px;">
         ${evts.map(ev=>`
           <div style="display:flex;justify-content:space-between;align-items:center;background:#fff;border-radius:7px;padding:6px 10px;font-size:12px;cursor:pointer;" onclick="${ev.perso?`ouvrirAjoutEvenement('${ev.id}')`:`ouvrirCorrectionDateCommerciale('${ev.nom}','${ev.date.toISOString().slice(0,10)}')`}">
-            <span>${ev.emoji} <strong>${ev.nom}</strong>${ev.approx?' <span style="color:#bbb;">(date approx.)</span>':''}${ev.corrige?' <span style="color:#3b6d11;">(corrigée)</span>':''} — ${ev.date.toLocaleDateString("fr-FR",{weekday:"short",day:"numeric",month:"long"})} <span style="color:#bbb;">✏️</span></span>
+            <span>${ev.emoji} <strong>${ev.nom}</strong>${ev.approx?' <span style="color:#bbb;">(date approx.)</span>':''}${ev.corrige?' <span style="color:#3b6d11;">(corrigée)</span>':''} — ${ev.dateFin?"du "+ev.date.toLocaleDateString("fr-FR",{day:"numeric",month:"long"})+" au "+ev.dateFin.toLocaleDateString("fr-FR",{day:"numeric",month:"long"}):ev.date.toLocaleDateString("fr-FR",{weekday:"short",day:"numeric",month:"long"})} <span style="color:#bbb;">✏️</span></span>
             ${ev.perso?`<button onclick="event.stopPropagation();supprimerEvenementPerso('${ev.id}')" style="background:none;border:none;color:#a32d2d;cursor:pointer;font-size:13px;">✕</button>`:""}
             ${ev.corrige?`<button onclick="event.stopPropagation();reinitialiserDateCommerciale('${ev.nom}',${ev.annee})" title="Revenir à la date par défaut" style="background:none;border:none;color:#888;cursor:pointer;font-size:11px;">↺</button>`:""}
           </div>
@@ -1541,9 +1552,15 @@ function renderAjoutEvenementModal() {
         <div style="font-size:12px;color:#888;margin-bottom:12px;">Cette date est calculée automatiquement chaque année (date approximative) — tu peux la corriger ici pour ${e.annee}.</div>
         `}
 
-        <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Date *</label>
+        <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Date${e.commercial?" *":" de début *"}</label>
         <input type="date" value="${e.date}" onchange="STATE._newEvenement.date=this.value"
           style="width:100%;box-sizing:border-box;margin-bottom:12px;"/>
+
+        ${!e.commercial?`
+        <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Date de fin (optionnel, pour un événement sur plusieurs jours)</label>
+        <input type="date" value="${e.dateFin||''}" onchange="STATE._newEvenement.dateFin=this.value"
+          style="width:100%;box-sizing:border-box;margin-bottom:12px;"/>
+        `:""}
 
         ${!e.commercial?`
         <label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;cursor:pointer;">
@@ -10275,7 +10292,7 @@ function renderRemiseProgressive() {
   const rp = STATE.remiseProgressive;
   const paliers = rp.paliers||[];
   const now = new Date();
-  const enCours = rp.active && (!rp.dateDebut || now>=new Date(rp.dateDebut+"T00:00:00")) && (!rp.dateFin || now<=new Date(rp.dateFin+"T23:59:59"));
+  const enCours = rp.active && (rp.testMode || ((!rp.dateDebut || now>=new Date(rp.dateDebut+"T00:00:00")) && (!rp.dateFin || now<=new Date(rp.dateFin+"T23:59:59"))));
 
   return `<div>
     <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
@@ -10293,6 +10310,11 @@ function renderRemiseProgressive() {
       <label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;cursor:pointer;">
         <input type="checkbox" ${rp.active?"checked":""} onchange="STATE.remiseProgressive.active=this.checked;sauvegarderRemiseProgressive()" style="width:18px;height:18px;accent-color:#993556;"/>
         <span style="font-size:14px;font-weight:600;">Activer la remise progressive</span>
+      </label>
+
+      <label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;cursor:pointer;background:#fff8e1;border:1px solid #fac775;border-radius:8px;padding:10px;">
+        <input type="checkbox" ${rp.testMode?"checked":""} onchange="STATE.remiseProgressive.testMode=this.checked;sauvegarderRemiseProgressive()" style="width:16px;height:16px;accent-color:#e07c00;"/>
+        <span style="font-size:12px;">🧪 Mode test — force l'offre active tout de suite, même hors dates (pense à décocher après ton test !)</span>
       </label>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
