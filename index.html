@@ -4303,7 +4303,7 @@ function renderStock() {
 
   const q = (STATE.searchProd||"").toLowerCase();
   const filtered = STATE.products.filter(p=>
-    p.name.toLowerCase().includes(q)||p.ref.toLowerCase().includes(q)
+    p.name.toLowerCase().includes(q)||p.ref.toLowerCase().includes(q)||(p.marque||"").toLowerCase().includes(q)
   );
   const isV1 = STATE.vendeur.id==="V1";
   const nbEtiq = Object.keys(STATE.etiqSelection||{}).filter(k=>(STATE.etiqSelection||{})[k]>0).length;
