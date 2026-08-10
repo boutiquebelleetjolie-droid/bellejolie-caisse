@@ -1298,12 +1298,16 @@ function calcPanier() {
       return net>=40;
     }).length : 0;
   // Le -20% prend le dessus si 3+ achats >= 40€ sur les 8 derniers passages
-  // Le bon -15% et le -20% ne sont pas cumulables
+  // Compteurs d'utilisation réelle pour l'escalade des paliers (après 3 utilisations, la remise augmente)
+  const nbUtilisationsFid20 = STATE.client?.nbUtilisationsFid20 || 0;
+  const nbUtilisationsFid15 = STATE.client ? (STATE.avoirs||[]).filter(a=>a.clientId===STATE.client.id && a.typeAvoir==="fidelite400" && a.utilise).length : 0;
+  const fid20Escalade = nbUtilisationsFid20 >= 3; // -20% -> -25% après 3 utilisations
+  const fid15Escalade = nbUtilisationsFid15 >= 3 || nbPassages40 >= 3; // -15% -> -20% après 3 utilisations OU profil "gros paniers"
   // Programme -15% : vérifier si disponible dans les 3 mois + activation manuelle
   const bonFid15 = STATE.client?.bonFid15Disponible;
   const bonFid15Valide = bonFid15 && (Date.now()-new Date(bonFid15)) < 90*24*60*60*1000;
   const bonFid15Active = bonFid15Valide && STATE._fidAppliquee15===STATE.client?.id;
-  const bonFid400Actif = bonFid15Active && nbPassages40 < 3;
+  const bonFid400Actif = bonFid15Active;
   // Programme -20% : vérifier si remise disponible (dans les 3 mois) ET manuellement activée
   const bonFid20 = STATE.client?.bonFid20Disponible;
   const bonFid20Valide = bonFid20 && (Date.now() - new Date(bonFid20)) < 90*24*60*60*1000;
@@ -1320,8 +1324,8 @@ function calcPanier() {
         lsSet("bj_clients", STATE.clients);
       }
     }
-    // Appliquer seulement si manuellement activée
-    if(bonFid20Active) fidPct=20;
+    // Appliquer seulement si manuellement activée — escalade à -25% après 3 utilisations
+    if(bonFid20Active) fidPct = fid20Escalade ? 25 : 20;
   }
   // Programme -15% : détecter palier atteint (6 passages < 40€ sur 8 derniers + 400€ cumulés)
   if(STATE.client && !bonFid15) {
@@ -1332,7 +1336,7 @@ function calcPanier() {
       const net=(v.panier||[]).filter(x=>!x.retour).reduce((s,x)=>s+x.price*(x.qty||1),0);
       return net<40;
     }).length;
-    if(nbSous40>=6 && (STATE.client.montantCumule||0)>=400 && nbPassages40<3) {
+    if(nbSous40>=6 && (STATE.client.montantCumule||0)>=400) {
       STATE.client.bonFid15Disponible = new Date().toISOString();
       lsSet("bj_clients", STATE.clients);
     }
@@ -1340,8 +1344,8 @@ function calcPanier() {
   const remGlobal = STATE.remVal
     ? (STATE.remType==="pct" ? Math.max(stTotal,0)*(parseFloat(STATE.remVal)/100) : parseFloat(STATE.remVal))
     : 0;
-  // Fidélité -20% : seulement sur les articles plein tarif
-  const pct15 = bonFid400Actif ? 15 : 0;
+  // Fidélité -15%/-20% : seulement sur les articles plein tarif — escalade à -20% après 3 utilisations ou profil gros paniers
+  const pct15 = bonFid400Actif ? (fid15Escalade ? 20 : 15) : 0;
   const remiseFidMontant = fidPct>0 ? Math.max(stTotalSansRemise,0)*fidPct/100 : (pct15>0 ? Math.max(stTotalSansRemise,0)*pct15/100 : 0);
   const fidPctFinal = fidPct>0 ? fidPct : pct15;
 
@@ -1374,7 +1378,7 @@ function calcPanier() {
   }
 
   const total = stTotal - remGlobal - remiseFidMontant - remiseProgMontant;
-  return {stTotal, stTotalSansRemise, remGlobal, fidPct, remiseFidMontant, remiseProgPct, remiseProgMontant, remiseProgPalier, total};
+  return {stTotal, stTotalSansRemise, remGlobal, fidPct, fidPctFinal, remiseFidMontant, fid20Escalade, fid15Escalade, nbUtilisationsFid20, nbUtilisationsFid15, remiseProgPct, remiseProgMontant, remiseProgPalier, total};
 }
 
 function getCaisseTotal()    { return calcPanier().total; } // peut être négatif
@@ -1580,7 +1584,7 @@ function renderAjoutEvenementModal() {
 
 function renderCaisse() {
   const panier = STATE.panier;
-  const {stTotal, remGlobal, fidPct, remiseProgMontant, remiseProgPct, remiseProgPalier, total} = calcPanier();
+  const {stTotal, remGlobal, fidPct, fidPctFinal, remiseFidMontant, fid20Escalade, fid15Escalade, remiseProgMontant, remiseProgPct, remiseProgPalier, total} = calcPanier();
 
   // ── Alertes caisse ──────────────────────────────────────────────────
   const now      = new Date();
@@ -1725,11 +1729,12 @@ function renderCaisse() {
                   const bonFid20Active = bonFid20Valide && STATE._fidAppliquee20===STATE.client?.id;
                   if(!bonFid20Valide) return "";
                   const joursRestants = Math.floor((90*24*60*60*1000-(Date.now()-new Date(bonFid20)))/(24*60*60*1000));
+                  const pct20 = fid20Escalade ? 25 : 20;
                   if(bonFid20Active) {
-                    return '<span style="margin-left:6px;background:#eaf3de;color:#3b6d11;padding:2px 8px;border-radius:10px;font-weight:500;">✅ -20% appliqué</span>'
+                    return '<span style="margin-left:6px;background:#eaf3de;color:#3b6d11;padding:2px 8px;border-radius:10px;font-weight:500;">✅ -'+pct20+'% appliqué</span>'
                       +'<button onclick="STATE._fidAppliquee20=null;render()" style="margin-left:4px;font-size:10px;background:none;border:1px solid #3b6d11;color:#3b6d11;border-radius:6px;padding:1px 6px;cursor:pointer;">Retirer</button>';
                   }
-                  return '<button onclick="STATE._fidAppliquee20=STATE.client.id;render()" style="margin-left:6px;background:#eaf3de;color:#3b6d11;border:1px solid #3b6d11;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:500;cursor:pointer;">🎁 -20% fidélité (encore '+joursRestants+'j)</button>';
+                  return '<button onclick="STATE._fidAppliquee20=STATE.client.id;render()" style="margin-left:6px;background:#eaf3de;color:#3b6d11;border:1px solid #3b6d11;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:500;cursor:pointer;">🎁 -'+pct20+'% fidélité'+(fid20Escalade?' ⭐':'')+' (encore '+joursRestants+'j)</button>';
                 })()}
                 ${(()=>{
                   const bonFid15 = STATE.client?.bonFid15Disponible;
@@ -1737,11 +1742,12 @@ function renderCaisse() {
                   const bonFid15Active = bonFid15Valide && STATE._fidAppliquee15===STATE.client?.id;
                   if(!bonFid15Valide) return "";
                   const joursRestants15 = Math.floor((90*24*60*60*1000-(Date.now()-new Date(bonFid15)))/(24*60*60*1000));
+                  const pct15Btn = fid15Escalade ? 20 : 15;
                   if(bonFid15Active) {
-                    return '<span style="margin-left:6px;background:#eef4fd;color:#185fa5;padding:2px 8px;border-radius:10px;font-weight:500;">✅ -15% appliqué</span>'
+                    return '<span style="margin-left:6px;background:#eef4fd;color:#185fa5;padding:2px 8px;border-radius:10px;font-weight:500;">✅ -'+pct15Btn+'% appliqué</span>'
                       +'<button onclick="STATE._fidAppliquee15=null;render()" style="margin-left:4px;font-size:10px;background:none;border:1px solid #185fa5;color:#185fa5;border-radius:6px;padding:1px 6px;cursor:pointer;">Retirer</button>';
                   }
-                  return '<button onclick="STATE._fidAppliquee15=STATE.client.id;render()" style="margin-left:6px;background:#eef4fd;color:#185fa5;border:1px solid #185fa5;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:500;cursor:pointer;">🎁 -15% fidélité (encore '+joursRestants15+'j)</button>';
+                  return '<button onclick="STATE._fidAppliquee15=STATE.client.id;render()" style="margin-left:6px;background:#eef4fd;color:#185fa5;border:1px solid #185fa5;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:500;cursor:pointer;">🎁 -'+pct15Btn+'% fidélité'+(fid15Escalade?' ⭐':'')+' (encore '+joursRestants15+'j)</button>';
                 })()}
               </div>
               ${(()=>{
@@ -1780,31 +1786,33 @@ function renderCaisse() {
                 const progProg2 = Math.min(nbSous40Sur8, 6);
                 const manqueProg2passages = Math.max(0, 6 - progProg2);
                 const manqueProg2montant = Math.max(0, 400 - montantTotal);
-                const eligibleProg2 = progProg2 >= 6 && montantTotal >= 400 && nbPassages40 < 3;
+                const eligibleProg2 = progProg2 >= 6 && montantTotal >= 400;
 
                 const couleur = manqueVers20 <= 2 ? "#3b6d11" : "#854f0b";
                 const bg = manqueVers20 <= 2 ? "#eaf3de" : "#fff3e8";
+                const pctProg1 = fid20Escalade ? 25 : 20;
+                const pctProg2 = fid15Escalade ? 20 : 15;
                 
                 let html = '';
                 
-                // Programme 1 : -20% (8 passages >= 40€)
+                // Programme 1 : -20% ou -25% si escalade (8 passages >= 40€)
                 html += '<div style="background:'+bg+';border-radius:8px;padding:6px 10px;margin-top:4px;">'
                   +'<div style="font-size:11px;color:'+couleur+';font-weight:600;">'
-                  +'🎯 Prog. -20% : '+passagesVers20+'/8 passages ≥ 40€'
+                  +'🎯 Prog. -'+pctProg1+'%'+(fid20Escalade?' ⭐':'')+' : '+passagesVers20+'/8 passages ≥ 40€'
                   +(manqueVers20===0?" — <strong>Remise applicable !</strong>":manqueVers20===1?" — Plus qu'1 passage !":"")
                   +'</div>'
                   +'<div style="background:#e8e0e4;border-radius:4px;height:4px;margin-top:4px;overflow:hidden;">'
                   +'<div style="height:100%;width:'+Math.min(100,passagesVers20/8*100)+'%;background:'+couleur+';border-radius:4px;"></div>'
                   +'</div></div>';
                 
-                // Programme 2 : -15% (6 passages < 40€ + 400€ cumulés)
-                if(nbPassages40 < 3) {
+                // Programme 2 : -15% ou -20% si escalade (6 passages < 40€ + 400€ cumulés)
+                {
                   const couleur2 = eligibleProg2 ? "#3b6d11" : (manqueProg2passages<=1&&manqueProg2montant<50?"#854f0b":"#185fa5");
                   const bg2 = eligibleProg2 ? "#eaf3de" : "#eef4fd";
                   html += '<div style="background:'+bg2+';border-radius:8px;padding:6px 10px;margin-top:4px;">'
                     +'<div style="font-size:11px;color:'+couleur2+';font-weight:600;">'
-                    +'🎀 Prog. -15% : '+progProg2+'/6 passages < 40€ · '+eur(montantTotal)+'/400€'
-                    +(eligibleProg2?' — <strong>Bon -15% à générer !</strong>':manqueProg2passages===0?' · encore '+eur(manqueProg2montant):'')
+                    +'🎀 Prog. -'+pctProg2+'%'+(fid15Escalade?' ⭐':'')+' : '+progProg2+'/6 passages < 40€ · '+eur(montantTotal)+'/400€'
+                    +(eligibleProg2?' — <strong>Bon -'+pctProg2+'% à générer !</strong>':manqueProg2passages===0?' · encore '+eur(manqueProg2montant):'')
                     +'</div>'
                     +'<div style="background:#e8e0e4;border-radius:4px;height:4px;margin-top:3px;overflow:hidden;">'
                     +'<div style="height:100%;width:'+Math.min(100,Math.min(progProg2/6,montantTotal/400)*100)+'%;background:'+couleur2+';border-radius:4px;"></div>'
@@ -2047,7 +2055,7 @@ function renderCaisse() {
           ${panier.filter(x=>x.retour).length>0?`<div style="display:flex;justify-content:space-between;color:#e07c00;font-size:12px;"><span>Retours (${panier.filter(x=>x.retour).length})</span><span>-${eur(panier.filter(x=>x.retour).reduce((s,x)=>s+x.price*x.qty,0))}</span></div>`:""}
           <div style="display:flex;justify-content:space-between;"><span style="color:#888;">Sous-total</span><span>${eur(stTotal)}</span></div>
           ${remGlobal>0?`<div style="display:flex;justify-content:space-between;color:#3b6d11;"><span>Remise globale (${STATE.remType==="pct"?STATE.remVal+"%":"fixe"})</span><span>-${eur(remGlobal)}</span></div>`:""}
-          ${fidPct>0?`<div style="display:flex;justify-content:space-between;color:#3b6d11;"><span>Fidélité -20%</span><span>-${eur(stTotal*0.2)}</span></div>`:""}
+          ${fidPctFinal>0?`<div style="display:flex;justify-content:space-between;color:#3b6d11;"><span>Fidélité -${fidPctFinal}%${(fid20Escalade||fid15Escalade)?' ⭐':''}</span><span>-${eur(remiseFidMontant)}</span></div>`:""}
           ${remiseProgMontant>0?`<div style="display:flex;justify-content:space-between;color:#993556;"><span>🎉 Offre quantité (${remiseProgPalier?.qty}+ art. -${remiseProgPct}%)</span><span>-${eur(remiseProgMontant)}</span></div>`:""}
           <div style="display:flex;justify-content:space-between;font-weight:500;font-size:20px;padding-top:8px;border-top:0.5px solid #e8e0e4;margin-top:4px;">
             <span>${total<0?"Avoir à rendre":"Total TTC"}</span>
@@ -2391,9 +2399,8 @@ window.utiliserAvoirId = (avoirId) => {
 window.appliquerBonFid400 = (avoirId) => {
   const avoir = (STATE.avoirs||[]).find(a=>a.id===avoirId&&a.typeAvoir==="fidelite400"&&!a.utilise&&(!a.expiration||new Date(a.expiration)>=new Date()));
   if(!avoir) { alert("Bon introuvable ou expiré."); return; }
-  // Appliquer comme remise globale % (en remplacement si déjà une remise)
-  STATE.remiseGlobale = "15";
-  STATE.remiseGlobaleType = "pct";
+  // Active réellement la remise -15%/-20% (le montant exact, avec escalade éventuelle, est calculé dans calcPanier)
+  STATE._fidAppliquee15 = STATE.client?.id;
   STATE._bonFid400EnCours = avoirId;
   render();
 };
@@ -3434,6 +3441,11 @@ window.validerPaiement = () => {
       lsSet("bj_avoirs", STATE.avoirs);
       STATE.clients = STATE.clients.map(c=>c.id===clientMaj.id?{...c, avoirs:[...(c.avoirs||[]),bon400.id]}:c);
       vente._bonFidelite400 = bon400;
+    }
+
+    // ── Incrémenter le compteur d'utilisation du Programme -20%/-25% (pour l'escalade après 3 utilisations) ──
+    if(fidPct===20 || fidPct===25) {
+      STATE.clients = STATE.clients.map(c=>c.id===STATE.client.id?{...c, nbUtilisationsFid20:(c.nbUtilisationsFid20||0)+1}:c);
     }
 
     lsSet("bj_clients", STATE.clients);
