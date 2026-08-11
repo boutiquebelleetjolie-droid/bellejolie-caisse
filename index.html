@@ -4302,9 +4302,13 @@ function renderStock() {
   if(STATE.stockTab === "reception") return renderStockReception();
 
   const q = (STATE.searchProd||"").toLowerCase();
-  const filtered = STATE.products.filter(p=>
+  const filtreDateStock = STATE.dateEtiqFiltreActif ? (STATE.dateEtiq||"") : "";
+  let filtered = STATE.products.filter(p=>
     p.name.toLowerCase().includes(q)||p.ref.toLowerCase().includes(q)||(p.marque||"").toLowerCase().includes(q)
   );
+  if(filtreDateStock) {
+    filtered = filtered.filter(p => (p.dateAjout||"").slice(0,10)===filtreDateStock);
+  }
   const isV1 = STATE.vendeur.id==="V1";
   const nbEtiq = Object.keys(STATE.etiqSelection||{}).filter(k=>(STATE.etiqSelection||{})[k]>0).length;
 
@@ -4318,9 +4322,11 @@ function renderStock() {
   if(isV1) html += '<button onclick="STATE.stockTab=\'reception\';render()" class="btn-ghost" style="white-space:nowrap;">📦 Réception facture</button>';
   if(isV1) html += '<button onclick="ouvrirApercuExtractionMarque()" class="btn-ghost" style="white-space:nowrap;">🔧 Extraire les marques</button>';
   const dateEtiq = STATE.dateEtiq || new Date().toISOString().slice(0,10);
-  const articlesJour = STATE.products.filter(p => p.createdAt && p.createdAt.slice(0,10)===dateEtiq);
-  html += '<div style="display:flex;align-items:center;gap:6px;">';
+  const articlesJour = STATE.products.filter(p => (p.dateAjout||"").slice(0,10)===dateEtiq);
+  html += '<div style="display:flex;align-items:center;gap:6px;background:#fff8e1;border:1px solid #fac775;border-radius:8px;padding:6px 10px;">';
+  html += '<label style="font-size:11px;color:#854f0b;white-space:nowrap;">📅 Entrés le</label>';
   html += '<input type="date" value="'+dateEtiq+'" onchange="STATE.dateEtiq=this.value;render()" style="border:1px solid #ddd;border-radius:7px;padding:6px;font-size:13px;cursor:pointer;"/>';
+  html += '<label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#854f0b;cursor:pointer;white-space:nowrap;"><input type="checkbox" '+(STATE.dateEtiqFiltreActif?'checked':'')+' onchange="STATE.dateEtiqFiltreActif=this.checked;render()" style="width:14px;height:14px;"/> Filtrer la liste</label>';
   html += '<button onclick="imprimerEtiquettesJour()" style="padding:8px 14px;background:#3b6d11;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;white-space:nowrap;">🏷️ Étiquettes'+(articlesJour.length?' ('+articlesJour.length+')':'')+'</button>';
   html += '</div>';
   html += '</div>';
@@ -11884,7 +11890,7 @@ window.toggleCatStock = (key) => { STATE[key] = !STATE[key]; render(); };
 
 window.imprimerEtiquettesJour = () => {
   const dateEtiq = STATE.dateEtiq || new Date().toISOString().slice(0,10);
-  let articlesJour = STATE.products.filter(p => p.createdAt && p.createdAt.slice(0,10)===dateEtiq);
+  let articlesJour = STATE.products.filter(p => (p.dateAjout||"").slice(0,10)===dateEtiq);
   if(!articlesJour.length) {
     setState({showLotEtiq:true});
     return;
