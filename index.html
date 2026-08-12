@@ -11929,6 +11929,37 @@ window.imprimerEtiquettesJour = () => {
   setState({showLotEtiq:true});
 };
 
+window.reinitialiserEtiqSimple = () => {
+  const sel = STATE.etiqSelection||{};
+  STATE.etiqLignes = Object.keys(sel).filter(k=>sel[k]>0).map(id=>({
+    id: id+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),
+    prodId: id, taille:'', couleur:'', qty:1
+  }));
+  render();
+};
+
+window.confirmerToutStockSelection = () => {
+  const sel = STATE.etiqSelection||{};
+  let total = 0;
+  Object.keys(sel).filter(k=>sel[k]>0).forEach(prodId=>{
+    const p = STATE.products.find(x=>x.id===prodId);
+    if(!p) return;
+    const sv = p.stockVariantes||{};
+    const tailles = p.tailles||[], couleurs = p.couleurs||[];
+    const cols = couleurs.length>0 ? couleurs : [''];
+    const rows = tailles.length>0 ? tailles : [''];
+    let sum = 0, hasVariantes = false;
+    rows.forEach(t=>cols.forEach(c=>{
+      const stk = parseInt(sv[(t||'_')+'_'+(c||'_')])||0;
+      if(stk>0) { hasVariantes=true; sum += stk; }
+    }));
+    total += hasVariantes ? sum : (p.stock||1);
+  });
+  if(!confirm("Ça va imprimer "+total+" étiquette"+(total>1?"s":"")+" au total (1 par unité en stock), à la place de la liste actuelle.\n\nContinuer ?")) return;
+  ajouterToutStockSelection();
+  imprimerLotEtiquettes();
+};
+
 window.ajouterToutStockLot = (prodId) => {
   const p = STATE.products.find(x=>x.id===prodId);
   if(!p) return;
@@ -12156,9 +12187,13 @@ function renderLotEtiqModal() {
     html += '<div data-pos="'+i+'" onclick="STATE.etiqStartPos=parseInt(this.dataset.pos);render()" style="height:12px;border-radius:2px;cursor:pointer;border:1px solid '+(isSel?'#993556':isUsed?'#ccc':'#e8e0e4')+';background:'+(isSel?'#993556':isUsed?'#f0f0f0':'#fff')+';display:flex;align-items:center;justify-content:center;font-size:6px;color:'+(isSel?'#fff':isUsed?'#bbb':'#888')+';">'+i+'</div>';
   }
   html += '</div></div>';
+  // Bouton pour repartir sur une base simple : 1 étiquette par article sélectionné
+  if(prodIds.length > 0) {
+    html += '<button onclick="reinitialiserEtiqSimple()" style="width:100%;padding:9px;background:#f5f0f2;color:#555;border:none;border-radius:9px;cursor:pointer;font-size:12px;margin-bottom:8px;">🔄 Remettre à 1 étiquette par article sélectionné ('+prodIds.length+')</button>';
+  }
   // Bouton imprimer tout le stock des articles sélectionnés d'un coup
   if(prodIds.length > 0) {
-    html += '<button onclick="ajouterToutStockSelection();imprimerLotEtiquettes()" style="width:100%;padding:11px;background:#3b6d11;color:#fff;border:none;border-radius:9px;cursor:pointer;font-weight:500;font-size:13px;margin-bottom:8px;">📦 Tout le stock sélectionné + Imprimer</button>';
+    html += '<button onclick="confirmerToutStockSelection()" style="width:100%;padding:11px;background:#3b6d11;color:#fff;border:none;border-radius:9px;cursor:pointer;font-weight:500;font-size:13px;margin-bottom:8px;">📦 1 étiquette par unité en stock (remplace la liste ci-dessus)</button>';
   }
   html += '<button onclick="imprimerLotEtiquettes()" style="width:100%;padding:13px;background:#185fa5;color:#fff;border:none;border-radius:9px;cursor:pointer;font-weight:500;font-size:14px;">🖨️ Imprimer les étiquettes (lignes actuelles)</button>';
   html += '</div></div></div>';
