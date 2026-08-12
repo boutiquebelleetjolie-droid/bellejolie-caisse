@@ -4910,6 +4910,14 @@ function makeBarcodeRects(data, h, barW) {
   return {rects, svgW: maxW, viewBox: '0 0 '+finalW+' '+h};
 }
 
+window.imprimerUnSeulSurPlanche = () => {
+  const p = STATE.showBCModal;
+  if(!p) return;
+  STATE.etiqLignes = [{ id: p.id+'_solo_'+Date.now(), prodId: p.id, taille:'', couleur:'', qty:1 }];
+  STATE.showBCModal = null;
+  ouvrirModalLotEtiq();
+};
+
 function renderBCModal() {
   const p = STATE.showBCModal;
   const taille  = STATE.etiquetteTaille  || "medium";
@@ -4938,6 +4946,9 @@ function renderBCModal() {
         <button onclick="setState({showBCModal:null})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
       </div>
       <div class="modal-body">
+        <button onclick="imprimerUnSeulSurPlanche()" style="width:100%;padding:9px;background:#eef4fd;color:#185fa5;border:1px solid #b3d0f0;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;margin-bottom:12px;">
+          📍 Imprimer 1 seule étiquette sur la planche A4 — à la position de mon choix
+        </button>
 
         <!-- Format + Quantité -->
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
