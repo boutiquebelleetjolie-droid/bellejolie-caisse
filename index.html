@@ -5139,6 +5139,7 @@ window.imprimerToutStock = () => {
         <div class="etiq-name">${p.name.length>26?p.name.slice(0,26)+"…":p.name}</div>
         <div class="etiq-ref">${(p.marque?p.marque+" · ":"")+(p.ref+(infos?" · "+infos:"")).slice(0,30)}${p.grandeTaille?" · GT":""}</div>
         <img src="${bcImg}" class="etiq-bc"/>
+        <div class="etiq-bc-num">${p.barcode}</div>
         ${ligneItem&&ligneItem.prixOriginal ? `<div class="etiq-prix"><span style="text-decoration:line-through;color:#aaa;font-size:9px;">${eur(ligneItem.prixOriginal)}</span> ${eur(p.price)}</div>` : `<div class="etiq-prix">${eur(p.price)}</div>`}
       </div>`;
     }
@@ -5173,6 +5174,7 @@ window.imprimerToutStock = () => {
     .etiq-name{font-weight:700;font-size:6.5pt;line-height:1.1;width:100%;max-height:3mm;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;flex-shrink:0;}
     .etiq-ref{font-size:4.5pt;color:#444;width:100%;max-height:2.5mm;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;line-height:1.1;flex-shrink:0;}
     .etiq-bc{width:33mm;max-width:33mm;height:6mm;max-height:6mm;display:block;overflow:hidden;flex-shrink:0;}
+    .etiq-bc-num{font-family:monospace;font-size:4pt;color:#555;width:100%;line-height:1;flex-shrink:0;letter-spacing:0.2px;overflow:hidden;white-space:nowrap;}
     .etiq-prix{font-size:13pt;font-weight:700;color:#993556;line-height:1;flex-shrink:0;}
     .page-suivante{page-break-before:always;margin-top:10mm;}
     @media print{
@@ -12250,6 +12252,7 @@ window.imprimerLotEtiquettes = () => {
       <div class="etiq-name">${p.name.length>26?p.name.slice(0,26)+"…":p.name}</div>
       <div class="etiq-ref">${(p.marque?p.marque+" · ":"")+(p.ref+(infos?" · "+infos:"")).slice(0,30)}${p.grandeTaille?" · GT":""}</div>
       <img src="${bcImg}" class="etiq-bc"/>
+        <div class="etiq-bc-num">${p.barcode}</div>
       ${ligneItem&&ligneItem.prixOriginal ? `<div class="etiq-prix"><span style="text-decoration:line-through;color:#aaa;font-size:9px;">${eur(ligneItem.prixOriginal)}</span> ${eur(p.price)}</div>` : `<div class="etiq-prix">${eur(p.price)}</div>`}
     </div>`;
   }));
@@ -12290,6 +12293,7 @@ window.imprimerLotEtiquettes = () => {
     .etiq-name{font-weight:700;font-size:6.5pt;line-height:1.1;width:100%;max-height:3mm;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;flex-shrink:0;}
     .etiq-ref{font-size:4.5pt;color:#444;width:100%;max-height:2.5mm;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;line-height:1.1;flex-shrink:0;}
     .etiq-bc{width:33mm;max-width:33mm;height:6mm;max-height:6mm;display:block;overflow:hidden;flex-shrink:0;}
+    .etiq-bc-num{font-family:monospace;font-size:4pt;color:#555;width:100%;line-height:1;flex-shrink:0;letter-spacing:0.2px;overflow:hidden;white-space:nowrap;}
     .etiq-prix{font-size:13pt;font-weight:700;color:#993556;line-height:1;flex-shrink:0;}
     .page-suivante{page-break-before:always;margin-top:10mm;}
     @media print{
