@@ -789,7 +789,7 @@ window.ouvrirNouveauDepot = () => {
   STATE._newDepot = {
     clientId: null, clientNom: "", clientPrenom: "", clientTel: "",
     dateDepot: new Date().toISOString().slice(0,10),
-    articles: [{nom:"",prix:"",categorie:""}],
+    articles: [{nom:"",prix:"",categorie:"",taille:""}],
     rechercheTel: "",
   };
   STATE.showNouveauDepot = true;
@@ -815,7 +815,7 @@ window.selectionnerClientDepot = (clientId) => {
 
 window.ajouterLigneDepot = () => {
   if(STATE._newDepot.articles.length >= 10) { alert("Maximum 10 articles par dépôt."); return; }
-  STATE._newDepot.articles.push({nom:"",prix:"",categorie:""});
+  STATE._newDepot.articles.push({nom:"",prix:"",categorie:"",taille:""});
   render();
 };
 window.retirerLigneDepot = (idx) => {
@@ -842,9 +842,10 @@ window.enregistrerDepot = () => {
       stock: 1,
       ref: uid("DEPOT-"),
       barcode: genBC(),
-      tailles: [], couleurs: [], stockVariantes: {}, grandeTaille: false,
+      tailles: a.taille?[a.taille]:[], couleurs: [], stockVariantes: {}, grandeTaille: false,
       dateAjout: new Date().toISOString(),
       depotVente: true, depotLotId: lotId, dateDepot: d.dateDepot,
+      depotTaille: a.taille || "", depotClientNom: d.clientNom.trim(), depotClientPrenom: d.clientPrenom.trim(),
     };
   });
 
@@ -1057,7 +1058,8 @@ function renderNouveauDepotModal() {
               <option value="">Catégorie</option>
               ${CATEGORIES.map(c=>`<option value="${c}" ${a.categorie===c?"selected":""}>${c}</option>`).join("")}
             </select>
-            <input type="number" min="0" value="${a.prix}" oninput="STATE._newDepot.articles[${i}].prix=this.value" placeholder="Prix" style="width:65px;box-sizing:border-box;font-size:12px;"/>
+            <input value="${a.taille}" oninput="STATE._newDepot.articles[${i}].taille=this.value" placeholder="Taille" style="width:55px;box-sizing:border-box;font-size:12px;"/>
+            <input type="number" min="0" value="${a.prix}" oninput="STATE._newDepot.articles[${i}].prix=this.value" placeholder="Prix" style="width:60px;box-sizing:border-box;font-size:12px;"/>
             <button onclick="retirerLigneDepot(${i})" style="background:none;border:none;color:#a32d2d;cursor:pointer;font-size:15px;">✕</button>
           </div>
         `).join("")}
@@ -5433,7 +5435,7 @@ window.imprimerToutStock = () => {
     for(let i=0;i<ligne.qty;i++) {
       etiqHtml += `<div class="etiq">
         <div class="etiq-name">${p.name.length>26?p.name.slice(0,26)+"…":p.name}</div>
-        <div class="etiq-ref">${(p.marque?p.marque+" · ":"")+(p.ref+(infos?" · "+infos:"")).slice(0,30)}${p.grandeTaille?" · GT":""}</div>
+        <div class="etiq-ref" style="${p.depotVente?'color:#185fa5;font-weight:600;':''}">${p.depotVente ? ("🔄 DÉPÔT · "+(p.depotClientPrenom||"")+" "+(p.depotClientNom||"")+((p.depotTaille||(infos))?" · "+(p.depotTaille?"T."+p.depotTaille:infos):"")).slice(0,40) : ((p.marque?p.marque+" · ":"")+(p.ref+(infos?" · "+infos:"")).slice(0,30)+(p.grandeTaille?" · GT":""))}</div>
         <img src="${bcImg}" class="etiq-bc"/>
         <div class="etiq-bc-num">${p.barcode}</div>
         ${ligneItem&&ligneItem.prixOriginal ? `<div class="etiq-prix"><span style="text-decoration:line-through;color:#aaa;font-size:9px;">${eur(ligneItem.prixOriginal)}</span> ${eur(p.price)}</div>` : `<div class="etiq-prix">${eur(p.price)}</div>`}
@@ -5510,7 +5512,10 @@ window.imprimerEtiquettes = () => {
   <div class="etiq">
     <div class="nom">${p.name}</div>
     ${desig?`<div class="desig">${desig}</div>`:""}
-    <div class="ref">${p.marque?p.marque+" · ":""}${p.ref}${p.category?" · "+p.category:""}${tailleVal?" · T."+tailleVal:""}${couleurVal?" · "+couleurVal:""}</div>
+    ${p.depotVente
+      ? `<div class="ref" style="color:#185fa5;font-weight:600;">🔄 DÉPÔT-VENTE · ${p.depotClientPrenom||""} ${p.depotClientNom||""}${(p.depotTaille||tailleVal)?" · T."+(p.depotTaille||tailleVal):""}</div>`
+      : `<div class="ref">${p.marque?p.marque+" · ":""}${p.ref}${p.category?" · "+p.category:""}${tailleVal?" · T."+tailleVal:""}${couleurVal?" · "+couleurVal:""}</div>`
+    }
     <svg width="${svgW}" height="${cfg.bcH+4}" viewBox="${viewBox||'0 0 '+svgW+' '+cfg.bcH}" preserveAspectRatio="none" style="display:block;margin:2px auto 0;max-width:100%;">${rects}</svg>
     <div class="bc">${p.barcode}</div>
     <div class="prix">${eur(p.price)}</div>
@@ -6306,6 +6311,33 @@ function renderStats() {
   const vendM={};
   vf.forEach(v=>{const n=v.vendeur?.nom||"Inconnu";vendM[n]=(vendM[n]||0)+v.total;});
 
+  // ── Répartition du CA par catégorie ──────────────────────────────
+  const prodMapAll = {};
+  STATE.products.forEach(p=>{ prodMapAll[p.id]=p; });
+  const catMap = {};
+  vf.forEach(v=>v.panier.filter(x=>!x.retour).forEach(i=>{
+    const pid = i.prodIdOriginal || i.id;
+    const p = prodMapAll[pid];
+    const cat = p?.category || "Autre";
+    catMap[cat] = (catMap[cat]||0) + i.price*(i.qty||1);
+  }));
+  const catTriees = Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
+
+  // ── Dépôt-vente : CA généré + top clientes déposantes ────────────
+  let caDepotVente = 0;
+  const clientsDepotVenteM = {};
+  vf.forEach(v=>v.panier.filter(x=>!x.retour).forEach(i=>{
+    const pid = i.prodIdOriginal || i.id;
+    const p = prodMapAll[pid];
+    if(p?.depotVente) {
+      const montant = i.price*(i.qty||1);
+      caDepotVente += montant;
+      const nomCli = ((p.depotClientPrenom||"")+" "+(p.depotClientNom||"")).trim() || "Cliente inconnue";
+      clientsDepotVenteM[nomCli] = (clientsDepotVenteM[nomCli]||0) + montant;
+    }
+  }));
+  const topClientsDepot = Object.entries(clientsDepotVenteM).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
   // ── Graphique 7 jours ─────────────────────────────────────────
   const jours=[];
   for(let i=6;i>=0;i--){
@@ -6441,6 +6473,36 @@ function renderStats() {
               <span>${a.name}</span>
             </div>
             <div style="text-align:right;"><div style="font-weight:500;">${a.qty} vte${a.qty>1?"s":""}</div><div style="font-size:11px;color:#888;">${eur(a.ca)}</div></div>
+          </div>
+        `).join("")}
+      </div>
+      <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;">
+        <div style="font-weight:500;font-size:13px;margin-bottom:12px;">Répartition du CA par catégorie</div>
+        ${catTriees.length===0?`<div style="color:#aaa;font-size:13px;">Aucune vente</div>`:catTriees.map(([cat,montant])=>{
+          const pct = ca>0 ? (montant/ca*100) : 0;
+          return `<div style="margin-bottom:8px;">
+            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">
+              <span>${cat}</span>
+              <span style="font-weight:500;">${eur(montant)} · ${pct.toFixed(1)}%</span>
+            </div>
+            <div style="background:#e8e0e4;border-radius:4px;height:5px;overflow:hidden;">
+              <div style="height:100%;width:${Math.min(100,pct)}%;background:#993556;border-radius:4px;"></div>
+            </div>
+          </div>`;
+        }).join("")}
+      </div>
+      <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;">
+        <div style="font-weight:500;font-size:13px;margin-bottom:4px;">🔄 Dépôt-vente</div>
+        <div style="font-size:22px;font-weight:700;color:#185fa5;margin-bottom:2px;">${eur(caDepotVente)}</div>
+        <div style="font-size:11px;color:#888;margin-bottom:12px;">${ca>0?((caDepotVente/ca*100).toFixed(1)+"% du CA total"):"—"} · déjà inclus dans le CA ci-dessus</div>
+        <div style="font-weight:500;font-size:12px;margin-bottom:8px;border-top:0.5px solid #f0ebee;padding-top:10px;">Top clientes déposantes</div>
+        ${topClientsDepot.length===0?`<div style="color:#aaa;font-size:12px;">Aucune vente en dépôt-vente</div>`:topClientsDepot.map(([nom,montant],i)=>`
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:0.5px solid #e8e0e4;font-size:12px;">
+            <div style="display:flex;gap:8px;align-items:center;">
+              <span style="width:18px;height:18px;border-radius:50%;background:#eef4fd;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:500;color:#185fa5;">${i+1}</span>
+              <span>${nom}</span>
+            </div>
+            <span style="font-weight:500;">${eur(montant)}</span>
           </div>
         `).join("")}
       </div>
@@ -12547,7 +12609,7 @@ window.imprimerLotEtiquettes = () => {
     const bcImg = btoa_svg(bc);
     return `<div class="etiq">
       <div class="etiq-name">${p.name.length>26?p.name.slice(0,26)+"…":p.name}</div>
-      <div class="etiq-ref">${(p.marque?p.marque+" · ":"")+(p.ref+(infos?" · "+infos:"")).slice(0,30)}${p.grandeTaille?" · GT":""}</div>
+      <div class="etiq-ref" style="${p.depotVente?'color:#185fa5;font-weight:600;':''}">${p.depotVente ? ("🔄 DÉPÔT · "+(p.depotClientPrenom||"")+" "+(p.depotClientNom||"")+((p.depotTaille||(infos))?" · "+(p.depotTaille?"T."+p.depotTaille:infos):"")).slice(0,40) : ((p.marque?p.marque+" · ":"")+(p.ref+(infos?" · "+infos:"")).slice(0,30)+(p.grandeTaille?" · GT":""))}</div>
       <img src="${bcImg}" class="etiq-bc"/>
         <div class="etiq-bc-num">${p.barcode}</div>
       ${ligneItem&&ligneItem.prixOriginal ? `<div class="etiq-prix"><span style="text-decoration:line-through;color:#aaa;font-size:9px;">${eur(ligneItem.prixOriginal)}</span> ${eur(p.price)}</div>` : `<div class="etiq-prix">${eur(p.price)}</div>`}
