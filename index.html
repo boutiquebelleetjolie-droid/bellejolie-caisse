@@ -83,7 +83,7 @@ const BOUTIQUE_CONFIG = {
   // Données "locales" propres à cette boutique (ventes, stock, Z de caisse, réservations)
   // Cette distinction sera utilisée lors de la migration vers Firebase
   DONNEES_GLOBALES: ["bj_clients","bj_avoirs","bj_promotions"],
-  DONNEES_LOCALES:  ["bj_products","bj_ventes","bj_caisseJour","bj_reservations","bj_annul_lignes","bj_attente"],
+  DONNEES_LOCALES:  ["bj_products","bj_ventes","bj_caisseJour","bj_reservations","bj_annul_lignes","bj_attente","bj_depots_vente"],
 };
 
 // ════════════════════════════════════════════════════════════════
@@ -468,6 +468,7 @@ let STATE = {
   fondFermeture: {},      // Z de caisse journaliers
   transferts:      ls("bj_transferts",       []),
   reservations:    ls("bj_reservations",    []),
+  depotsVente:     ls("bj_depots_vente",    []),
   showModalReservation: false,
   resaClient:null, resaArticles:[], resaSearch:"", resaProdSearch:"", resaNote:"", resaScanMode:false,
   historiquePromo:  ls("bj_historique_promo", []),
@@ -779,8 +780,298 @@ window.pinKey = (k) => {
 };
 
 // ═══════════════════════════════════════════════════════════════
-//  APP
+//  DÉPÔT-VENTE (portant seconde main)
 // ═══════════════════════════════════════════════════════════════
+const DEPOT_COMMISSION_PCT = 20; // La boutique garde 20%, la cliente récupère 80% en bon d'achat
+const DEPOT_DUREE_JOURS = 30;
+
+window.ouvrirNouveauDepot = () => {
+  STATE._newDepot = {
+    clientId: null, clientNom: "", clientPrenom: "", clientTel: "",
+    dateDepot: new Date().toISOString().slice(0,10),
+    articles: [{nom:"",prix:"",categorie:""}],
+    rechercheTel: "",
+  };
+  STATE.showNouveauDepot = true;
+  render();
+};
+
+window.rechercherClientDepot = (val) => {
+  STATE._newDepot.rechercheTel = val;
+  STATE._newDepot.clientId = null;
+  render();
+};
+
+window.selectionnerClientDepot = (clientId) => {
+  const c = STATE.clients.find(x=>x.id===clientId);
+  if(!c) return;
+  STATE._newDepot.clientId = c.id;
+  STATE._newDepot.clientNom = c.nom;
+  STATE._newDepot.clientPrenom = c.prenom;
+  STATE._newDepot.clientTel = c.tel;
+  STATE._newDepot.rechercheTel = "";
+  render();
+};
+
+window.ajouterLigneDepot = () => {
+  if(STATE._newDepot.articles.length >= 10) { alert("Maximum 10 articles par dépôt."); return; }
+  STATE._newDepot.articles.push({nom:"",prix:"",categorie:""});
+  render();
+};
+window.retirerLigneDepot = (idx) => {
+  STATE._newDepot.articles.splice(idx,1);
+  render();
+};
+
+window.enregistrerDepot = () => {
+  const d = STATE._newDepot;
+  if(!d.clientNom.trim() || !d.clientTel.trim()) { alert("Renseigne au moins le nom et le téléphone de la cliente."); return; }
+  const articlesValides = d.articles.filter(a=>a.nom.trim() && parseFloat(a.prix)>0);
+  if(articlesValides.length===0) { alert("Ajoute au moins un article avec un nom et un prix."); return; }
+
+  const lotId = uid("DEPOT");
+  const nouveauxProduits = articlesValides.map(a => {
+    const prix = parseFloat(a.prix);
+    return {
+      id: uid("DV"),
+      name: a.nom.trim(),
+      marque: "Dépôt-vente",
+      category: a.categorie || "Accessoires",
+      price: prix,
+      prixAchat: +(prix*(1-DEPOT_COMMISSION_PCT/100)).toFixed(2), // ce qui reviendra à la cliente si vendu
+      stock: 1,
+      ref: uid("DEPOT-"),
+      barcode: genBC(),
+      tailles: [], couleurs: [], stockVariantes: {}, grandeTaille: false,
+      dateAjout: new Date().toISOString(),
+      depotVente: true, depotLotId: lotId, dateDepot: d.dateDepot,
+    };
+  });
+
+  STATE.products = [...STATE.products, ...nouveauxProduits];
+  lsSet("bj_products", STATE.products);
+
+  const lot = {
+    id: lotId,
+    clientId: d.clientId, clientNom: d.clientNom.trim(), clientPrenom: d.clientPrenom.trim(), clientTel: d.clientTel.trim(),
+    dateDepot: d.dateDepot, articleIds: nouveauxProduits.map(p=>p.id),
+    statut: "actif",
+  };
+  STATE.depotsVente = [...(STATE.depotsVente||[]), lot];
+  lsSet("bj_depots_vente", STATE.depotsVente);
+
+  STATE.showNouveauDepot = false;
+  render();
+  alert("✅ Dépôt enregistré ! "+nouveauxProduits.length+" article(s) ajouté(s) au stock — tu peux maintenant imprimer leurs étiquettes depuis le Stock.");
+};
+
+function getVenteInfoArticleDepot(prodId) {
+  for(const v of (STATE.ventes||[])) {
+    if(v.annulee || v.test) continue;
+    const item = (v.panier||[]).find(x=>!x.retour && (x.prodIdOriginal===prodId || x.id===prodId));
+    if(item) return { vendu:true, date:v.date, montant: item.price*(item.qty||1) };
+  }
+  return { vendu:false };
+}
+
+window.retirerArticleDepot = (prodId) => {
+  if(!confirm("Retirer définitivement cet article du stock ? La cliente devra venir le récupérer.")) return;
+  STATE.products = STATE.products.filter(p=>p.id!==prodId);
+  lsSet("bj_products", STATE.products);
+  render();
+};
+
+window.renouvelerArticleDepot = (prodId) => {
+  const p = STATE.products.find(x=>x.id===prodId);
+  if(!p) return;
+  const nouveauPrixStr = prompt("Nouveau prix pour \""+p.name+"\" (laisse tel quel pour garder "+eur(p.price)+") :", p.price);
+  if(nouveauPrixStr===null) return; // annulé
+  const nouveauPrix = parseFloat(nouveauPrixStr) || p.price;
+  STATE.products = STATE.products.map(x=>x.id===prodId ? {
+    ...x, price:nouveauPrix, prixAchat:+(nouveauPrix*(1-DEPOT_COMMISSION_PCT/100)).toFixed(2),
+    dateDepot: new Date().toISOString().slice(0,10),
+  } : x);
+  lsSet("bj_products", STATE.products);
+  render();
+};
+
+window.genererBonAchatDepot = (lotId) => {
+  const lot = (STATE.depotsVente||[]).find(l=>l.id===lotId);
+  if(!lot) return;
+  let totalVentes = 0, nbVendus = 0;
+  lot.articleIds.forEach(pid => {
+    const info = getVenteInfoArticleDepot(pid);
+    if(info.vendu) { totalVentes += info.montant; nbVendus++; }
+  });
+  if(nbVendus===0) { alert("Aucun article vendu pour l'instant dans ce dépôt — rien à générer."); return; }
+  const montantBon = +(totalVentes*(1-DEPOT_COMMISSION_PCT/100)).toFixed(2);
+  if(!confirm("Générer un bon d'achat de "+eur(montantBon)+" pour "+lot.clientPrenom+" "+lot.clientNom+" ?\n\n("+nbVendus+" article(s) vendu(s) pour "+eur(totalVentes)+" au total, dont "+DEPOT_COMMISSION_PCT+"% de commission boutique)\n\nCette action est irréversible.")) return;
+
+  const exp = new Date(); exp.setMonth(exp.getMonth()+3);
+  const bon = {
+    id: uid("AV"), code: "DEPOT-"+Date.now().toString().slice(-8),
+    date: new Date().toISOString(), expiration: exp.toISOString(),
+    montant: montantBon, solde: montantBon, utilise: false,
+    client: lot.clientId ? undefined : {nom:lot.clientNom, prenom:lot.clientPrenom},
+    clientId: lot.clientId || null,
+    typeAvoir: "depotVente", source: "depotVente",
+    label: "Bon d'achat dépôt-vente — "+nbVendus+" article(s) vendu(s)",
+  };
+  STATE.avoirs = [...(STATE.avoirs||[]), bon];
+  lsSet("bj_avoirs", STATE.avoirs);
+  if(lot.clientId) {
+    STATE.clients = STATE.clients.map(c=>c.id===lot.clientId?{...c, avoirs:[...(c.avoirs||[]),bon.id]}:c);
+    lsSet("bj_clients", STATE.clients);
+  }
+  STATE.depotsVente = STATE.depotsVente.map(l=>l.id===lotId?{...l, bonGenereId:bon.id, montantBonGenere:montantBon}:l);
+  lsSet("bj_depots_vente", STATE.depotsVente);
+  render();
+  alert("✅ Bon d'achat de "+eur(montantBon)+" généré (code "+bon.code+", valable 3 mois).");
+};
+
+function renderDepotVente() {
+  const lots = [...(STATE.depotsVente||[])].sort((a,b)=>new Date(b.dateDepot)-new Date(a.dateDepot));
+  const now = new Date();
+
+  let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
+    <div>
+      <div style="font-weight:600;font-size:16px;">🔄 Dépôt-vente</div>
+      <div style="font-size:12px;color:#888;">Portant seconde main — commission boutique ${DEPOT_COMMISSION_PCT}%, cycle de ${DEPOT_DUREE_JOURS} jours</div>
+    </div>
+    <button onclick="ouvrirNouveauDepot()" class="btn-primary" style="width:auto;padding:10px 18px;">➕ Nouveau dépôt</button>
+  </div>`;
+
+  if(lots.length===0) {
+    html += `<div style="text-align:center;color:#aaa;padding:50px 20px;">Aucun dépôt enregistré pour le moment.</div>`;
+  }
+
+  lots.forEach(lot => {
+    const joursEcoules = Math.floor((now - new Date(lot.dateDepot+"T00:00:00")) / 86400000);
+    const echeanceAtteinte = joursEcoules >= DEPOT_DUREE_JOURS;
+    const articles = lot.articleIds.map(pid => {
+      const p = STATE.products.find(x=>x.id===pid);
+      const venteInfo = p ? getVenteInfoArticleDepot(pid) : null;
+      return { pid, p, venteInfo };
+    });
+    const presents = articles.filter(a=>a.p); // encore en stock (non retirés)
+    const vendus = presents.filter(a=>a.venteInfo?.vendu);
+    const enVente = presents.filter(a=>!a.venteInfo?.vendu);
+    const totalVentesLot = vendus.reduce((s,a)=>s+a.venteInfo.montant,0);
+
+    html += `<div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:16px;margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+        <div>
+          <div style="font-weight:600;font-size:14px;">${lot.clientPrenom} ${lot.clientNom} ${lot.clientId?'<span style="background:#eaf3de;color:#3b6d11;font-size:10px;padding:2px 7px;border-radius:8px;margin-left:4px;">🔗 Compte fidélité</span>':''}</div>
+          <div style="font-size:12px;color:#888;">📞 ${lot.clientTel} · Déposé le ${new Date(lot.dateDepot).toLocaleDateString("fr-FR")} (${joursEcoules}j)</div>
+        </div>
+        <div style="text-align:right;">
+          ${echeanceAtteinte && enVente.length>0 ? `<span style="background:#faeeda;color:#854f0b;font-size:11px;padding:4px 9px;border-radius:8px;font-weight:600;">⏰ Échéance atteinte</span>` : ""}
+          ${lot.bonGenereId ? `<div style="font-size:11px;color:#3b6d11;margin-top:4px;">✅ Bon d'achat généré : ${eur(lot.montantBonGenere)}</div>` : ""}
+        </div>
+      </div>
+
+      <div style="font-size:12px;color:#555;margin-bottom:8px;">
+        📦 ${presents.length} article(s) en stock · ✅ ${vendus.length} vendu(s) pour ${eur(totalVentesLot)} · 🕐 ${enVente.length} encore en vente
+      </div>
+
+      <div style="border-top:0.5px solid #f0ebee;padding-top:8px;">
+        ${articles.map(a => {
+          if(!a.p) return `<div style="font-size:12px;color:#bbb;padding:4px 0;text-decoration:line-through;">Article retiré</div>`;
+          if(a.venteInfo?.vendu) {
+            return `<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;color:#3b6d11;">
+              <span>✅ ${a.p.name} — vendu le ${new Date(a.venteInfo.date).toLocaleDateString("fr-FR")}</span>
+              <strong>${eur(a.venteInfo.montant)}</strong>
+            </div>`;
+          }
+          return `<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:4px 0;">
+            <span>🕐 ${a.p.name} — ${eur(a.p.price)}</span>
+            <span style="display:flex;gap:4px;">
+              <button onclick="renouvelerArticleDepot('${a.pid}')" style="background:#eef4fd;color:#185fa5;border:none;border-radius:6px;padding:3px 8px;cursor:pointer;font-size:11px;">🔄 Renouveler</button>
+              <button onclick="retirerArticleDepot('${a.pid}')" style="background:#fcebeb;color:#a32d2d;border:none;border-radius:6px;padding:3px 8px;cursor:pointer;font-size:11px;">🗑️ Retirer</button>
+            </span>
+          </div>`;
+        }).join("")}
+      </div>
+
+      ${vendus.length>0 && !lot.bonGenereId ? `
+        <button onclick="genererBonAchatDepot('${lot.id}')" style="width:100%;margin-top:12px;padding:10px;background:#993556;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;">
+          💰 Générer le bon d'achat (${eur(totalVentesLot*(1-DEPOT_COMMISSION_PCT/100))} — ${DEPOT_COMMISSION_PCT}% de commission déduite)
+        </button>` : ""}
+    </div>`;
+  });
+
+  return html;
+}
+
+function renderNouveauDepotModal() {
+  const d = STATE._newDepot;
+  const resultatsRecherche = d.rechercheTel && d.rechercheTel.length>=2
+    ? STATE.clients.filter(c => c.tel?.includes(d.rechercheTel) || `${c.prenom} ${c.nom}`.toLowerCase().includes(d.rechercheTel.toLowerCase())).slice(0,5)
+    : [];
+
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)setState({showNouveauDepot:false})">
+    <div class="modal" style="max-width:520px;">
+      <div class="modal-header">
+        <span style="font-weight:500;">🔄 Nouveau dépôt-vente</span>
+        <button onclick="setState({showNouveauDepot:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
+      </div>
+      <div class="modal-body">
+
+        <div style="font-weight:600;font-size:13px;margin-bottom:8px;">👤 Cliente</div>
+        ${d.clientId?`
+          <div style="background:#eaf3de;border-radius:8px;padding:10px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;">
+            <span style="font-size:13px;">✅ ${d.clientPrenom} ${d.clientNom} — 🔗 compte fidélité lié</span>
+            <button onclick="STATE._newDepot.clientId=null;render()" style="background:none;border:none;color:#3b6d11;cursor:pointer;font-size:12px;text-decoration:underline;">Changer</button>
+          </div>
+        `:`
+          <input value="${d.rechercheTel}" oninput="rechercherClientDepot(this.value)" placeholder="🔍 Chercher une cliente existante (nom ou téléphone)..."
+            style="width:100%;box-sizing:border-box;margin-bottom:6px;"/>
+          ${resultatsRecherche.length>0?`
+            <div style="border:1px solid #eee;border-radius:8px;margin-bottom:10px;overflow:hidden;">
+              ${resultatsRecherche.map(c=>`
+                <div onclick="selectionnerClientDepot('${c.id}')" style="padding:8px 10px;cursor:pointer;font-size:13px;border-bottom:0.5px solid #f0ebee;">
+                  ${c.prenom} ${c.nom} — ${c.tel}
+                </div>
+              `).join("")}
+            </div>
+          `:""}
+          <div style="font-size:11px;color:#aaa;margin-bottom:10px;">Pas trouvée ? Renseigne ses infos manuellement ci-dessous :</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+            <input value="${d.clientNom}" oninput="STATE._newDepot.clientNom=this.value" placeholder="Nom *" style="width:100%;box-sizing:border-box;"/>
+            <input value="${d.clientPrenom}" oninput="STATE._newDepot.clientPrenom=this.value" placeholder="Prénom" style="width:100%;box-sizing:border-box;"/>
+          </div>
+          <input value="${d.clientTel}" oninput="STATE._newDepot.clientTel=this.value" placeholder="Téléphone *" style="width:100%;box-sizing:border-box;margin-bottom:14px;"/>
+        `}
+
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <label style="font-size:12px;color:#888;">Date de dépôt</label>
+          <input type="date" value="${d.dateDepot}" onchange="STATE._newDepot.dateDepot=this.value" style="font-size:13px;"/>
+        </div>
+
+        <div style="font-weight:600;font-size:13px;margin:14px 0 8px;">📦 Articles déposés (${d.articles.length}/10)</div>
+        ${d.articles.map((a,i)=>`
+          <div style="display:flex;gap:6px;margin-bottom:6px;align-items:center;">
+            <input value="${a.nom}" oninput="STATE._newDepot.articles[${i}].nom=this.value" placeholder="Nom de l'article" style="flex:2;box-sizing:border-box;font-size:12px;"/>
+            <select onchange="STATE._newDepot.articles[${i}].categorie=this.value" style="flex:1;font-size:12px;">
+              <option value="">Catégorie</option>
+              ${CATEGORIES.map(c=>`<option value="${c}" ${a.categorie===c?"selected":""}>${c}</option>`).join("")}
+            </select>
+            <input type="number" min="0" value="${a.prix}" oninput="STATE._newDepot.articles[${i}].prix=this.value" placeholder="Prix" style="width:65px;box-sizing:border-box;font-size:12px;"/>
+            <button onclick="retirerLigneDepot(${i})" style="background:none;border:none;color:#a32d2d;cursor:pointer;font-size:15px;">✕</button>
+          </div>
+        `).join("")}
+        ${d.articles.length<10?`<button onclick="ajouterLigneDepot()" style="width:100%;padding:7px;background:#f5f0f2;border:none;border-radius:7px;cursor:pointer;font-size:12px;color:#555;margin-bottom:14px;">➕ Ajouter un article</button>`:""}
+
+        <button onclick="enregistrerDepot()" style="width:100%;padding:12px;background:#993556;color:#fff;border:none;border-radius:9px;cursor:pointer;font-weight:600;font-size:14px;margin-top:8px;">
+          ✅ Enregistrer le dépôt
+        </button>
+      </div>
+    </div>
+  </div>`;
+}
+
+
 function renderApp() {
   const tabs = [
     {key:"caisse",    label:"Caisse",       emoji:"🛒"},
@@ -790,6 +1081,7 @@ function renderApp() {
     {key:"stats",     label:"Stats",        emoji:"📊"},
     {key:"caisse_jour",label:"Z Caisse",    emoji:"🏦"},
     {key:"reservations",label:"Réservations", emoji:"📌"},
+    {key:"depotvente", label:"Dépôt-vente", emoji:"🔄"},
     {key:"promo",     label:"Promos",       emoji:"📣"},
     {key:"journal",   label:"Journal",      emoji:"📓"},
     {key:"historique", label:"Historique",   emoji:"📋"},
@@ -841,6 +1133,7 @@ function renderApp() {
     ${STATE.tab==="journal"      ? renderJournal()        : ""}
     ${STATE.tab==="fidelite"     ? renderFidelite()       : ""}
     ${STATE.tab==="reservations" ? renderReservations()    : ""}
+    ${STATE.tab==="depotvente"   ? renderDepotVente()      : ""}
     ${STATE.tab==="promo"        ? renderPromo()          : ""}
     ${STATE.tab==="bilan"        ? (STATE.vendeur.id==="V1" ? renderBilan()       : "") : ""}
     ${STATE.tab==="caisse_jour"  ? renderCaisseJour()  : ""}
@@ -861,6 +1154,7 @@ function renderApp() {
   ${STATE.showClientDetail ? renderClientDetail()    : ""}
   ${STATE.showExtractionMarque ? renderApercuExtractionMarque() : ""}
   ${STATE.showAjoutEvenement ? renderAjoutEvenementModal() : ""}
+  ${STATE.showNouveauDepot ? renderNouveauDepotModal() : ""}
   ${STATE.showVendeurSettings ? renderVendeurSettings() : ""}
   ${STATE.showAnnulLigne ? renderAnnulLigneModal() : ""}
   ${STATE.showVarianteModal ? renderVarianteModal() : ""}
@@ -1144,6 +1438,7 @@ window.exporterDonnees = () => {
     evenementsPerso:STATE.evenementsPerso||[], evtOverrides:STATE.evtOverrides||{},
     remiseProgressive:STATE.remiseProgressive||{},
     reservations:STATE.reservations||[], historiquePromo:STATE.historiquePromo||[],
+    depotsVente:STATE.depotsVente||[],
     // Config EmailJS incluse pour ne pas la perdre si le navigateur efface ses données
     emailjsServiceId:STATE.emailjsServiceId||"", emailjsTemplateId:STATE.emailjsTemplateId||"", emailjsPublicKey:STATE.emailjsPublicKey||"",
     geminiApiKey:STATE.geminiApiKey||"",
@@ -1244,6 +1539,7 @@ window.importerDonnees = (input) => {
       if(data.evtOverrides) {STATE.evtOverrides=data.evtOverrides;lsSet("bj_evt_overrides",data.evtOverrides);}
       if(data.remiseProgressive) {STATE.remiseProgressive=data.remiseProgressive;lsSet("bj_remise_progressive",data.remiseProgressive);}
       if(data.reservations) {STATE.reservations=data.reservations;lsSet("bj_reservations",data.reservations);}
+      if(data.depotsVente) {STATE.depotsVente=data.depotsVente;lsSet("bj_depots_vente",data.depotsVente);}
       if(data.historiquePromo){STATE.historiquePromo=data.historiquePromo;lsSet("bj_historique_promo",data.historiquePromo);}
       // Config EmailJS : restaurée si présente dans la sauvegarde (évite de la reperdre si le navigateur efface ses données)
       if(data.emailjsServiceId)  { STATE.emailjsServiceId=data.emailjsServiceId;   lsSet("bj_ejs_service",data.emailjsServiceId); }
@@ -4135,7 +4431,7 @@ prods.forEach(p=>{
   t += '<td style="padding:9px 6px;">'+photo+'</td>';
   t += '<td style="padding:9px 6px;font-family:monospace;font-size:12px;">'+p.ref+'</td>';
   const dernierReassort = p.dernierReassort ? new Date(p.dernierReassort).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}) : null;
-  t += '<td style="padding:9px 6px;"><div style="font-weight:500;">'+p.name+'</div>'+(p.marque?'<div style="font-size:10px;color:#993556;font-weight:600;text-transform:uppercase;">'+p.marque+'</div>':'')+'<div style="font-size:11px;color:#888;">'+p.barcode+(dernierReassort?' · 📦 '+dernierReassort:'')+'</div></td>';
+  t += '<td style="padding:9px 6px;"><div style="font-weight:500;">'+p.name+(p.depotVente?' <span style="background:#eef4fd;color:#185fa5;font-size:9px;padding:1px 6px;border-radius:7px;font-weight:600;">🔄 DÉPÔT</span>':'')+'</div>'+(p.marque?'<div style="font-size:10px;color:#993556;font-weight:600;text-transform:uppercase;">'+p.marque+'</div>':'')+'<div style="font-size:11px;color:#888;">'+p.barcode+(dernierReassort?' · 📦 '+dernierReassort:'')+'</div></td>';
   const moisEnReserve = p.enReserve && p.dateReserve ? Math.floor((Date.now()-new Date(p.dateReserve))/(1000*60*60*24*30)) : 0;
   const alerteReserve = moisEnReserve >= 5;
   // Vérifier si l'article a des réservations clients actives
@@ -5317,7 +5613,8 @@ function renderCRM() {
   ${STATE.showClientModal  ? renderClientModal()  : ""}
   ${STATE.showClientDetail ? renderClientDetail() : ""}
   ${STATE.showExtractionMarque ? renderApercuExtractionMarque() : ""}
-  ${STATE.showAjoutEvenement ? renderAjoutEvenementModal() : ""}`;
+  ${STATE.showAjoutEvenement ? renderAjoutEvenementModal() : ""}
+  ${STATE.showNouveauDepot ? renderNouveauDepotModal() : ""}`;
 }
 
 window.openClientModal = id => {
