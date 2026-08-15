@@ -835,7 +835,7 @@ window.enregistrerDepot = () => {
     return {
       id: uid("DV"),
       name: a.nom.trim(),
-      marque: "Dépôt-vente",
+      marque: "Dépôt · "+d.clientPrenom.trim()+" "+d.clientNom.trim(),
       category: a.categorie || "Accessoires",
       price: prix,
       prixAchat: +(prix*(1-DEPOT_COMMISSION_PCT/100)).toFixed(2), // ce qui reviendra à la cliente si vendu
