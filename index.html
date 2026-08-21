@@ -2562,6 +2562,8 @@ window.appliquerRemiseReseaux = () => {
     setState({remVal:"",remType:"eur"});
     STATE._remiseReseauxEnCours = false;
   } else {
+    const sousTotal = calcPanier().stTotal;
+    if(sousTotal < 20) { alert("⚠️ Cette remise de -5€ n'est accordée qu'à partir de 20€ d'achat (panier actuel : "+eur(sousTotal)+")."); return; }
     setState({remVal:"5",remType:"eur"});
     STATE._remiseReseauxEnCours = true; // sera taggé dans la vente
     // Marquer la cliente comme suivant les réseaux et remise accordée
