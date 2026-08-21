@@ -10161,6 +10161,23 @@ window.cloturerCaisse = (targetDateStr) => {
 
 window.envoyerReleveCloture = async (z, ventesJour, dateStr) => {
   try {
+    // Détail des billets/pièces à retirer, basé sur le comptage réel et le fond validé pour demain
+    const FOND_RESERVE_MAIL = 100;
+    const DENOMS_MAIL = [
+      {val:500,label:"Billet 500€"},{val:200,label:"Billet 200€"},{val:100,label:"Billet 100€"},
+      {val:50, label:"Billet 50€"}, {val:20, label:"Billet 20€"}, {val:10, label:"Billet 10€"},
+      {val:5,  label:"Billet 5€"},  {val:2,  label:"Pièce 2€"},   {val:1,  label:"Pièce 1€"},
+      {val:0.5,label:"Pièce 50c"},  {val:0.2,label:"Pièce 20c"},  {val:0.1,label:"Pièce 10c"},
+    ];
+    const detailRetrait = DENOMS_MAIL.map(d => {
+      const key = String(d.val).replace(".","_");
+      const compte = parseInt(STATE.fondFermeture?.["fer_"+key]) || 0;
+      const garder = parseInt(STATE.fondLendemain?.["lend_"+key]) || 0;
+      return { ...d, compte, garder, retirer: Math.max(0, compte-garder) };
+    }).filter(d => d.compte > 0);
+    const aRetirerMail = detailRetrait.filter(d=>d.retirer>0);
+    const gardesMail = detailRetrait.filter(d=>d.garder>0);
+
     // Calculer les remises manuelles (hors promos auto)
     const remises = [];
     ventesJour.forEach(v => {
@@ -10275,6 +10292,22 @@ window.envoyerReleveCloture = async (z, ventesJour, dateStr) => {
             ${avoirTotal>0?`<tr><td style="padding:6px 12px;color:#555;">↩️ Avoir</td><td style="padding:6px 12px;font-weight:600;">${eur(avoirTotal)}</td></tr>`:''}
             <tr style="border-top:2px solid #993556;"><td style="padding:8px 12px;font-weight:700;">TOTAL</td><td style="padding:8px 12px;font-weight:700;color:#993556;">${eur(z.caTTC)}</td></tr>
           </table>
+
+          ${aRetirerMail.length>0?`
+          <h2 style="color:#993556;font-size:16px;margin:0 0 12px;">🏦 Fond de caisse — retrait du soir</h2>
+          <table style="width:100%;border-collapse:collapse;margin-bottom:10px;font-size:13px;">
+            <thead><tr style="background:#fcebeb;"><th style="padding:6px 8px;text-align:left;color:#a32d2d;">📤 À retirer</th><th style="padding:6px 8px;text-align:right;color:#a32d2d;">Montant</th></tr></thead>
+            <tbody>
+              ${aRetirerMail.map(d=>`<tr><td style="padding:4px 8px;">${d.label} × ${d.retirer}</td><td style="padding:4px 8px;text-align:right;font-weight:600;">${eur(d.retirer*d.val)}</td></tr>`).join("")}
+            </tbody>
+          </table>
+          <table style="width:100%;border-collapse:collapse;margin-bottom:20px;font-size:13px;">
+            <thead><tr style="background:#eaf3de;"><th style="padding:6px 8px;text-align:left;color:#3b6d11;">✅ Reste en caisse (fond de ${eur(FOND_RESERVE_MAIL)})</th><th style="padding:6px 8px;text-align:right;color:#3b6d11;">Montant</th></tr></thead>
+            <tbody>
+              ${gardesMail.map(d=>`<tr><td style="padding:4px 8px;">${d.label} × ${d.garder}</td><td style="padding:4px 8px;text-align:right;font-weight:600;">${eur(d.garder*d.val)}</td></tr>`).join("")}
+            </tbody>
+          </table>
+          `:''}
 
           <h2 style="color:#993556;font-size:16px;margin:0 0 12px;">🏷️ Remises manuelles (${remises.length})</h2>
           <table style="width:100%;border-collapse:collapse;margin-bottom:8px;font-size:13px;">
