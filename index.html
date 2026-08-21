@@ -10045,8 +10045,11 @@ window.updateFermetureTotal = () => {
   const total = Object.entries(STATE.fondFermeture||{}).reduce((s,[k,v])=>{
     const val=parseFloat(k.replace("fer_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
   const el=document.getElementById("total-fermeture");if(el)el.textContent=eur(total);
+  // Recalcule automatiquement la répartition suggérée pour demain, sans interrompre la saisie en cours
+  clearTimeout(window._fondSuggTimer);
+  window._fondSuggTimer = setTimeout(()=>{ suggererFondLendemain(true); }, 500);
 };
-window.suggererFondLendemain = () => {
+window.suggererFondLendemain = (silencieux) => {
   // Ce qui est disponible d'après le comptage complet de fermeture
   const dispo = {};
   Object.entries(STATE.fondFermeture||{}).forEach(([k,v]) => {
@@ -10054,7 +10057,7 @@ window.suggererFondLendemain = () => {
     dispo[val] = (dispo[val]||0) + (parseInt(v)||0);
   });
   if(Object.keys(dispo).length===0) {
-    alert("⚠️ Comptez d'abord la caisse dans la section \"Comptage fermeture (soir)\" avant de demander une suggestion.");
+    if(!silencieux) alert("⚠️ Comptez d'abord la caisse dans la section \"Comptage fermeture (soir)\" avant de demander une suggestion.");
     return;
   }
   let reste = 100;
@@ -10086,7 +10089,7 @@ window.suggererFondLendemain = () => {
     if(qty>0) STATE.fondLendemain["lend_"+String(val).replace(".","_")] = qty;
   });
   render();
-  if(reste > 0.001) {
+  if(reste > 0.001 && !silencieux) {
     alert("⚠️ Impossible d'atteindre exactement 100€ avec les espèces comptées ce soir (il manque "+eur(reste)+"). Ajustez manuellement selon ce qui est réellement disponible.");
   }
 };
