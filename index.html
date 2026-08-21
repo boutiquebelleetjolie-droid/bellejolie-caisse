@@ -9966,12 +9966,13 @@ window.validerOuvertureCaisse = () => {
     const val=parseFloat(k.replace("ouv_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
   const FOND_RESERVE = 100;
   const ecart = totalOuv - FOND_RESERVE;
+  if(Math.abs(ecart) > 0.01) {
+    alert("⚠️ Le fond de caisse compté est de "+eur(totalOuv)+", ce qui fait un écart de "+(ecart>0?"+":"")+eur(ecart)+" par rapport aux "+eur(FOND_RESERVE)+" attendus.\n\nRecompte le tiroir : la validation n'est possible que si le montant est exactement "+eur(FOND_RESERVE)+".\n\nSi le montant réel est bien différent, préviens Elodie avant de continuer.");
+    return;
+  }
   const dateStr = new Date().toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"});
-  let msg = `✅ Ouverture de caisse validée — ${dateStr}
-💵 Fond compté : ${eur(totalOuv)}`;
-  if(Math.abs(ecart)>0.01) msg += `
-⚠️ Écart : ${ecart>0?"+":""}${eur(ecart)} vs ${eur(FOND_RESERVE)} attendu`;
-  else msg += `
+  const msg = `✅ Ouverture de caisse validée — ${dateStr}
+💵 Fond compté : ${eur(totalOuv)}
 ✅ Fond conforme (${eur(FOND_RESERVE)})`;
   // Sauvegarder l'heure d'ouverture
   const key = "bj_ouverture_"+new Date().toISOString().slice(0,10);
@@ -9979,7 +9980,7 @@ window.validerOuvertureCaisse = () => {
   const el = document.getElementById("ouverture-confirm");
   if(el){
     el.style.display="block";
-    el.textContent = `✅ Ouverture validée à ${new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})} — Fond : ${eur(totalOuv)}${Math.abs(ecart)>0.01?" ⚠️ Écart : "+eur(ecart):""}`;
+    el.textContent = `✅ Ouverture validée à ${new Date().toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})} — Fond : ${eur(totalOuv)} conforme`;
   }
   render();
   alert(msg);
