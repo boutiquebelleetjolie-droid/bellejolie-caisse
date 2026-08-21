@@ -9693,6 +9693,16 @@ function renderCaisseJour() {
   const ouvertureJour = ls("bj_ouverture_"+zDateStr, null);
   const caisseOuverte = !!ouvertureJour?.valide;
 
+  // Pré-remplir automatiquement le fond d'ouverture du jour avec ce qui a été laissé la veille au soir
+  if(isToday && !caisseOuverte && (!STATE.fondOuverture || Object.keys(STATE.fondOuverture).length===0)) {
+    const fondLendemain = ls("bj_fond_lendemain", null);
+    if(fondLendemain && Object.keys(fondLendemain).length>0) {
+      const converti = {};
+      Object.entries(fondLendemain).forEach(([k,v]) => { converti[k.replace("lend_","ouv_")] = v; });
+      STATE.fondOuverture = converti;
+    }
+  }
+
   // Ventes du jour sélectionné
   const ventesJour = STATE.ventes.filter(v=>{
     if(v.test||v.annulee) return false;
@@ -9724,6 +9734,7 @@ function renderCaisseJour() {
   // Calcul totaux fond de caisse
   const totalOuv = Object.entries(STATE.fondOuverture||{}).reduce((s,[k,v])=>{const val=parseFloat(k.replace("ouv_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
   const totalFer = Object.entries(STATE.fondFermeture||{}).reduce((s,[k,v])=>{const val=parseFloat(k.replace("fer_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
+  const totalLendemain = Object.entries(STATE.fondLendemain||{}).reduce((s,[k,v])=>{const val=parseFloat(k.replace("lend_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
   const aDeposer = Math.max(0, totalFer - FOND_RESERVE);
   const ecart    = totalFer - (totalOuv + especes - retours);
   // Écart fond de caisse matin : totalOuv doit être = FOND_RESERVE (100€)
@@ -9741,18 +9752,18 @@ function renderCaisseJour() {
   ];
 
   function rowDenom(d, prefix) {
-    const isOuv = prefix==="ouv_";
-    const stateKey = isOuv?"fondOuverture":"fondFermeture";
+    const stateKey = prefix==="ouv_"?"fondOuverture":prefix==="fer_"?"fondFermeture":"fondLendemain";
+    const updateFn = prefix==="ouv_"?"updateOuvertureTotal":prefix==="fer_"?"updateFermetureTotal":"updateLendemainTotal";
     const key = prefix+String(d.val).replace(".","_");
     const qty = parseInt(STATE[stateKey]?.[key]||0);
-    const borderCol = isOuv?"#ddd":"#c8e0b0";
+    const borderCol = prefix==="ouv_"?"#ddd":prefix==="fer_"?"#c8e0b0":"#f0c8d4";
     return `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">
       <span style="font-size:12px;color:${d.color};font-weight:500;min-width:92px;">${d.label}</span>
       <div style="display:flex;align-items:center;gap:5px;">
         <button onclick="STATE.${stateKey}=STATE.${stateKey}||{};STATE.${stateKey}['${key}']=Math.max(0,(parseInt(STATE.${stateKey}['${key}']||0)-1));render()"
           style="width:24px;height:24px;border-radius:5px;border:1px solid ${borderCol};background:#fff;cursor:pointer;font-size:13px;">−</button>
         <input type="number" min="0" value="${qty}"
-          oninput="STATE.${stateKey}=STATE.${stateKey}||{};STATE.${stateKey}['${key}']=parseInt(this.value)||0;${isOuv?"updateOuvertureTotal":"updateFermetureTotal"}()"
+          oninput="STATE.${stateKey}=STATE.${stateKey}||{};STATE.${stateKey}['${key}']=parseInt(this.value)||0;${updateFn}()"
           style="width:42px;text-align:center;border:1px solid ${borderCol};border-radius:5px;padding:2px;font-size:12px;"/>
         <button onclick="STATE.${stateKey}=STATE.${stateKey}||{};STATE.${stateKey}['${key}']=(parseInt(STATE.${stateKey}['${key}']||0)+1);render()"
           style="width:24px;height:24px;border-radius:5px;border:1px solid ${borderCol};background:#fff;cursor:pointer;font-size:13px;">+</button>
@@ -9822,7 +9833,7 @@ function renderCaisseJour() {
       <!-- OUVERTURE MATIN -->
       <div style="background:#f5f0f2;border-radius:10px;padding:14px;">
         <div style="font-weight:500;font-size:12px;color:#993556;margin-bottom:4px;">🌅 Fond d'ouverture (matin)</div>
-        <div style="font-size:11px;color:#888;margin-bottom:10px;">Comptez votre fond de caisse en début de journée. Il doit être de ${eur(FOND_RESERVE)}.</div>
+        <div style="font-size:11px;color:#888;margin-bottom:10px;">Pré-rempli automatiquement avec ce qui a été laissé hier soir : vérifiez en comptant le tiroir, et ajustez si besoin. Le total doit être de ${eur(FOND_RESERVE)}.</div>
         ${DENOMINATIONS.map(d=>rowDenom(d,"ouv_")).join("")}
         <div style="border-top:1px solid #e8e0e4;margin-top:8px;padding-top:8px;">
           <div style="display:flex;justify-content:space-between;font-weight:700;font-size:14px;color:#993556;margin-bottom:4px;">
@@ -9841,7 +9852,7 @@ function renderCaisseJour() {
       <!-- FERMETURE SOIR -->
       <div style="background:#eaf3de;border-radius:10px;padding:14px;">
         <div style="font-weight:500;font-size:12px;color:#3b6d11;margin-bottom:4px;">🌙 Comptage fermeture (soir)</div>
-        <div style="font-size:11px;color:#888;margin-bottom:10px;">Comptez la caisse en fin de journée. ${eur(FOND_RESERVE)} seront conservés pour demain.</div>
+        <div style="font-size:11px;color:#888;margin-bottom:10px;">Comptez toute la caisse en fin de journée, avant d'en retirer l'excédent.</div>
         ${DENOMINATIONS.map(d=>rowDenom(d,"fer_")).join("")}
         <div style="border-top:1px solid #c8e0b0;margin-top:8px;padding-top:8px;">
           <div style="display:flex;justify-content:space-between;font-weight:700;font-size:14px;color:#3b6d11;margin-bottom:8px;">
@@ -9862,6 +9873,18 @@ function renderCaisseJour() {
               </span>
             </div>
           </div>
+        </div>
+
+        <!-- CE QUI RESTE POUR DEMAIN -->
+        <div style="background:#fbeaf0;border-radius:10px;padding:12px;margin-top:12px;border:1px solid #f0c8d4;">
+          <div style="font-weight:500;font-size:12px;color:#993556;margin-bottom:4px;">📌 Ce qui reste dans le tiroir pour demain (${eur(FOND_RESERVE)})</div>
+          <div style="font-size:11px;color:#888;margin-bottom:10px;">Indiquez précisément quels billets/pièces vous laissez dans le tiroir après avoir retiré l'excédent. Ce comptage sera automatiquement proposé demain matin, il suffira de vérifier et ajuster si besoin.</div>
+          ${DENOMINATIONS.map(d=>rowDenom(d,"lend_")).join("")}
+          <div style="border-top:1px solid #f0c8d4;margin-top:8px;padding-top:8px;display:flex;justify-content:space-between;font-weight:700;font-size:14px;">
+            <span style="color:#993556;">Total laissé</span>
+            <span id="total-lendemain" style="color:${Math.abs(totalLendemain-FOND_RESERVE)<0.01?"#3b6d11":"#a32d2d"};">${eur(totalLendemain)}</span>
+          </div>
+          ${Math.abs(totalLendemain-FOND_RESERVE)>=0.01?`<div id="msg-lendemain" style="margin-top:6px;font-size:12px;color:#a32d2d;">⚠️ Doit être exactement ${eur(FOND_RESERVE)} pour pouvoir clôturer.</div>`:`<div id="msg-lendemain" style="margin-top:6px;font-size:12px;color:#3b6d11;">✅ Conforme, prêt pour demain.</div>`}
         </div>
       </div>
     </div>
@@ -9996,6 +10019,18 @@ window.updateFermetureTotal = () => {
     const val=parseFloat(k.replace("fer_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
   const el=document.getElementById("total-fermeture");if(el)el.textContent=eur(total);
 };
+window.updateLendemainTotal = () => {
+  const total = Object.entries(STATE.fondLendemain||{}).reduce((s,[k,v])=>{
+    const val=parseFloat(k.replace("lend_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
+  const conforme = Math.abs(total-100)<0.01;
+  const el=document.getElementById("total-lendemain");
+  if(el){ el.textContent=eur(total); el.style.color = conforme?"#3b6d11":"#a32d2d"; }
+  const msg=document.getElementById("msg-lendemain");
+  if(msg){
+    msg.style.color = conforme?"#3b6d11":"#a32d2d";
+    msg.textContent = conforme?"✅ Conforme, prêt pour demain.":"⚠️ Doit être exactement 100,00 € pour pouvoir clôturer.";
+  }
+};
 
 window.cloturerCaisse = (targetDateStr) => {
   const now=new Date();
@@ -10007,6 +10042,14 @@ window.cloturerCaisse = (targetDateStr) => {
   if(!memoJour) {
     alert("⚠️ Le mémo & météo du jour n'a pas été rempli !\n\nVous devez remplir le mémo avant de faire le Z caisse.\nAllez dans l'onglet 📝 Mémo & Météo.");
     setState({tab:"memo"});
+    return;
+  }
+  // Vérifier que le fond laissé pour demain est exactement 100€ — OBLIGATOIRE
+  const FOND_RESERVE_CHECK = 100;
+  const totalLendemainCheck = Object.entries(STATE.fondLendemain||{}).reduce((s,[k,v])=>{
+    const val=parseFloat(k.replace("lend_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
+  if(Math.abs(totalLendemainCheck-FOND_RESERVE_CHECK) >= 0.01) {
+    alert("⚠️ Le fond laissé pour demain (section \"Ce qui reste dans le tiroir pour demain\") doit être exactement "+eur(FOND_RESERVE_CHECK)+".\n\nActuellement : "+eur(totalLendemainCheck)+".\n\nAjustez le comptage avant de clôturer.");
     return;
   }
   const note=document.getElementById("z-note")?.value||"";
@@ -10035,6 +10078,9 @@ window.cloturerCaisse = (targetDateStr) => {
   const z={id:uid("Z"),date:dateStr,heure:now.toISOString(),nbVentes:ventesJour.length,caTTC,caHT:caTTC/(1+TVA),tvaCol:caTTC-caTTC/(1+TVA),especes,fondOuverture:totalOuv,fondFermeture:totalFer,aDeposer,ecart,payM,note,vendeur:STATE.vendeur.nom};
   STATE.caisseJour=[...(STATE.caisseJour||[]),z];
   setState({caisseJour:STATE.caisseJour});
+  // Sauvegarder le détail du fond laissé pour demain (repris automatiquement à la prochaine ouverture)
+  lsSet("bj_fond_lendemain", STATE.fondLendemain||{});
+  STATE.fondFermeture = {}; STATE.fondLendemain = {};
   imprimerZ(z);
   // Envoyer le relevé CA + remises par email automatiquement
   envoyerReleveCloture(z, ventesJour, dateStr);
