@@ -9887,6 +9887,32 @@ function renderCaisseJour() {
           </div>
           ${Math.abs(totalLendemain-FOND_RESERVE)>=0.01?`<div id="msg-lendemain" style="margin-top:6px;font-size:12px;color:#a32d2d;">⚠️ Doit être exactement ${eur(FOND_RESERVE)} pour pouvoir clôturer.</div>`:`<div id="msg-lendemain" style="margin-top:6px;font-size:12px;color:#3b6d11;">✅ Conforme, prêt pour demain.</div>`}
         </div>
+
+        <!-- DÉTAIL DU RETRAIT -->
+        ${(()=>{
+          const dispoFer = {};
+          Object.entries(STATE.fondFermeture||{}).forEach(([k,v]) => {
+            const val = parseFloat(k.replace("fer_","").replace("_","."));
+            dispoFer[val] = (dispoFer[val]||0) + (parseInt(v)||0);
+          });
+          const gardeLend = {};
+          Object.entries(STATE.fondLendemain||{}).forEach(([k,v]) => {
+            const val = parseFloat(k.replace("lend_","").replace("_","."));
+            gardeLend[val] = (gardeLend[val]||0) + (parseInt(v)||0);
+          });
+          const retraits = DENOMINATIONS.map(d => ({...d, qty: Math.max(0, (dispoFer[d.val]||0) - (gardeLend[d.val]||0))})).filter(d=>d.qty>0);
+          if(retraits.length===0) return "";
+          return `
+          <div style="background:#eef4fd;border-radius:10px;padding:12px;margin-top:12px;border:1px solid #b3d0f0;">
+            <div style="font-weight:500;font-size:12px;color:#185fa5;margin-bottom:8px;">💵 Détail du retrait à faire (${eur(aDeposer)} au total)</div>
+            ${retraits.map(d=>`
+              <div style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;">
+                <span style="color:${d.color};font-weight:500;">${d.label}</span>
+                <span>× ${d.qty} = <strong>${eur(d.qty*d.val)}</strong></span>
+              </div>
+            `).join("")}
+          </div>`;
+        })()}
       </div>
     </div>
 
