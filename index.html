@@ -10324,9 +10324,9 @@ window.envoyerBonAnniversaire = async (client, annee) => {
   // Date anniversaire cette année
   const [jour, mois] = client.anniversaire.split("/");
   const dateAnniv = new Date(annee, parseInt(mois)-1, parseInt(jour));
-  // Valide du jour de l'anniversaire à +3 semaines
+  // Valide du jour de l'anniversaire à +3 mois
   const dateDebut = dateAnniv.toLocaleDateString("fr-FR");
-  const dateFin   = new Date(dateAnniv); dateFin.setDate(dateAnniv.getDate()+21);
+  const dateFin   = new Date(dateAnniv); dateFin.setMonth(dateAnniv.getMonth()+3);
   const dateFinStr= dateFin.toLocaleDateString("fr-FR");
 
   // Créer le bon dans STATE
@@ -10473,7 +10473,7 @@ window.verifierBonAnniversaireClient = (client) => {
   const [jour, mois] = client.anniversaire.split("/");
   const anneeAnniv = now.getFullYear();
   const dateAnniv = new Date(anneeAnniv, parseInt(mois)-1, parseInt(jour));
-  const dateFin   = new Date(dateAnniv); dateFin.setDate(dateAnniv.getDate()+21);
+  const dateFin   = new Date(dateAnniv); dateFin.setMonth(dateAnniv.getMonth()+3);
   // Bon valable si on est dans la fenêtre anniversaire (jour J à J+21)
   if(now >= dateAnniv && now <= dateFin) {
     const code = "ANNIV"+anneeAnniv+client.id.slice(-6).toUpperCase();
