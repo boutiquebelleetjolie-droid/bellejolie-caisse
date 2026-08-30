@@ -5439,18 +5439,19 @@ window.imprimerToutStock = () => {
     return `<svg xmlns="http://www.w3.org/2000/svg" width="${x}" height="30" viewBox="0 0 ${x} 30">${bars}</svg>`;
   }
   const btoa_svg = svg => { try{return "data:image/svg+xml;base64,"+btoa(unescape(encodeURIComponent(svg)));}catch(e){return "";} };
-  const bc = miniBarcode(p.barcode||p.ref||p.id, cfg.bcH, cfg.barW);
-  const bcImg = btoa_svg(bc);
 
   let etiqHtml = "";
   lignes.forEach(ligne => {
     const infos = [ligne.taille?'T.'+ligne.taille:'', ligne.couleur&&ligne.couleur!=='_'?ligne.couleur:''].filter(Boolean).join(' · ');
+    const bcKey = (ligne.taille||'_')+'_'+(ligne.couleur||'_');
+    const codeLigne = (p.barcodeVariantes&&p.barcodeVariantes[bcKey]) || p.barcode;
+    const bcImg = btoa_svg(miniBarcode(codeLigne, cfg.bcH, cfg.barW));
     for(let i=0;i<ligne.qty;i++) {
       etiqHtml += `<div class="etiq">
         <div class="etiq-name">${p.name.length>26?p.name.slice(0,26)+"…":p.name}</div>
         <div class="etiq-ref" style="${p.depotVente?'color:#185fa5;font-weight:600;':''}">${p.depotVente ? ("🔄 DÉPÔT · "+(p.depotClientPrenom||"")+" "+(p.depotClientNom||"")+((p.depotTaille||(infos))?" · "+(p.depotTaille?"T."+p.depotTaille:infos):"")).slice(0,40) : ((p.marque?p.marque+" · ":"")+(p.ref+(infos?" · "+infos:"")).slice(0,30)+(p.grandeTaille?" · GT":""))}</div>
         <img src="${bcImg}" class="etiq-bc"/>
-        <div class="etiq-bc-num">${p.barcode}</div>
+        <div class="etiq-bc-num">${codeLigne}</div>
         ${ligneItem&&ligneItem.prixOriginal ? `<div class="etiq-prix"><span style="text-decoration:line-through;color:#aaa;font-size:9px;">${eur(ligneItem.prixOriginal)}</span> ${eur(p.price)}</div>` : `<div class="etiq-prix">${eur(p.price)}</div>`}
       </div>`;
     }
@@ -12780,7 +12781,7 @@ window.imprimerLotEtiquettes = () => {
       <div class="etiq-name">${p.name.length>26?p.name.slice(0,26)+"…":p.name}</div>
       <div class="etiq-ref" style="${p.depotVente?'color:#185fa5;font-weight:600;':''}">${p.depotVente ? ("🔄 DÉPÔT · "+(p.depotClientPrenom||"")+" "+(p.depotClientNom||"")+((p.depotTaille||(infos))?" · "+(p.depotTaille?"T."+p.depotTaille:infos):"")).slice(0,40) : ((p.marque?p.marque+" · ":"")+(p.ref+(infos?" · "+infos:"")).slice(0,30)+(p.grandeTaille?" · GT":""))}</div>
       <img src="${bcImg}" class="etiq-bc"/>
-        <div class="etiq-bc-num">${p.barcode}</div>
+        <div class="etiq-bc-num">${bcCode}</div>
       ${ligneItem&&ligneItem.prixOriginal ? `<div class="etiq-prix"><span style="text-decoration:line-through;color:#aaa;font-size:9px;">${eur(ligneItem.prixOriginal)}</span> ${eur(p.price)}</div>` : `<div class="etiq-prix">${eur(p.price)}</div>`}
     </div>`;
   }));
