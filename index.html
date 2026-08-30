@@ -2798,7 +2798,14 @@ window.imprimerViaUSB = async () => {
     pushText("Belle&Jolie\n\n\n\n");
 
     const data = new Uint8Array(bytes);
-    await withTimeout(device.transferOut(epOut, data), 10000, "envoi des données");
+    // Envoi en petits paquets (certaines imprimantes USB bon marché perdent les données
+    // si on envoie tout d'un coup — on découpe et on laisse le temps au buffer de digérer)
+    const chunkSize = 64;
+    for(let i=0; i<data.length; i+=chunkSize) {
+      const chunk = data.slice(i, i+chunkSize);
+      await withTimeout(device.transferOut(epOut, chunk), 10000, "envoi des données (paquet "+(Math.floor(i/chunkSize)+1)+")");
+      await new Promise(r=>setTimeout(r, 40));
+    }
     await device.close();
 
     STATE._usbStatus = null; render();
