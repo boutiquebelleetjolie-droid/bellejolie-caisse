@@ -2765,6 +2765,10 @@ window.imprimerViaUSB = async () => {
       return;
     }
     await device.claimInterface(ifaceNum);
+    // Laisser un court instant à l'imprimante pour être prête après la connexion
+    // (certaines imprimantes USB bon marché n'acceptent pas de données immédiatement après le "claim")
+    statusMsg("⏳ Préparation de l'imprimante...");
+    await new Promise(r=>setTimeout(r, 800));
 
     statusMsg("⏳ Envoi du ticket...");
 
