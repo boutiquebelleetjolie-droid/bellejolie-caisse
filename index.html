@@ -1157,6 +1157,7 @@ function renderApp() {
   ${STATE.showExtractionMarque ? renderApercuExtractionMarque() : ""}
   ${STATE.showAjoutEvenement ? renderAjoutEvenementModal() : ""}
   ${STATE.showNouveauDepot ? renderNouveauDepotModal() : ""}
+  ${STATE.showVenteChequeCadeau ? renderVenteChequeCadeauModal() : ""}
   ${STATE.showVendeurSettings ? renderVendeurSettings() : ""}
   ${STATE.showAnnulLigne ? renderAnnulLigneModal() : ""}
   ${STATE.showVarianteModal ? renderVarianteModal() : ""}
@@ -1238,6 +1239,61 @@ window.ajouterSac = () => {
   }
   addToCart(sacProd.id);
 };
+
+// ─── Chèque cadeau (vente) ──────────────────────────────────────
+window.ouvrirVenteChequeCadeau = () => {
+  STATE._montantChequeCadeau = "";
+  STATE.showVenteChequeCadeau = true;
+  render();
+};
+window.confirmerVenteChequeCadeau = () => {
+  const montant = parseFloat(STATE._montantChequeCadeau);
+  if(!montant || montant<=0) { alert("Indique un montant valide pour le chèque cadeau."); return; }
+  // Un "produit" dédié par montant exact, sans impact sur le stock ni la marge (prixAchat = prix : marge nulle à la vente,
+  // la vraie marge se fera plus tard quand le chèque sera dépensé sur de vrais articles)
+  const ref = "CHQCAD-"+montant.toFixed(2).replace(".","_");
+  let prod = STATE.products.find(p=>p.ref===ref && p.isChequeCadeau);
+  if(!prod) {
+    prod = {
+      id: uid("CHQCAD"), name: "Chèque cadeau "+eur(montant), ref,
+      price: montant, prixAchat: montant, category: "Chèque cadeau",
+      stock: 999999, tailles: [], couleurs: [], grandeTaille: false,
+      isChequeCadeau: true, montantChequeCadeau: montant,
+    };
+    STATE.products = [...STATE.products, prod];
+    lsSet("bj_products", STATE.products);
+  }
+  addToCart(prod.id);
+  STATE.showVenteChequeCadeau = false;
+  render();
+};
+
+function renderVenteChequeCadeauModal() {
+  const montant = STATE._montantChequeCadeau;
+  const presets = [20, 30, 50, 100];
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)setState({showVenteChequeCadeau:false})">
+    <div class="modal" style="max-width:400px;">
+      <div class="modal-header">
+        <span style="font-weight:500;">🎁 Vendre un chèque cadeau</span>
+        <button onclick="setState({showVenteChequeCadeau:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
+      </div>
+      <div class="modal-body">
+        <label style="font-size:12px;color:#888;display:block;margin-bottom:6px;">Montant du chèque</label>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px;">
+          ${presets.map(p=>`<button onclick="STATE._montantChequeCadeau='${p}';render()" style="padding:10px 4px;background:${montant==p?'#854f0b':'#f5f0f2'};color:${montant==p?'#fff':'#333'};border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:14px;">${p}€</button>`).join("")}
+        </div>
+        <input type="number" min="1" step="1" value="${montant}" oninput="STATE._montantChequeCadeau=this.value" placeholder="Ou un autre montant..."
+          style="width:100%;box-sizing:border-box;margin-bottom:16px;"/>
+
+        <button onclick="confirmerVenteChequeCadeau()" style="width:100%;padding:12px;background:#993556;color:#fff;border:none;border-radius:9px;cursor:pointer;font-weight:600;font-size:14px;">
+          ✅ Ajouter au panier
+        </button>
+        <div style="font-size:11px;color:#aaa;margin-top:10px;text-align:center;">Le code du chèque sera généré et imprimable une fois la vente validée.</div>
+      </div>
+    </div>
+  </div>`;
+}
 
 window.viderPanier = () => {
   if(!STATE.panier.length) return;
@@ -2330,6 +2386,7 @@ function renderCaisse() {
       <!-- Remise globale -->
       <div class="card">
         <button onclick="ajouterSac()" style="width:100%;padding:9px;background:#f9f6f8;color:#555;border:1px solid #e8d8de;border-radius:8px;cursor:pointer;font-size:13px;margin-bottom:8px;font-weight:500;">🛍️ + Sac — 0,20€</button>
+        <button onclick="ouvrirVenteChequeCadeau()" style="width:100%;padding:9px;background:#fbf3e6;color:#854f0b;border:1px solid #f0dcb0;border-radius:8px;cursor:pointer;font-size:13px;margin-bottom:8px;font-weight:500;">🎁 Vendre un chèque cadeau</button>
         <div style="font-weight:500;font-size:13px;margin-bottom:8px;">🏷️ Remise globale panier</div>
         <!-- Bouton rapide réseaux sociaux -->
         <button onclick="appliquerRemiseReseaux()"
@@ -3056,6 +3113,18 @@ function renderTicketModal() {
             </div>
           `:""}
           ${v.reliquatAvoir?.type==="especes"?`<div style="color:#3b6d11;font-size:11px;font-weight:500;">💶 Reliquat rendu en espèces : ${eur(v.reliquatAvoir.montant)}</div>`:""}
+          ${(v.chequesCadeauxVendus||[]).map(chq=>`
+            <div style="background:#fbf3e6;border:1px solid #854f0b;border-radius:8px;padding:8px 10px;margin-top:6px;text-align:center;">
+              <div style="font-size:13px;font-weight:700;color:#854f0b;">🎁 Chèque cadeau ${eur(chq.montant)}</div>
+              <svg width="180" height="40" viewBox="0 0 180 40" xmlns="http://www.w3.org/2000/svg" style="display:block;margin:4px auto;">${(()=>{
+                const codeStr=chq.code; let x=2, bars="";
+                for(let i=0;i<codeStr.length;i++){ const w=1+(parseInt(codeStr[i])%3); bars+='<rect x="'+x+'" y="2" width="'+w+'" height="30" fill="black"/>'; x+=w+1.5; }
+                return bars;
+              })()}</svg>
+              <div style="font-size:12px;font-family:monospace;color:#854f0b;font-weight:700;letter-spacing:1px;">${chq.code}</div>
+              <div style="font-size:10px;color:#aaa;margin-top:2px;">Valable jusqu'au ${new Date(chq.expiration).toLocaleDateString("fr-FR")} · à conserver, à scanner en caisse</div>
+            </div>
+          `).join("")}
           ${(()=>{
             const avoirLigne = v.panier.find(x=>x.avoirId) || (v.avoirsPayes?.length?{price:v.avoirsPayes[0].montant}:null);
             if(avoirLigne) return `<div style="font-size:11px;color:#185fa5;font-weight:500;margin-top:2px;">💳 Bon d'avoir : ${eur(avoirLigne.price)}</div>`;
@@ -3791,6 +3860,28 @@ window.validerPaiement = () => {
   }
 
   STATE._avoirEnCours = null;
+
+  // ── Générer un vrai chèque-cadeau (code-barres unique, redemptible en caisse) pour chaque chèque vendu ──
+  const chequesCadeauxVendus = [];
+  vente.panier.filter(x=>!x.retour && x.isChequeCadeau).forEach(it=>{
+    const expCad = new Date(); expCad.setFullYear(expCad.getFullYear()+1);
+    const codeCad = "377"+Date.now().toString().slice(-7)+String(Math.floor(Math.random()*900+100));
+    const montantCad = it.montantChequeCadeau||it.price;
+    const chq = {
+      id: uid("AV"), code: codeCad,
+      date: new Date().toISOString(), expiration: expCad.toISOString(),
+      montant: montantCad, solde: montantCad, utilise: false,
+      client: vente.client||null, clientId: vente.client?.id||null,
+      typeAvoir: "cheque_cadeau_vendu", source: "vente_cheque_cadeau",
+      label: "Chèque cadeau "+eur(montantCad),
+    };
+    STATE.avoirs = [...(STATE.avoirs||[]), chq];
+    chequesCadeauxVendus.push(chq);
+  });
+  if(chequesCadeauxVendus.length>0) {
+    lsSet("bj_avoirs", STATE.avoirs);
+    vente.chequesCadeauxVendus = chequesCadeauxVendus;
+  }
 
   // ── Marquer bon fidélité 15% comme utilisé si appliqué ──
   if(STATE._bonFid400EnCours) {
@@ -5661,7 +5752,8 @@ function renderCRM() {
   ${STATE.showClientDetail ? renderClientDetail() : ""}
   ${STATE.showExtractionMarque ? renderApercuExtractionMarque() : ""}
   ${STATE.showAjoutEvenement ? renderAjoutEvenementModal() : ""}
-  ${STATE.showNouveauDepot ? renderNouveauDepotModal() : ""}`;
+  ${STATE.showNouveauDepot ? renderNouveauDepotModal() : ""}
+  ${STATE.showVenteChequeCadeau ? renderVenteChequeCadeauModal() : ""}`;
 }
 
 window.openClientModal = id => {
