@@ -2801,11 +2801,14 @@ window.imprimerViaUSB = async () => {
     const data = new Uint8Array(bytes);
     // Envoi en petits paquets (certaines imprimantes USB bon marché perdent les données
     // si on envoie tout d'un coup — on découpe et on laisse le temps au buffer de digérer)
-    const chunkSize = 20;
+    const chunkSize = 8;
+    const totalPaquets = Math.ceil(data.length/chunkSize);
     for(let i=0; i<data.length; i+=chunkSize) {
       const chunk = data.slice(i, i+chunkSize);
-      await withTimeout(device.transferOut(epOut, chunk), 10000, "envoi des données (paquet "+(Math.floor(i/chunkSize)+1)+")");
-      await new Promise(r=>setTimeout(r, 100));
+      const noPaquet = Math.floor(i/chunkSize)+1;
+      statusMsg("⏳ Envoi du ticket... ("+noPaquet+"/"+totalPaquets+")");
+      await withTimeout(device.transferOut(epOut, chunk), 10000, "envoi des données (paquet "+noPaquet+"/"+totalPaquets+")");
+      await new Promise(r=>setTimeout(r, 150));
     }
     await device.close();
 
