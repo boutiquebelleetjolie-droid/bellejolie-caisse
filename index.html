@@ -2779,7 +2779,7 @@ window.imprimerViaUSB = async () => {
     push([0x1D,0x21,0x00]);     // taille de caractère normale (largeur/hauteur x1, pas de mode condensé)
     push([0x1B,0x61,0x01]);     // centré
     pushText("Belle&Jolie\n");
-    pushText(BOUTIQUE_ADRESSE+"\n");
+    BOUTIQUE_ADRESSE.split(",").forEach(ligneAdr => pushText(ligneAdr.trim()+"\n"));
     push([0x1B,0x61,0x00]);     // gauche
     pushText("--------------------------------\n");
     pushText(new Date(v.date).toLocaleString("fr-FR")+"\n");
