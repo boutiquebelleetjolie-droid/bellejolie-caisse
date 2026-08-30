@@ -2776,6 +2776,7 @@ window.imprimerViaUSB = async () => {
     const mLbt = {cb:"Carte bleue",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Carte cadeau",mixte:"Paiement mixte"};
 
     push([0x1B,0x40]);          // init
+    push([0x1D,0x21,0x00]);     // taille de caractère normale (largeur/hauteur x1, pas de mode condensé)
     push([0x1B,0x61,0x01]);     // centré
     pushText("Belle&Jolie\n");
     pushText(BOUTIQUE_ADRESSE+"\n");
