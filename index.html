@@ -3306,8 +3306,15 @@ window.addToCart = (id, tailleParam, couleurParam) => {
     }
     STATE.searchBC=""; render(); return;
   }
-  // Si l'article a des variantes, ouvrir le sélecteur
-  if((p.tailles&&p.tailles.length>0)||(p.couleurs&&p.couleurs.length>0)) {
+  // Si l'article a plusieurs choix possibles de taille/couleur, ouvrir le sélecteur
+  // S'il n'y a qu'une seule combinaison possible (ex: une seule taille "Unique", pas de couleur), l'ajouter directement sans demander
+  const taillesDispo = (p.tailles||[]).filter(Boolean);
+  const couleursDispo = (p.couleurs||[]).filter(Boolean);
+  const nbCombinaisons = Math.max(taillesDispo.length,1) * Math.max(couleursDispo.length,1);
+  if(taillesDispo.length>0 || couleursDispo.length>0) {
+    if(nbCombinaisons<=1) {
+      return window.addToCart(id, taillesDispo[0]||"", couleursDispo[0]||"");
+    }
     STATE.showVarianteModal = {prodId:id, taille:"", couleur:""};
     STATE.searchProd="";
     const inp = document.getElementById("prod-search"); if(inp) inp.value="";
