@@ -432,6 +432,23 @@ const eur = v => Number(v||0).toFixed(2).replace(".",",") + " €";
 const uid = p => p + Date.now().toString(36).toUpperCase();
 const genBC = () => "376000" + String(Math.floor(Math.random()*9999999)).padStart(7,"0");
 
+// Générateur de vrai code-barres Code128B (lisible par scanner), utilisé partout dans l'app
+// pour éviter les dessins décoratifs qui ne scannent pas.
+function genererSVGBarcode(code) {
+  const C128B=[[2,1,2,2,2,2],[2,2,2,1,2,2],[2,2,2,2,2,1],[1,2,1,2,2,3],[1,2,1,3,2,2],[1,3,1,2,2,2],[1,2,2,2,1,3],[1,2,2,3,1,2],[1,3,2,2,1,2],[2,2,1,2,1,3],[2,2,1,3,1,2],[2,3,1,2,1,2],[1,1,2,2,3,2],[1,2,2,1,3,2],[1,2,2,2,3,1],[1,1,3,2,2,2],[1,2,3,1,2,2],[1,2,3,2,2,1],[2,2,3,2,1,1],[2,2,1,1,3,2],[2,2,1,2,3,1],[2,1,3,2,1,2],[2,2,3,1,1,2],[3,1,2,1,3,1],[3,1,1,2,2,2],[3,2,1,1,2,2],[3,2,1,2,2,1],[3,1,2,2,1,2],[3,2,2,1,1,2],[3,2,2,2,1,1],[2,1,2,1,2,3],[2,1,2,3,2,1],[2,3,2,1,2,1],[1,1,1,3,2,3],[1,3,1,1,2,3],[1,3,1,3,2,1],[1,1,2,3,1,3],[1,3,2,1,1,3],[1,3,2,3,1,1],[2,1,1,3,1,3],[2,3,1,1,1,3],[2,3,1,3,1,1],[1,1,2,1,3,3],[1,1,2,3,3,1],[1,3,2,1,3,1],[1,1,3,1,2,3],[1,1,3,3,2,1],[1,3,3,1,2,1],[3,1,3,1,2,1],[2,1,1,3,3,1],[2,3,1,1,3,1],[2,1,3,1,1,3],[2,1,3,3,1,1],[2,1,3,1,3,1],[3,1,1,1,2,3],[3,1,1,3,2,1],[3,3,1,1,2,1],[3,1,2,1,1,3],[3,1,2,3,1,1],[3,3,2,1,1,1],[3,1,4,1,1,1],[2,2,1,4,1,1],[4,3,1,1,1,1],[1,1,1,2,2,4],[1,1,1,4,2,2],[1,2,1,1,2,4],[1,2,1,4,2,1],[1,4,1,1,2,2],[1,4,1,2,2,1],[1,1,2,2,1,4],[1,1,2,4,1,2],[1,2,2,1,1,4],[1,2,2,4,1,1],[1,4,2,1,1,2],[1,4,2,2,1,1],[2,4,1,2,1,1],[2,2,1,1,1,4],[4,1,3,1,1,1],[2,4,1,1,1,2],[1,3,4,1,1,1],[1,1,1,2,4,2],[1,2,1,1,4,2],[1,2,1,2,4,1],[1,1,4,2,1,2],[1,2,4,1,1,2],[1,2,4,2,1,1],[4,1,1,2,1,2],[4,2,1,1,1,2],[4,2,1,2,1,1],[2,1,2,1,4,1],[2,1,4,1,2,1],[4,1,2,1,2,1],[1,1,1,1,4,3],[1,1,1,3,4,1],[1,3,1,1,4,1],[1,1,4,1,1,3],[1,1,4,3,1,1],[4,1,1,1,1,3],[4,1,1,3,1,1],[1,1,3,1,4,1],[1,1,4,1,3,1],[3,1,1,1,4,1],[4,1,1,1,3,1],[2,1,1,4,1,2],[2,1,1,2,1,4],[2,1,1,2,3,2]];
+  const str=String(code||"").slice(0,20);
+  let cs=[104];
+  for(let i=0;i<str.length;i++){const cc=str.charCodeAt(i)-32;cs.push(cc>=0&&cc<96?cc:0);}
+  let chk=104;for(let i=0;i<str.length;i++)chk+=cs[i+1]*(i+1);cs.push(chk%103);
+  const STOP=[2,3,3,1,1,1,2];
+  let bars="",x=0;
+  const draw=p=>{for(let i=0;i<p.length;i++){const w=p[i]*0.8;if(i%2===0)bars+=`<rect x="${x}" y="0" width="${w}" height="24" fill="#000"/>`;x+=w;}};
+  draw(C128B[104]);cs.slice(1).forEach(c=>{if(C128B[c])draw(C128B[c]);});draw(STOP);
+  const maxPx = 128;
+  const dispW = Math.min(x, maxPx);
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${dispW}" height="24" viewBox="0 0 ${x} 28" preserveAspectRatio="none">${bars}</svg>`;
+}
+
 function avoirBarcode(code) {
   // Code-barres simple lisible par scanner (Code 39 simplifié visuellement)
   let bars=[], x=0;
@@ -3116,11 +3133,7 @@ function renderTicketModal() {
           ${(v.chequesCadeauxVendus||[]).map(chq=>`
             <div style="background:#fbf3e6;border:1px solid #854f0b;border-radius:8px;padding:8px 10px;margin-top:6px;text-align:center;">
               <div style="font-size:13px;font-weight:700;color:#854f0b;">🎁 Chèque cadeau ${eur(chq.montant)}</div>
-              <svg width="180" height="40" viewBox="0 0 180 40" xmlns="http://www.w3.org/2000/svg" style="display:block;margin:4px auto;">${(()=>{
-                const codeStr=chq.code; let x=2, bars="";
-                for(let i=0;i<codeStr.length;i++){ const w=1+(parseInt(codeStr[i])%3); bars+='<rect x="'+x+'" y="2" width="'+w+'" height="30" fill="black"/>'; x+=w+1.5; }
-                return bars;
-              })()}</svg>
+              <div style="display:flex;justify-content:center;margin:4px 0;">${genererSVGBarcode(chq.code)}</div>
               <div style="font-size:12px;font-family:monospace;color:#854f0b;font-weight:700;letter-spacing:1px;">${chq.code}</div>
               <div style="font-size:10px;color:#aaa;margin-top:2px;">Valable jusqu'au ${new Date(chq.expiration).toLocaleDateString("fr-FR")} · à conserver, à scanner en caisse</div>
             </div>
@@ -5548,15 +5561,7 @@ window.imprimerToutStock = () => {
   };
   const cfg = configs[taille];
 
-  function miniBarcode(code, h, bw) {
-    let bars="", x=0;
-    for(let i=0;i<(code||"").length;i++){
-      const w=(parseInt(code[i])+1)*1.2;
-      if(i%2===0) bars+=`<rect x="${x}" y="0" width="${w}" height="30" fill="#000"/>`;
-      x+=w+0.8;
-    }
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${x}" height="30" viewBox="0 0 ${x} 30">${bars}</svg>`;
-  }
+  function miniBarcode(code) { return genererSVGBarcode(code); }
   const btoa_svg = svg => { try{return "data:image/svg+xml;base64,"+btoa(unescape(encodeURIComponent(svg)));}catch(e){return "";} };
 
   let etiqHtml = "";
@@ -12855,22 +12860,7 @@ window.imprimerLotEtiquettes = () => {
   const lignes = STATE.etiqLignes||[];
   if(!lignes.length) { alert("Aucune ligne à imprimer."); return; }
 
-  function miniBarcode(code) {
-    // Code 128B vrai — lisible par scanner
-    const C128B=[[2,1,2,2,2,2],[2,2,2,1,2,2],[2,2,2,2,2,1],[1,2,1,2,2,3],[1,2,1,3,2,2],[1,3,1,2,2,2],[1,2,2,2,1,3],[1,2,2,3,1,2],[1,3,2,2,1,2],[2,2,1,2,1,3],[2,2,1,3,1,2],[2,3,1,2,1,2],[1,1,2,2,3,2],[1,2,2,1,3,2],[1,2,2,2,3,1],[1,1,3,2,2,2],[1,2,3,1,2,2],[1,2,3,2,2,1],[2,2,3,2,1,1],[2,2,1,1,3,2],[2,2,1,2,3,1],[2,1,3,2,1,2],[2,2,3,1,1,2],[3,1,2,1,3,1],[3,1,1,2,2,2],[3,2,1,1,2,2],[3,2,1,2,2,1],[3,1,2,2,1,2],[3,2,2,1,1,2],[3,2,2,2,1,1],[2,1,2,1,2,3],[2,1,2,3,2,1],[2,3,2,1,2,1],[1,1,1,3,2,3],[1,3,1,1,2,3],[1,3,1,3,2,1],[1,1,2,3,1,3],[1,3,2,1,1,3],[1,3,2,3,1,1],[2,1,1,3,1,3],[2,3,1,1,1,3],[2,3,1,3,1,1],[1,1,2,1,3,3],[1,1,2,3,3,1],[1,3,2,1,3,1],[1,1,3,1,2,3],[1,1,3,3,2,1],[1,3,3,1,2,1],[3,1,3,1,2,1],[2,1,1,3,3,1],[2,3,1,1,3,1],[2,1,3,1,1,3],[2,1,3,3,1,1],[2,1,3,1,3,1],[3,1,1,1,2,3],[3,1,1,3,2,1],[3,3,1,1,2,1],[3,1,2,1,1,3],[3,1,2,3,1,1],[3,3,2,1,1,1],[3,1,4,1,1,1],[2,2,1,4,1,1],[4,3,1,1,1,1],[1,1,1,2,2,4],[1,1,1,4,2,2],[1,2,1,1,2,4],[1,2,1,4,2,1],[1,4,1,1,2,2],[1,4,1,2,2,1],[1,1,2,2,1,4],[1,1,2,4,1,2],[1,2,2,1,1,4],[1,2,2,4,1,1],[1,4,2,1,1,2],[1,4,2,2,1,1],[2,4,1,2,1,1],[2,2,1,1,1,4],[4,1,3,1,1,1],[2,4,1,1,1,2],[1,3,4,1,1,1],[1,1,1,2,4,2],[1,2,1,1,4,2],[1,2,1,2,4,1],[1,1,4,2,1,2],[1,2,4,1,1,2],[1,2,4,2,1,1],[4,1,1,2,1,2],[4,2,1,1,1,2],[4,2,1,2,1,1],[2,1,2,1,4,1],[2,1,4,1,2,1],[4,1,2,1,2,1],[1,1,1,1,4,3],[1,1,1,3,4,1],[1,3,1,1,4,1],[1,1,4,1,1,3],[1,1,4,3,1,1],[4,1,1,1,1,3],[4,1,1,3,1,1],[1,1,3,1,4,1],[1,1,4,1,3,1],[3,1,1,1,4,1],[4,1,1,1,3,1],[2,1,1,4,1,2],[2,1,1,2,1,4],[2,1,1,2,3,2]];
-    const str=String(code||"").slice(0,20);
-    let cs=[104];
-    for(let i=0;i<str.length;i++){const cc=str.charCodeAt(i)-32;cs.push(cc>=0&&cc<96?cc:0);}
-    let chk=104;for(let i=0;i<str.length;i++)chk+=cs[i+1]*(i+1);cs.push(chk%103);
-    const STOP=[2,3,3,1,1,1,2];
-    let bars="",x=0;
-    const draw=p=>{for(let i=0;i<p.length;i++){const w=p[i]*0.8;if(i%2===0)bars+=`<rect x="${x}" y="0" width="${w}" height="24" fill="#000"/>`;x+=w;}};
-    draw(C128B[104]);cs.slice(1).forEach(c=>{if(C128B[c])draw(C128B[c]);});draw(STOP);
-    // Forcer la largeur max à 128px (≈34mm) — le viewBox compresse sans couper
-    const maxPx = 128;
-    const dispW = Math.min(x, maxPx);
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${dispW}" height="24" viewBox="0 0 ${x} 28" preserveAspectRatio="none">${bars}</svg>`;
-  }
+  function miniBarcode(code) { return genererSVGBarcode(code); }
   const btoa_svg = svg => { try{return "data:image/svg+xml;base64,"+btoa(unescape(encodeURIComponent(svg)));}catch(e){return "";} };
 
   let etiquettes = [];
