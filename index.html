@@ -1175,6 +1175,7 @@ function renderApp() {
   ${STATE.showAjoutEvenement ? renderAjoutEvenementModal() : ""}
   ${STATE.showNouveauDepot ? renderNouveauDepotModal() : ""}
   ${STATE.showVenteChequeCadeau ? renderVenteChequeCadeauModal() : ""}
+  ${STATE.showCarteCadeau ? renderCarteCadeauModal() : ""}
   ${STATE.showVendeurSettings ? renderVendeurSettings() : ""}
   ${STATE.showAnnulLigne ? renderAnnulLigneModal() : ""}
   ${STATE.showVarianteModal ? renderVarianteModal() : ""}
@@ -2914,7 +2915,56 @@ window.imprimerViaUSB = async () => {
 };
 
 
+// ─── Carte cadeau imprimable (document présentable, pas un simple ticket) ──
+function renderCarteCadeauModal() {
+  const chqs = STATE.showCarteCadeau || [];
+  if(chqs.length===0) return "";
+
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)setState({showCarteCadeau:null})">
+    <div class="modal" style="max-width:640px;">
+      <div class="modal-header">
+        <span style="font-weight:500;">🎁 Carte(s) cadeau à imprimer</span>
+        <button onclick="setState({showCarteCadeau:null})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="carte-cadeau-print-area">
+          ${chqs.map(chq=>`
+            <div class="carte-cadeau" style="border:3px double #993556;border-radius:16px;padding:36px 28px;text-align:center;background:linear-gradient(#fffdfb,#fdf6f3);margin-bottom:24px;position:relative;">
+              <div style="position:absolute;top:14px;left:14px;right:14px;bottom:14px;border:1px solid #d9a86c;border-radius:10px;pointer-events:none;"></div>
+              <img src="${LOGO_B64}" alt="Belle&Jolie" style="width:150px;height:auto;display:block;margin:6px auto 10px;"/>
+              <div style="font-size:12px;letter-spacing:4px;color:#d9a86c;text-transform:uppercase;font-weight:600;margin-bottom:6px;">Carte Cadeau</div>
+              <div style="font-size:44px;font-weight:800;color:#993556;margin:10px 0;">${eur(chq.montant)}</div>
+              <div style="font-size:12px;color:#888;margin-bottom:18px;">à valoir sur l'ensemble de la boutique</div>
+              <div style="display:inline-block;background:#fbf3e6;border:1.5px dashed #d9a86c;border-radius:10px;padding:12px 24px;margin-bottom:14px;">
+                <div style="font-size:10px;color:#aaa;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px;">Code</div>
+                <div style="font-size:22px;font-family:monospace;font-weight:700;color:#854f0b;letter-spacing:2px;">${chq.code}</div>
+              </div>
+              <div style="display:flex;justify-content:center;margin-bottom:10px;">${genererSVGBarcode(chq.code)}</div>
+              <div style="font-size:11px;color:#999;">Valable jusqu'au ${new Date(chq.expiration).toLocaleDateString("fr-FR")}</div>
+              <div style="border-top:1px solid #eee;margin:16px 0 10px;"></div>
+              <div style="font-size:11px;color:#993556;font-weight:600;">Belle&Jolie</div>
+              <div style="font-size:10px;color:#aaa;">${BOUTIQUE_ADRESSE}</div>
+            </div>
+          `).join("")}
+        </div>
+        <button onclick="window.print()" class="btn-primary" style="margin-top:6px;">🖨️ Imprimer la/les carte(s) cadeau</button>
+        <button onclick="setState({showCarteCadeau:null})" style="width:100%;padding:10px;background:#f5f0f2;color:#555;border:none;border-radius:8px;cursor:pointer;font-size:13px;margin-top:8px;">Fermer</button>
+      </div>
+    </div>
+  </div>
+  <style>
+    @media print {
+      body * { visibility: hidden; }
+      #carte-cadeau-print-area, #carte-cadeau-print-area * { visibility: visible; }
+      #carte-cadeau-print-area { position: fixed; top: 20mm; left: 50%; transform: translateX(-50%); width: 160mm; }
+      .carte-cadeau { break-inside: avoid; page-break-inside: avoid; }
+    }
+  </style>`;
+}
+
 function renderTicketModal() {
+  if(STATE.showCarteCadeau) return ""; // La carte cadeau prend la priorité, le ticket s'affichera une fois fermée
   const v = STATE.showTicket;
   const mL = {cb:"Carte bleue",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Carte cadeau",mixte:"Paiement mixte"};
 
@@ -3894,6 +3944,7 @@ window.validerPaiement = () => {
   if(chequesCadeauxVendus.length>0) {
     lsSet("bj_avoirs", STATE.avoirs);
     vente.chequesCadeauxVendus = chequesCadeauxVendus;
+    STATE.showCarteCadeau = chequesCadeauxVendus;
   }
 
   // ── Marquer bon fidélité 15% comme utilisé si appliqué ──
@@ -5758,7 +5809,8 @@ function renderCRM() {
   ${STATE.showExtractionMarque ? renderApercuExtractionMarque() : ""}
   ${STATE.showAjoutEvenement ? renderAjoutEvenementModal() : ""}
   ${STATE.showNouveauDepot ? renderNouveauDepotModal() : ""}
-  ${STATE.showVenteChequeCadeau ? renderVenteChequeCadeauModal() : ""}`;
+  ${STATE.showVenteChequeCadeau ? renderVenteChequeCadeauModal() : ""}
+  ${STATE.showCarteCadeau ? renderCarteCadeauModal() : ""}`;
 }
 
 window.openClientModal = id => {
