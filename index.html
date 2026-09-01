@@ -10159,7 +10159,7 @@ function renderCaisseJour() {
         <button onclick="STATE.${stateKey}=STATE.${stateKey}||{};STATE.${stateKey}['${key}']=Math.max(0,(parseInt(STATE.${stateKey}['${key}']||0)-1));render()"
           style="width:24px;height:24px;border-radius:5px;border:1px solid ${borderCol};background:#fff;cursor:pointer;font-size:13px;">−</button>
         <input type="number" min="0" value="${qty}"
-          oninput="STATE.${stateKey}=STATE.${stateKey}||{};STATE.${stateKey}['${key}']=parseInt(this.value)||0;${updateFn}()"
+          oninput="STATE.${stateKey}=STATE.${stateKey}||{};STATE.${stateKey}['${key}']=Math.max(0,parseInt(this.value)||0);${updateFn}()"
           style="width:42px;text-align:center;border:1px solid ${borderCol};border-radius:5px;padding:2px;font-size:12px;"/>
         <button onclick="STATE.${stateKey}=STATE.${stateKey}||{};STATE.${stateKey}['${key}']=(parseInt(STATE.${stateKey}['${key}']||0)+1);render()"
           style="width:24px;height:24px;border-radius:5px;border:1px solid ${borderCol};background:#fff;cursor:pointer;font-size:13px;">+</button>
@@ -10296,7 +10296,11 @@ function renderCaisseJour() {
             const val = parseFloat(k.replace("lend_","").replace("_","."));
             gardeLend[val] = (gardeLend[val]||0) + (parseInt(v)||0);
           });
-          const retraits = DENOMINATIONS.map(d => ({...d, qty: Math.max(0, (dispoFer[d.val]||0) - (gardeLend[d.val]||0))})).filter(d=>d.qty>0);
+          const retraits = DENOMINATIONS.map(d => {
+            const dispoNum = Math.max(0, dispoFer[d.val]||0);
+            const gardeNum = Math.max(0, gardeLend[d.val]||0);
+            return {...d, qty: Math.min(dispoNum, Math.max(0, dispoNum - gardeNum))};
+          }).filter(d=>d.qty>0);
           if(retraits.length===0) return "";
           return `
           <div style="background:#eef4fd;border-radius:10px;padding:12px;margin-top:12px;border:1px solid #b3d0f0;">
