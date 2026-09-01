@@ -1430,6 +1430,20 @@ function renderVendeurSettings() {
                   <div style="height:100%;width:${pct}%;background:${couleur};border-radius:4px;"></div>
                 </div>
                 ${alerte?`<div style="font-size:11px;color:${couleur};margin-top:8px;font-weight:500;">⚠️ Le stockage se remplit. Exporte une sauvegarde par précaution et préviens l'assistant pour faire de la place.</div>`:""}
+                <div style="margin-top:10px;font-size:11px;color:#888;">
+                  ${(()=>{
+                    const detail = [];
+                    try {
+                      for(let i=0;i<localStorage.length;i++){
+                        const k = localStorage.key(i);
+                        const taille = ((k.length + (localStorage.getItem(k)||"").length) * 2)/1024/1024;
+                        detail.push({k, taille});
+                      }
+                    } catch(e){}
+                    detail.sort((a,b)=>b.taille-a.taille);
+                    return detail.slice(0,6).map(d=>`<div style="display:flex;justify-content:space-between;padding:2px 0;"><span>${d.k}</span><span>${d.taille.toFixed(2)} Mo</span></div>`).join("");
+                  })()}
+                </div>
               </div>`;
           })()}
         </div>
