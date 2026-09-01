@@ -1661,7 +1661,7 @@ function calcPanier() {
   let fidPct=0;
   // Compter les achats >= 40€ sur les 8 derniers passages
   const nbPassages40 = STATE.client ? (STATE.ventes||[])
-    .filter(v=>!v.annulee&&!v.test&&v.client?.id===STATE.client.id)
+    .filter(v=>(!v.annulee||v.typeAnnulation==="comptable")&&!v.test&&v.client?.id===STATE.client.id)
     .sort((a,b)=>new Date(b.date)-new Date(a.date))
     .slice(0,8)
     .filter(v=>{
@@ -1702,7 +1702,7 @@ function calcPanier() {
   // Programme -15% : détecter palier atteint (6 passages < 40€ sur 8 derniers + 400€ cumulés)
   if(STATE.client && !bonFid15) {
     const derniers8 = (STATE.ventes||[])
-      .filter(v=>!v.annulee&&!v.test&&v.client?.id===STATE.client.id)
+      .filter(v=>(!v.annulee||v.typeAnnulation==="comptable")&&!v.test&&v.client?.id===STATE.client.id)
       .sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,8);
     const nbSous40 = derniers8.filter(v=>{
       const net=(v.panier||[]).filter(x=>!x.retour).reduce((s,x)=>s+x.price*(x.qty||1),0);
@@ -2131,7 +2131,7 @@ function renderCaisse() {
                 const achatsAvecPanier = achatsActuels + (panierTotal>=40?1:0);
                 // Compter les achats >= 40€ sur les 8 derniers passages (même logique que calcPanier)
                 const nbPassages40 = STATE.client ? (STATE.ventes||[])
-                  .filter(v=>!v.annulee&&!v.test&&v.client?.id===STATE.client.id)
+                  .filter(v=>(!v.annulee||v.typeAnnulation==="comptable")&&!v.test&&v.client?.id===STATE.client.id)
                   .sort((a,b)=>new Date(b.date)-new Date(a.date))
                   .slice(0,8)
                   .filter(v=>{
@@ -2147,7 +2147,7 @@ function renderCaisse() {
                 
                 // Programme 2 : 6 passages < 40€ sur 8 derniers + total >= 400€
                 const derniers8 = (STATE.ventes||[])
-                  .filter(v=>!v.annulee&&!v.test&&v.client?.id===STATE.client.id)
+                  .filter(v=>(!v.annulee||v.typeAnnulation==="comptable")&&!v.test&&v.client?.id===STATE.client.id)
                   .sort((a,b)=>new Date(b.date)-new Date(a.date))
                   .slice(0,8);
                 const nbSous40Sur8 = derniers8.filter(v=>{
@@ -2672,7 +2672,7 @@ function getNbPassagesSous40Recents(c) {
   if(!c) return 0;
   const il60j = new Date(); il60j.setDate(il60j.getDate()-60);
   return (STATE.ventes||[]).filter(v=>{
-    if(v.annulee||v.test||v.client?.id!==c.id) return false;
+    if((v.annulee&&v.typeAnnulation!=="comptable")||v.test||v.client?.id!==c.id) return false;
     const d=new Date(v.date);
     if(d<il60j) return false;
     const achatsBruts=(v.panier||[]).filter(x=>!x.retour&&!x.avoirId).reduce((s,x)=>s+x.price*x.qty,0);
@@ -2686,7 +2686,7 @@ function clientEligibleBon400(c) {
   if(!c) return false;
   // Récupérer les 8 derniers passages (toutes ventes non annulées)
   const passages = (STATE.ventes||[])
-    .filter(v=>!v.annulee&&!v.test&&v.client?.id===c.id)
+    .filter(v=>(!v.annulee||v.typeAnnulation==="comptable")&&!v.test&&v.client?.id===c.id)
     .sort((a,b)=>new Date(b.date)-new Date(a.date))
     .slice(0,8);
   if(passages.length < 8) return false;
@@ -2710,7 +2710,7 @@ function clientEligibleBon400(c) {
     .sort((a,b)=>new Date(b.date)-new Date(a.date))[0];
   const dateRef = dernierBon400 ? new Date(dernierBon400.date) : new Date(0);
   const totalDepuis = (STATE.ventes||[])
-    .filter(v=>!v.annulee&&!v.test&&v.client?.id===c.id&&new Date(v.date)>dateRef)
+    .filter(v=>(!v.annulee||v.typeAnnulation==="comptable")&&!v.test&&v.client?.id===c.id&&new Date(v.date)>dateRef)
     .reduce((s,v)=>{
       const net=(v.panier||[]).filter(x=>!x.retour).reduce((s2,x)=>s2+x.price*(x.qty||1),0)
                 -(v.panier||[]).filter(x=>x.retour&&!x.avoirId).reduce((s2,x)=>s2+x.price*(x.qty||1),0);
@@ -2728,7 +2728,7 @@ function clientADejaEuBon400Recent(c) {
   if(!dernierBon) return false;
   const dateRef = new Date(dernierBon.date);
   const totalDepuis = (STATE.ventes||[])
-    .filter(v=>!v.annulee&&!v.test&&v.client?.id===c.id&&new Date(v.date)>dateRef)
+    .filter(v=>(!v.annulee||v.typeAnnulation==="comptable")&&!v.test&&v.client?.id===c.id&&new Date(v.date)>dateRef)
     .reduce((s,v)=>{
       const net=(v.panier||[]).filter(x=>!x.retour).reduce((s2,x)=>s2+x.price*(x.qty||1),0)
                 -(v.panier||[]).filter(x=>x.retour&&!x.avoirId).reduce((s2,x)=>s2+x.price*(x.qty||1),0);
@@ -2740,13 +2740,13 @@ function clientADejaEuBon400Recent(c) {
 function clientADejaEuRemiseReseaux(c) {
   if(!c) return false;
   if(c.remiseReseauxAccordee) return true;
-  return (STATE.ventes||[]).some(v=>!v.annulee && v.client?.id===c.id && v.remiseReseaux);
+  return (STATE.ventes||[]).some(v=>(!v.annulee||v.typeAnnulation==="comptable") && v.client?.id===c.id && v.remiseReseaux);
 }
 
 function getDateRemiseReseaux(c) {
   if(!c) return null;
   // Chercher dans les ventes avec tag remiseReseaux
-  const vr = (STATE.ventes||[]).find(v=>!v.annulee && v.client?.id===c.id && v.remiseReseaux);
+  const vr = (STATE.ventes||[]).find(v=>(!v.annulee||v.typeAnnulation==="comptable") && v.client?.id===c.id && v.remiseReseaux);
   if(vr) return new Date(vr.date);
   // Fallback : date stockée sur le client
   if(c.dateRemiseReseaux) return new Date(c.dateRemiseReseaux);
@@ -6188,7 +6188,7 @@ function renderNewClientModal(){ return renderClientModal(); }
 
 function renderClientDetail() {
   const c=STATE.showClientDetail;
-  const cv=STATE.ventes.filter(v=>v.client?.id===c.id&&!v.test&&!v.annulee);
+  const cv=STATE.ventes.filter(v=>v.client?.id===c.id&&!v.test&&(!v.annulee||v.typeAnnulation==="comptable"));
   const mL={cb:"CB",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Cadeau",mixte:"Mixte"};
 
   // Calculs enrichis
@@ -11464,7 +11464,7 @@ function renderPromo() {
   // ── Calcul last achat & catégories achetées par cliente ──
   const dernierAchat = {};
   const catsAchetees = {}; // clientId → Set de catégories
-  (STATE.ventes||[]).filter(v=>!v.annulee&&!v.test&&v.client?.id).forEach(v=>{
+  (STATE.ventes||[]).filter(v=>(!v.annulee||v.typeAnnulation==="comptable")&&!v.test&&v.client?.id).forEach(v=>{
     const d = new Date(v.date);
     if(!dernierAchat[v.client.id] || d > dernierAchat[v.client.id]) dernierAchat[v.client.id] = d;
     if(!catsAchetees[v.client.id]) catsAchetees[v.client.id] = new Set();
@@ -11707,7 +11707,7 @@ window.envoyerEmailsPromo = async () => {
   const maintenant = new Date();
   const dernierAchat = {};
   const catsAchetees = {};
-  (STATE.ventes||[]).filter(v=>!v.annulee&&!v.test&&v.client?.id).forEach(v=>{
+  (STATE.ventes||[]).filter(v=>(!v.annulee||v.typeAnnulation==="comptable")&&!v.test&&v.client?.id).forEach(v=>{
     const d = new Date(v.date);
     if(!dernierAchat[v.client.id] || d > dernierAchat[v.client.id]) dernierAchat[v.client.id] = d;
     if(!catsAchetees[v.client.id]) catsAchetees[v.client.id] = new Set();
