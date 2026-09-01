@@ -3635,6 +3635,7 @@ window.selectClient = id => {
 window.openNewClientModal = () => {
   STATE.clientForm={nom:"",prenom:"",tel:"",email:"",cp:"",anniversaire:"",suitReseaux:false,remiseReseauxAccordee:false,pasDeMailPromo:false};
   STATE.editClientId=null;
+  STATE._creationDepuisCaisse=true;
   STATE.showNewClient=true;
   render();
 };
@@ -5919,6 +5920,7 @@ function renderCRM() {
 
 window.openClientModal = id => {
   STATE.editClientId=id;
+  STATE._creationDepuisCaisse=false;
   if(id){const c=STATE.clients.find(x=>x.id===id);STATE.clientForm={nom:c.nom||'',prenom:c.prenom||'',tel:c.tel||'',email:c.email||'',cp:c.cp||'',anniversaire:c.anniversaire||''};}
   else STATE.clientForm={nom:"",prenom:"",tel:"",email:"",cp:"",anniversaire:""};
   STATE.showClientModal=true; render();
@@ -6158,13 +6160,18 @@ window.saveClient = () => {
     STATE.avoirs=[...(STATE.avoirs||[]),bonBienvenue];
     STATE.clients=[...STATE.clients,newClient];
     lsSet("bj_avoirs",STATE.avoirs);
+    // Rattacher directement ce nouveau client au ticket en cours, s'il a été créé depuis la caisse
+    if(STATE._creationDepuisCaisse) {
+      STATE.client = newClient;
+      STATE._creationDepuisCaisse = false;
+    }
     setState({clients:STATE.clients,showClientModal:false,showNewClient:false});
     // Envoyer email de bienvenue si email + EmailJS configurés
     if(f.email&&STATE.emailjsServiceId&&STATE.emailjsTemplateId&&STATE.emailjsPublicKey) {
       envoyerEmailBienvenue(newClient, codeBienvenue, expBienvenue.toLocaleDateString("fr-FR"));
     }
     alert(`✅ Client créé !
-🎁 Bon de bienvenue de 5€ généré (valable 3 mois).
+${STATE.client?.id===newClient.id?"🔗 Rattaché(e) directement à la vente en cours.\n":""}🎁 Bon de bienvenue de 5€ généré (valable 3 mois).
 ${f.email?"📧 Email de bienvenue envoyé !":"Renseignez l'email pour envoyer le bon par email."}`);
   }
 };
