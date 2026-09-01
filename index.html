@@ -3500,7 +3500,13 @@ function appliquer2Pour1Pct() {
 
 window.addToCart = (id, tailleParam, couleurParam) => {
   const p=STATE.products.find(x=>x.id===id);
-  if(!p||p.stock===0) return;
+  if(!p) return;
+  if(p.stock<=0) {
+    alert("⚠️ Attention : \""+p.name+"\" indiquait un stock à 0 (déjà vendu selon la caisse), mais tu viens de le scanner.\n\nLe stock a été corrigé automatiquement pour cet article, et il vient d'être ajouté au panier.\n\nPense à vérifier ton inventaire de cette référence à l'occasion.");
+    STATE.products = STATE.products.map(x=>x.id===id?{...x, stock:1}:x);
+    lsSet("bj_products", STATE.products);
+    p.stock = 1;
+  }
   // Si taille/couleur passés en paramètre (scan barcode variante), ajouter directement
   if(tailleParam !== undefined || couleurParam !== undefined) {
     // Continuer avec les valeurs passées
