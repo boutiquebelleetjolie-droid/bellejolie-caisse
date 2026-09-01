@@ -10126,7 +10126,9 @@ function renderCaisseJour() {
   const totalPaniersVides = paniersVidesJour.reduce((s,p)=>s+(p.total||0),0);
 
   // Calcul totaux fond de caisse
-  const totalOuv = Object.entries(STATE.fondOuverture||{}).reduce((s,[k,v])=>{const val=parseFloat(k.replace("ouv_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
+  const totalOuvBrut = Object.entries(STATE.fondOuverture||{}).reduce((s,[k,v])=>{const val=parseFloat(k.replace("ouv_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
+  // Le fond d'ouverture reel = celui valide et sauvegarde ce matin (totalOuvBrut se vide au rechargement de page)
+  const totalOuv = totalOuvBrut || ouvertureJour?.totalOuv || FOND_RESERVE;
   const totalFer = Object.entries(STATE.fondFermeture||{}).reduce((s,[k,v])=>{const val=parseFloat(k.replace("fer_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
   const totalLendemain = Object.entries(STATE.fondLendemain||{}).reduce((s,[k,v])=>{const val=parseFloat(k.replace("lend_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
   const aDeposer = Math.max(0, totalFer - FOND_RESERVE);
@@ -10252,15 +10254,11 @@ function renderCaisseJour() {
           <div style="display:flex;justify-content:space-between;font-weight:700;font-size:14px;color:#3b6d11;margin-bottom:8px;">
             <span>Total compté</span><span id="total-fermeture">${eur(totalFer)}</span>
           </div>
-          ${(()=>{
-            // Le fond d'ouverture reel = celui valide et sauvegarde ce matin (totalOuv se vide au rechargement de page)
-            const totalOuvReel = totalOuv || ouvertureJour?.totalOuv || FOND_RESERVE;
-            return `
           <div style="background:#fff;border-radius:8px;padding:10px;font-size:12px;">
-            <div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="color:#888;">Fond ouverture</span><span>+${eur(totalOuvReel)}</span></div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="color:#888;">Fond ouverture</span><span>+${eur(totalOuv)}</span></div>
             <div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="color:#888;">Espèces encaissées</span><span>+${eur(especes)}</span></div>
             <div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="color:#888;">Retours espèces</span><span style="color:#e07c00;">−${eur(retours)}</span></div>
-            <div style="display:flex;justify-content:space-between;margin-bottom:3px;font-weight:500;"><span>Théorique en caisse</span><span>${eur(totalOuvReel+especes-retours)}</span></div>
+            <div style="display:flex;justify-content:space-between;margin-bottom:3px;font-weight:500;"><span>Théorique en caisse</span><span>${eur(totalOuv+especes-retours)}</span></div>
             <div style="border-top:0.5px solid #ddd;margin:5px 0;padding-top:5px;display:flex;justify-content:space-between;font-weight:700;font-size:13px;color:#185fa5;">
               <span>💰 À déposer en banque</span><span>${eur(aDeposer)}</span>
             </div>
@@ -10270,8 +10268,7 @@ function renderCaisseJour() {
                 ${Math.abs(ecart)<0.01?"✅ OK":ecart>0?"+"+eur(ecart):eur(ecart)}
               </span>
             </div>
-          </div>`;
-          })()}
+          </div>
         </div>
 
         <!-- CE QUI RESTE POUR DEMAIN -->
