@@ -9007,10 +9007,21 @@ window.copierMessageEmail = async () => {
   if(el) { el.style.display="block"; setTimeout(()=>{ if(el) el.style.display="none"; },4000); }
 };
 
+// Enregistre l'email saisi sur la fiche cliente liée, si nouveau ou différent
+function sauvegarderEmailClientSiNouveau(v, dest) {
+  const clientLie = v?.client || v?.avoir?.client;
+  if(clientLie?.id && dest && clientLie.email !== dest) {
+    STATE.clients = STATE.clients.map(c=>c.id===clientLie.id ? {...c, email:dest} : c);
+    lsSet("bj_clients", STATE.clients);
+    if(STATE.client?.id===clientLie.id) STATE.client = {...STATE.client, email:dest};
+  }
+}
+
 // ── Email : ouvrir l'app Mail ────────────────────────────────────
 window.ouvrirAppEmail = () => {
   const v    = STATE.showTicket;
   const dest = STATE.envoiDest?.trim();
+  sauvegarderEmailClientSiNouveau(v, dest);
   const date = v?new Date(v.date).toLocaleDateString("fr-FR"):"";
   const body = buildMsgEmail(v);
   const href = `mailto:${dest||""}?subject=${encodeURIComponent("Votre ticket Belle&Jolie du "+date)}&body=${encodeURIComponent(body)}`;
@@ -9126,6 +9137,8 @@ window.envoyerEmailJS = async () => {
     
     console.log("EmailJS success:", result.status, result.text);
     incrementerEnvoisJour(1);
+    sauvegarderEmailClientSiNouveau(v, dest);
+
     if(statusEl){ statusEl.style.display="block"; statusEl.textContent="✅ Email envoyé avec succès !"; statusEl.style.color="#3b6d11"; }
     if(btnEl)   { btnEl.textContent="✅ Envoyé !"; btnEl.style.background="#3b6d11"; btnEl.disabled=false; }
     
