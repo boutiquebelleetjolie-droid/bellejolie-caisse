@@ -3841,7 +3841,7 @@ window.validerPaiement = () => {
   const vente = {
     id:uid("V"), date:new Date().toISOString(),
     boutiqueId: BOUTIQUE_CONFIG.id,   // Identifiant boutique pour future synchro multi-boutiques
-    panier:[...STATE.panier], client:STATE.client, vendeur:STATE.vendeur,
+    panier:[...STATE.panier], client:STATE.client, clientId:STATE.client?.id||null, vendeur:STATE.vendeur,
     remise:remGlobal, remiseFid:remiseFidMontant||0, remiseProg:remiseProgMontant||0,
     remType:STATE.remType||"", remVal:STATE.remVal||"", remiseMotif:STATE.remGlobalMotif||"",
     total:Math.max(0,total), mixed:STATE.payMixed,
@@ -8631,7 +8631,9 @@ window.supprimerMemoJour = (jourKey) => {
 // ─── ENVOI TICKET SMS/EMAIL ─────────────────────────────────────
 function renderEnvoiTicketModal() {
   const v = STATE.showTicket;
-  const clientEmail = v?.client?.email||"";
+  const clientIdRefR = v?.client?.id || v?.clientId || v?.avoir?.client?.id || v?.avoir?.clientId;
+  const clientFraisR = clientIdRefR ? STATE.clients.find(c=>c.id===clientIdRefR) : null;
+  const clientEmail = clientFraisR?.email || v?.client?.email || "";
   // N'utiliser STATE.envoiDest que s'il a été défini pour CE ticket précis (évite qu'une ancienne valeur "colle" au ticket suivant)
   const dest = (STATE.envoiDestTicketId===v?.id && STATE.envoiDest !== undefined) ? STATE.envoiDest : clientEmail;
   // Resynchroniser l'état pour que l'envoi utilise bien la même valeur que celle affichée
@@ -8704,7 +8706,9 @@ function renderEnvoiTicketModal() {
 window.ouvrirEnvoiTicket = () => {
   const v = STATE.showTicket;
   STATE.envoiMode = "email";
-  STATE.envoiDest = v?.type==="avoir" ? (v?.avoir?.client?.email||"") : (v?.client?.email || "");
+  const clientIdRef = v?.client?.id || v?.clientId || v?.avoir?.client?.id || v?.avoir?.clientId;
+  const clientFrais = clientIdRef ? STATE.clients.find(c=>c.id===clientIdRef) : null;
+  STATE.envoiDest = clientFrais?.email || v?.client?.email || v?.avoir?.client?.email || "";
   STATE.envoiDestTicketId = v?.id;
   setState({showEnvoiTicket:true});
 };
