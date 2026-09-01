@@ -8632,7 +8632,11 @@ window.supprimerMemoJour = (jourKey) => {
 function renderEnvoiTicketModal() {
   const v = STATE.showTicket;
   const clientEmail = v?.client?.email||"";
-  const dest = STATE.envoiDest !== undefined ? STATE.envoiDest : clientEmail;
+  // N'utiliser STATE.envoiDest que s'il a été défini pour CE ticket précis (évite qu'une ancienne valeur "colle" au ticket suivant)
+  const dest = (STATE.envoiDestTicketId===v?.id && STATE.envoiDest !== undefined) ? STATE.envoiDest : clientEmail;
+  // Resynchroniser l'état pour que l'envoi utilise bien la même valeur que celle affichée
+  STATE.envoiDest = dest;
+  STATE.envoiDestTicketId = v?.id;
   const mL={cb:"CB",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Cadeau",mixte:"Mixte"};
   const articles = (v?.panier||[]).filter(x=>!x.retour).map(i=>`${i.qty}x ${i.name} = ${eur(i.price*i.qty)}`).join("\n");
   const date = v?new Date(v.date).toLocaleDateString("fr-FR"):"";
@@ -8652,7 +8656,7 @@ function renderEnvoiTicketModal() {
           <label style="font-size:12px;color:#888;display:block;margin-bottom:4px;">📧 Adresse email du client</label>
           <input type="email" id="envoi-dest-input"
             value="${dest}"
-            oninput="STATE.envoiDest=this.value"
+            oninput="STATE.envoiDest=this.value;STATE.envoiDestTicketId=(STATE.showTicket&&STATE.showTicket.id)"
             placeholder="client@email.fr"
             style="width:100%;box-sizing:border-box;font-size:15px;"/>
           ${v?.client?`<div style="font-size:11px;color:#aaa;margin-top:4px;">
@@ -8701,6 +8705,7 @@ window.ouvrirEnvoiTicket = () => {
   const v = STATE.showTicket;
   STATE.envoiMode = "email";
   STATE.envoiDest = v?.type==="avoir" ? (v?.avoir?.client?.email||"") : (v?.client?.email || "");
+  STATE.envoiDestTicketId = v?.id;
   setState({showEnvoiTicket:true});
 };
 
