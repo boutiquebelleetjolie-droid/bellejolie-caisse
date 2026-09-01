@@ -107,7 +107,20 @@ const DB = {
     // Tagguer automatiquement les données locales avec l'ID boutique
     // (utile pour Firebase pour filtrer par boutique)
     if(this.moteur === "local") {
-      try { localStorage.setItem(key, JSON.stringify(val)); } catch{}
+      try {
+        localStorage.setItem(key, JSON.stringify(val));
+      } catch(err) {
+        console.error("Échec de sauvegarde localStorage pour la clé '"+key+"':", err);
+        const estStockagePlein = err && (err.name==="QuotaExceededError" || err.code===22 || err.code===1014);
+        if(!window._alerteStockageAffichee) {
+          window._alerteStockageAffichee = true;
+          alert("⚠️ ATTENTION : la dernière modification n'a PAS pu être sauvegardée !\n\n"
+            + (estStockagePlein
+              ? "Le stockage de ton navigateur est plein. Fais un export de sauvegarde immédiatement (⚙️ PIN → Exporter les données), puis préviens l'assistant pour libérer de la place."
+              : "Erreur technique : "+(err?.message||err)+"\n\nFais un export de sauvegarde par précaution (⚙️ PIN → Exporter les données).")
+          );
+        }
+      }
     }
     // FIREBASE (futur) :
     // const isGlobal = BOUTIQUE_CONFIG.DONNEES_GLOBALES.includes(key);
@@ -1390,6 +1403,36 @@ function renderVendeurSettings() {
           </div>
         `).join("")}
         <button onclick="saveVendeurs()" class="btn-primary" style="margin-bottom:16px;">Enregistrer les modifications</button>
+
+        <!-- Espace de stockage -->
+        <div style="border-top:0.5px solid #e8e0e4;padding-top:14px;margin-bottom:14px;">
+          <div style="font-weight:500;font-size:13px;margin-bottom:8px;">💽 Espace de stockage du navigateur</div>
+          ${(()=>{
+            let totalOctets = 0;
+            try {
+              for(let i=0;i<localStorage.length;i++){
+                const k = localStorage.key(i);
+                totalOctets += (k.length + (localStorage.getItem(k)||"").length) * 2; // UTF-16 ≈ 2 octets/caractère
+              }
+            } catch(e){}
+            const totalMo = totalOctets/1024/1024;
+            const limiteEstimee = 5; // Limite courante des navigateurs (5-10 Mo selon navigateur)
+            const pct = Math.min(100, Math.round(totalMo/limiteEstimee*100));
+            const alerte = pct>=70;
+            const couleur = pct>=85?"#a32d2d":pct>=70?"#854f0b":"#3b6d11";
+            return `
+              <div style="background:#f5f0f2;border-radius:8px;padding:10px;">
+                <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;">
+                  <span>${totalMo.toFixed(2)} Mo utilisés (estimation sur ~${limiteEstimee} Mo disponibles)</span>
+                  <span style="font-weight:600;color:${couleur};">${pct}%</span>
+                </div>
+                <div style="background:#e8e0e4;border-radius:4px;height:6px;overflow:hidden;">
+                  <div style="height:100%;width:${pct}%;background:${couleur};border-radius:4px;"></div>
+                </div>
+                ${alerte?`<div style="font-size:11px;color:${couleur};margin-top:8px;font-weight:500;">⚠️ Le stockage se remplit. Exporte une sauvegarde par précaution et préviens l'assistant pour faire de la place.</div>`:""}
+              </div>`;
+          })()}
+        </div>
 
         <!-- Sauvegarde -->
         <div style="border-top:0.5px solid #e8e0e4;padding-top:14px;margin-bottom:14px;">
