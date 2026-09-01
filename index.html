@@ -1187,6 +1187,7 @@ function renderApp() {
   ${STATE.showExtractionMarque ? renderApercuExtractionMarque() : ""}
   ${STATE.showAjoutEvenement ? renderAjoutEvenementModal() : ""}
   ${STATE.showNouveauDepot ? renderNouveauDepotModal() : ""}
+  ${STATE.showTicketsDuJour ? renderTicketsDuJourModal() : ""}
   ${STATE.showVenteChequeCadeau ? renderVenteChequeCadeauModal() : ""}
   ${STATE.showCarteCadeau ? renderCarteCadeauModal() : ""}
   ${STATE.showVendeurSettings ? renderVendeurSettings() : ""}
@@ -1940,6 +1941,57 @@ function getEvenementsAVenir(joursFenetre) {
   return items.sort((a,b)=>a.date-b.date);
 }
 
+// ─── Tickets du jour (consultation rapide, accessible à toutes les vendeuses) ──
+window.ouvrirTicketsDuJour = () => {
+  STATE.showTicketsDuJour = true;
+  render();
+};
+window.reouvrirTicketDuJour = (venteId) => {
+  const v = STATE.ventes.find(x=>x.id===venteId);
+  if(!v) return;
+  STATE.showTicketsDuJour = false;
+  STATE.showTicket = v;
+  render();
+};
+
+function renderTicketsDuJourModal() {
+  const now = new Date();
+  const ventesJour = STATE.ventes
+    .filter(v=>!v.test && new Date(v.date).toDateString()===now.toDateString())
+    .sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const mL = {cb:"Carte bleue",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Carte cadeau",mixte:"Mixte"};
+  const caJour = ventesJour.filter(v=>!v.annulee).reduce((s,v)=>s+v.total,0);
+
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)setState({showTicketsDuJour:false})">
+    <div class="modal" style="max-width:480px;">
+      <div class="modal-header">
+        <span style="font-weight:500;">🧾 Tickets du jour</span>
+        <button onclick="setState({showTicketsDuJour:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
+      </div>
+      <div class="modal-body">
+        <div style="background:#f5f0f2;border-radius:8px;padding:10px;margin-bottom:14px;display:flex;justify-content:space-between;font-size:13px;">
+          <span>${ventesJour.length} ticket${ventesJour.length>1?"s":""} aujourd'hui</span>
+          <strong>${eur(caJour)}</strong>
+        </div>
+        ${ventesJour.length===0?`<div style="text-align:center;color:#aaa;padding:30px 0;">Aucun ticket pour l'instant aujourd'hui.</div>`:""}
+        ${ventesJour.map(v=>{
+          const heure = new Date(v.date).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+          const nomClient = v.client ? v.client.prenom+" "+v.client.nom : "Sans client";
+          return `
+          <div onclick="reouvrirTicketDuJour('${v.id}')" style="display:flex;justify-content:space-between;align-items:center;padding:10px;border-radius:8px;cursor:pointer;margin-bottom:6px;background:${v.annulee?'#fbeaea':'#fff'};border:1px solid #eee;">
+            <div>
+              <div style="font-size:13px;font-weight:500;${v.annulee?'text-decoration:line-through;color:#a32d2d;':''}">${heure} · ${nomClient}</div>
+              <div style="font-size:11px;color:#888;">${v.vendeur?.nom||""} · ${mL[v.payMode]||v.payMode||""}${v.annulee?" · ❌ Annulée":""}</div>
+            </div>
+            <div style="font-weight:600;font-size:14px;${v.annulee?'color:#a32d2d;':''}">${eur(v.total)}</div>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>
+  </div>`;
+}
+
 function renderBandeauEvenements() {
   const evts = getEvenementsAVenir(60);
   if(evts.length===0 && !STATE._calendrierOuvert) return `
@@ -2044,6 +2096,7 @@ function renderCaisse() {
   <div>
   ${alerteBloc}
   ${bandeauEvenements}
+  <button onclick="ouvrirTicketsDuJour()" style="width:100%;text-align:left;background:#eef4fd;border:1px solid #b3d0f0;border-radius:9px;padding:9px 14px;cursor:pointer;font-size:12px;color:#185fa5;font-weight:500;margin-bottom:10px;">🧾 Voir les tickets du jour</button>
   <div style="display:grid;grid-template-columns:1fr 360px;gap:14px;height:calc(100vh - 140px);">
 
     <!-- GAUCHE -->
@@ -5920,6 +5973,7 @@ function renderCRM() {
   ${STATE.showExtractionMarque ? renderApercuExtractionMarque() : ""}
   ${STATE.showAjoutEvenement ? renderAjoutEvenementModal() : ""}
   ${STATE.showNouveauDepot ? renderNouveauDepotModal() : ""}
+  ${STATE.showTicketsDuJour ? renderTicketsDuJourModal() : ""}
   ${STATE.showVenteChequeCadeau ? renderVenteChequeCadeauModal() : ""}
   ${STATE.showCarteCadeau ? renderCarteCadeauModal() : ""}`;
 }
