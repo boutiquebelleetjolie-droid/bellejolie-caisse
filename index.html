@@ -205,13 +205,13 @@ function jsonForAttr(v) { return JSON.stringify(v).replace(/"/g, "&quot;"); }
 // On se garde une marge de sécurité (450) pour ne jamais risquer le blocage Gmail.
 const DAILY_EMAIL_CAP = 450;
 function getEnvoisAujourdhui() {
-  const today = new Date().toISOString().slice(0,10);
+  const today = dateLocaleStr();
   const data = ls("bj_ejs_envois_jour", {date:"", count:0});
   if(data.date !== today) return 0;
   return data.count||0;
 }
 function incrementerEnvoisJour(n=1) {
-  const today = new Date().toISOString().slice(0,10);
+  const today = dateLocaleStr();
   const data = ls("bj_ejs_envois_jour", {date:"", count:0});
   const nouveauCompte = (data.date === today ? (data.count||0) : 0) + n;
   lsSet("bj_ejs_envois_jour", {date:today, count:nouveauCompte});
@@ -444,6 +444,13 @@ const PAY_MODES = [
 const eur = v => Number(v||0).toFixed(2).replace(".",",") + " €";
 const uid = p => p + Date.now().toString(36).toUpperCase();
 const genBC = () => "376000" + String(Math.floor(Math.random()*9999999)).padStart(7,"0");
+
+// Date locale au format YYYY-MM-DD, à utiliser partout à la place de .toISOString().slice(0,10)
+// qui convertit en UTC et décale d'un jour en France (UTC+1/+2)
+function dateLocaleStr(d) {
+  const date = d || new Date();
+  return date.getFullYear()+"-"+String(date.getMonth()+1).padStart(2,"0")+"-"+String(date.getDate()).padStart(2,"0");
+}
 
 // Générateur de vrai code-barres Code128B (lisible par scanner), utilisé partout dans l'app
 // pour éviter les dessins décoratifs qui ne scannent pas.
@@ -818,7 +825,7 @@ const DEPOT_DUREE_JOURS = 30;
 window.ouvrirNouveauDepot = () => {
   STATE._newDepot = {
     clientId: null, clientNom: "", clientPrenom: "", clientTel: "",
-    dateDepot: new Date().toISOString().slice(0,10),
+    dateDepot: dateLocaleStr(),
     articles: [{nom:"",prix:"",categorie:"",taille:""}],
     rechercheTel: "",
   };
@@ -920,7 +927,7 @@ window.renouvelerArticleDepot = (prodId) => {
   const nouveauPrix = parseFloat(nouveauPrixStr) || p.price;
   STATE.products = STATE.products.map(x=>x.id===prodId ? {
     ...x, price:nouveauPrix, prixAchat:+(nouveauPrix*(1-DEPOT_COMMISSION_PCT/100)).toFixed(2),
-    dateDepot: new Date().toISOString().slice(0,10),
+    dateDepot: dateLocaleStr(),
   } : x);
   lsSet("bj_products", STATE.products);
   render();
@@ -1357,7 +1364,7 @@ window.viderPanier = () => {
 
 window.logout = () => {
   // Vérifier si le mémo du jour a été rempli
-  const aujourdhui = new Date().toISOString().slice(0,10);
+  const aujourdhui = dateLocaleStr();
   const memoJour = (STATE.memos||[]).find(m => m.date && m.date.slice(0,10)===aujourdhui && m.texte && m.texte.trim());
   
   // Vérifier si le Z caisse du soir a été fait
@@ -1585,7 +1592,7 @@ window.exporterDonnees = () => {
   const blob = new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
   const url  = URL.createObjectURL(blob);
   const a    = document.createElement("a");
-  a.href=url; a.download="bellejolie-sauvegarde-"+new Date().toISOString().slice(0,10)+".json";
+  a.href=url; a.download="bellejolie-sauvegarde-"+dateLocaleStr()+".json";
   document.body.appendChild(a); a.click();
   document.body.removeChild(a); URL.revokeObjectURL(url);
   STATE.sauvegarde=new Date().toISOString();
@@ -1876,7 +1883,7 @@ window.ouvrirAjoutEvenement = (id) => {
     const ex = (STATE.evenementsPerso||[]).find(e=>e.id===id);
     if(ex) { STATE._newEvenement = { id:ex.id, nom:ex.nom, date:ex.date, dateFin:ex.dateFin||"", recurrent:!!ex.recurrent }; STATE.showAjoutEvenement = true; render(); return; }
   }
-  STATE._newEvenement = { nom:"", date:new Date().toISOString().slice(0,10), dateFin:"", recurrent:false };
+  STATE._newEvenement = { nom:"", date:dateLocaleStr(), dateFin:"", recurrent:false };
   STATE.showAjoutEvenement = true;
   render();
 };
@@ -2071,9 +2078,9 @@ function renderCaisse() {
 
   // ── Alertes caisse ──────────────────────────────────────────────────
   const now      = new Date();
-  const todayStr = now.toISOString().slice(0,10);
+  const todayStr = dateLocaleStr(now);
   const hier     = new Date(now); hier.setDate(now.getDate()-1);
-  const hierStr  = hier.toISOString().slice(0,10);
+  const hierStr  = dateLocaleStr(hier);
 
   // Ouverture validée ce matin ?
   const ouvertureToday = ls("bj_ouverture_"+todayStr, null);
@@ -2748,6 +2755,10 @@ window.appliquerRemiseReseaux = () => {
     setState({remVal:"",remType:"eur"});
     STATE._remiseReseauxEnCours = false;
   } else {
+    if(STATE.client?.remiseReseauxAccordee) {
+      alert("⚠️ Cette cliente a déjà bénéficié de la remise réseaux sociaux (-5€) précédemment. Elle ne peut être accordée qu'une seule fois par cliente.");
+      return;
+    }
     const sousTotal = calcPanier().stTotal;
     if(sousTotal < 20) { alert("⚠️ Cette remise de -5€ n'est accordée qu'à partir de 20€ d'achat (panier actuel : "+eur(sousTotal)+")."); return; }
     setState({remVal:"5",remType:"eur"});
@@ -4954,7 +4965,7 @@ function renderStock() {
   if(STATE.vendeur.role!=="apprenti") html += '<button onclick="openProdModal(null)" class="btn-primary" style="width:auto;padding:8px 16px;">+ Nouvel article</button>';
   if(isV1) html += '<button onclick="STATE.stockTab=\'reception\';render()" class="btn-ghost" style="white-space:nowrap;">📦 Réception facture</button>';
   if(isV1) html += '<button onclick="ouvrirApercuExtractionMarque()" class="btn-ghost" style="white-space:nowrap;">🔧 Extraire les marques</button>';
-  const dateEtiq = STATE.dateEtiq || new Date().toISOString().slice(0,10);
+  const dateEtiq = STATE.dateEtiq || dateLocaleStr();
   const articlesJour = STATE.products.filter(p => (p.dateAjout||"").slice(0,10)===dateEtiq);
   html += '<div style="display:flex;align-items:center;gap:6px;background:#fff8e1;border:1px solid #fac775;border-radius:8px;padding:6px 10px;">';
   html += '<label style="font-size:11px;color:#854f0b;white-space:nowrap;">📅 Entrés le</label>';
@@ -5307,7 +5318,7 @@ window.openProdModal = id => {
   STATE.editProdId=id;
   STATE._newCouleur = "";
   if(id){const p=STATE.products.find(x=>x.id===id);STATE.prodForm={name:p.name,marque:p.marque||"",category:p.category,price:p.price,prixAchat:p.prixAchat||"",_coeffSaisi:"",stock:p.stock,ref:p.ref,barcode:p.barcode,tailles:p.tailles||[],couleurs:p.couleurs||[],photo:p.photo||"",stockVariantes:{...(p.stockVariantes||{})},grandeTaille:p.grandeTaille||false,dateAjout:(p.dateAjout||new Date().toISOString()).slice(0,10)};}
-  else STATE.prodForm={name:"",marque:"",category:"",price:"",prixAchat:"",_coeffSaisi:"",stock:0,ref:uid("REF-"),barcode:genBC(),tailles:[],couleurs:[],photo:"",stockVariantes:{},grandeTaille:false,enReserve:false,dateAjout:new Date().toISOString().slice(0,10)};
+  else STATE.prodForm={name:"",marque:"",category:"",price:"",prixAchat:"",_coeffSaisi:"",stock:0,ref:uid("REF-"),barcode:genBC(),tailles:[],couleurs:[],photo:"",stockVariantes:{},grandeTaille:false,enReserve:false,dateAjout:dateLocaleStr()};
   STATE.showProdModal=true; render();
 };
 window.openBCModal  = id => { STATE.showBCModal=STATE.products.find(p=>p.id===id); STATE.etiquetteTailleVal=''; STATE.etiquetteCouleurVal=''; render(); };
@@ -7925,7 +7936,7 @@ function renderFacturesClients() {
   if(STATE.showNouvelleFacture) {
     if(!STATE.nouvelleFacture) STATE.nouvelleFacture = {
       numero: 'FAC-' + new Date().getFullYear() + '-' + String((STATE.facturesClients||[]).length+1).padStart(3,'0'),
-      date: new Date().toISOString().slice(0,10),
+      date: dateLocaleStr(),
       clientNom: '', clientAdresse: '', clientEmail: '', clientSiret: '',
       lignes: [{desc:'', qte:1, puHT:0, tva:20}],
       notes: ''
@@ -8149,7 +8160,7 @@ function renderFacturesFourn() {
   // Modal nouvelle facture fournisseur
   if(STATE.showNouvelleFactureFourn) {
     if(!STATE.nouvelleFactureFourn) STATE.nouvelleFactureFourn = {
-      date: new Date().toISOString().slice(0,10),
+      date: dateLocaleStr(),
       fournisseur: '', numeroFacture: '', montantHT: '', tva: '20', montantTTC: '',
       modePaiement: 'virement', dateEcheance: '', statut: 'impayée', notes: ''
     };
@@ -8272,7 +8283,7 @@ window.exporterFacturesFournCSV = () => {
   const blob = new Blob(['﻿'+csv], {type:'text/csv;charset=utf-8'});
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'factures-fournisseurs-'+new Date().toISOString().slice(0,10)+'.csv';
+  a.download = 'factures-fournisseurs-'+dateLocaleStr()+'.csv';
   a.click();
 };
 
@@ -8387,7 +8398,7 @@ function renderCompta() {
         </div>
         <div>
           <label style="font-size:11px;color:#888;display:block;margin-bottom:2px;">Date</label>
-          <input type="date" id="fac-date" value="${new Date().toISOString().slice(0,10)}" style="width:100%;box-sizing:border-box;"/>
+          <input type="date" id="fac-date" value="${dateLocaleStr()}" style="width:100%;box-sizing:border-box;"/>
         </div>
         <div>
           <label style="font-size:11px;color:#888;display:block;margin-bottom:2px;">Catégorie</label>
@@ -8569,7 +8580,7 @@ window.ajouterFacture = () => {
   const ded      = document.getElementById("fac-ded")?.value==="1";
   const desc     = document.getElementById("fac-desc")?.value||"";
   if(!ht||ht<=0){ alert("Montant HT invalide"); return; }
-  const f = {id:uid("FAC"),num,date:date||new Date().toISOString().slice(0,10),categorie:cat,fournisseur:fourn,montantHT:ht,tauxTVA,deductible:ded,description:desc};
+  const f = {id:uid("FAC"),num,date:date||dateLocaleStr(),categorie:cat,fournisseur:fourn,montantHT:ht,tauxTVA,deductible:ded,description:desc};
   STATE.depenses=[...(STATE.depenses||[]),f];
   setState({depenses:STATE.depenses});
 };
@@ -9742,7 +9753,7 @@ window.imprimerReassort = () => {
 // ─── JOURNAL DES ANNULATIONS ───────────────────────────────────
 function renderJournal() {
   const now = new Date();
-  if(!STATE.journalDate) STATE.journalDate = now.toISOString().slice(0,10);
+  if(!STATE.journalDate) STATE.journalDate = dateLocaleStr(now);
   const dateJour = new Date(STATE.journalDate);
   const dateStr  = dateJour.toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
   const annuls   = (STATE.annulLignes||[]).filter(a=>new Date(a.date).toDateString()===dateJour.toDateString());
@@ -9753,16 +9764,16 @@ function renderJournal() {
   return `
   <div>
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;">
-      <button onclick="STATE.journalDate='${prevDay.toISOString().slice(0,10)}';render()" style="background:none;border:1px solid #ddd;border-radius:8px;padding:7px 14px;cursor:pointer;">◀ Jour préc.</button>
+      <button onclick="STATE.journalDate='${dateLocaleStr(prevDay)}';render()" style="background:none;border:1px solid #ddd;border-radius:8px;padding:7px 14px;cursor:pointer;">◀ Jour préc.</button>
       <div style="text-align:center;">
         <div style="font-weight:600;font-size:15px;">📓 Journal des annulations</div>
         <div style="font-size:13px;color:#888;">${dateStr}</div>
       </div>
-      <button onclick="STATE.journalDate='${nextDay.toISOString().slice(0,10)}';render()" ${isToday?"disabled":""} style="background:none;border:1px solid #ddd;border-radius:8px;padding:7px 14px;cursor:pointer;opacity:${isToday?0.4:1};">Jour suiv. ▶</button>
+      <button onclick="STATE.journalDate='${dateLocaleStr(nextDay)}';render()" ${isToday?"disabled":""} style="background:none;border:1px solid #ddd;border-radius:8px;padding:7px 14px;cursor:pointer;opacity:${isToday?0.4:1};">Jour suiv. ▶</button>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center;">
       <input type="date" value="${STATE.journalDate}" onchange="STATE.journalDate=this.value;render()" style="border:1px solid #ddd;border-radius:8px;padding:7px 12px;font-size:13px;"/>
-      <button onclick="STATE.journalDate='${now.toISOString().slice(0,10)}';render()" style="padding:7px 14px;background:#f5f0f2;border:none;border-radius:8px;cursor:pointer;font-size:13px;">Aujourd'hui</button>
+      <button onclick="STATE.journalDate='${dateLocaleStr(now)}';render()" style="padding:7px 14px;background:#f5f0f2;border:none;border-radius:8px;cursor:pointer;font-size:13px;">Aujourd'hui</button>
       ${annuls.length>0?`<button onclick="imprimerJournal('${STATE.journalDate}')" style="padding:7px 14px;background:#993556;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;">🖨️ Imprimer</button>`:""}
     </div>
     ${annuls.length===0?`
@@ -10062,7 +10073,8 @@ function renderCaisseJour() {
   // Navigation jour (pour consulter les jours précédents)
   if(STATE.zDateOffset===undefined) STATE.zDateOffset=0;
   const zDate = new Date(now); zDate.setDate(now.getDate()+STATE.zDateOffset); zDate.setHours(0,0,0,0);
-  const zDateStr = zDate.toISOString().slice(0,10);
+  // Date locale (pas toISOString, qui convertit en UTC et décale d'un jour en France l'été/hiver)
+  const zDateStr = zDate.getFullYear()+"-"+String(zDate.getMonth()+1).padStart(2,"0")+"-"+String(zDate.getDate()).padStart(2,"0");
   const zDateLabel = STATE.zDateOffset===0?"Aujourd'hui":STATE.zDateOffset===-1?"Hier":zDate.toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"});
   const isToday = STATE.zDateOffset===0;
   const isDimanche = zDate.getDay()===0; // 0 = dimanche
@@ -10379,7 +10391,7 @@ function renderCaisseJour() {
 }
 
 function renderBoutonOuverture() {
-  const dateKey = "bj_ouverture_"+new Date().toISOString().slice(0,10);
+  const dateKey = "bj_ouverture_"+dateLocaleStr();
   const dejàValidé = ls(dateKey, null);
   if(dejàValidé) {
     const h = new Date(dejàValidé.heure).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
@@ -10402,7 +10414,7 @@ window.validerOuvertureCaisse = () => {
 💵 Fond compté : ${eur(totalOuv)}
 ✅ Fond conforme (${eur(FOND_RESERVE)})`;
   // Sauvegarder l'heure d'ouverture
-  const key = "bj_ouverture_"+new Date().toISOString().slice(0,10);
+  const key = "bj_ouverture_"+dateLocaleStr();
   lsSet(key, {heure:new Date().toISOString(), totalOuv, ecart, valide:true});
   const el = document.getElementById("ouverture-confirm");
   if(el){
@@ -10488,7 +10500,7 @@ window.updateLendemainTotal = () => {
 window.cloturerCaisse = (targetDateStr) => {
   const now=new Date();
   const targetDate=targetDateStr?new Date(targetDateStr):now;
-  const dateStr=targetDate.toISOString().slice(0,10);
+  const dateStr=dateLocaleStr(targetDate);
 
   // Vérifier que le mémo du jour a été rempli — OBLIGATOIRE
   const memoJour = (STATE.memos||[]).find(m => m.date && m.date.slice(0,10)===dateStr && m.texte && m.texte.trim());
@@ -10822,7 +10834,7 @@ window.envoyerSauvegardeEmail = async () => {
 // Sauvegarde auto quotidienne : vérifier si déjà fait aujourd'hui
 window.verifierSauvegardeAuto = () => {
   if(!STATE.sauvegardeEmail) return;
-  const today = new Date().toISOString().slice(0,10);
+  const today = dateLocaleStr();
   const lastSauvegarde = STATE.sauvegarde ? STATE.sauvegarde.slice(0,10) : null;
   // Si pas de sauvegarde aujourd'hui et après 19h → proposer
   const heure = new Date().getHours();
@@ -12354,7 +12366,7 @@ function renderCalendrierSemaine(lundiFin) {
     const d=new Date(v.date); d.setHours(0,0,0,0);
     const offset=(d.getDay()+6)%7;
     const lundi=new Date(d); lundi.setDate(d.getDate()-offset);
-    const key=lundi.toISOString().slice(0,10);
+    const key=dateLocaleStr(lundi);
     caParLundi[key]=(caParLundi[key]||0)+v.total;
   });
   const maxCA=Math.max(1,...Object.values(caParLundi));
@@ -12362,7 +12374,7 @@ function renderCalendrierSemaine(lundiFin) {
   const lignes = lundis.map(lundi=>{
     const dim = new Date(lundi); dim.setDate(lundi.getDate()+6);
     const isFutur = lundi > now;
-    const key = lundi.toISOString().slice(0,10);
+    const key = dateLocaleStr(lundi);
     const ca = caParLundi[key]||0;
     const largeur = ca>0?Math.max(4,Math.round(ca/maxCA*100)):0;
     const isSel = lundi.toDateString()===lundiActuel.toDateString();
@@ -12800,7 +12812,7 @@ window.imprimerEtiquettesCat = (cat) => {
 window.toggleCatStock = (key) => { STATE[key] = !STATE[key]; render(); };
 
 window.imprimerEtiquettesJour = () => {
-  const dateEtiq = STATE.dateEtiq || new Date().toISOString().slice(0,10);
+  const dateEtiq = STATE.dateEtiq || dateLocaleStr();
   let articlesJour = STATE.products.filter(p => (p.dateAjout||"").slice(0,10)===dateEtiq);
   if(!articlesJour.length) {
     setState({showLotEtiq:true});
