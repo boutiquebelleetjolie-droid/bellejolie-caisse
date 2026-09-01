@@ -1444,6 +1444,8 @@ function renderVendeurSettings() {
                     return detail.slice(0,6).map(d=>`<div style="display:flex;justify-content:space-between;padding:2px 0;"><span>${d.k}</span><span>${d.taille.toFixed(2)} Mo</span></div>`).join("");
                   })()}
                 </div>
+                <button onclick="compresserToutesLesPhotos()" style="width:100%;margin-top:10px;padding:9px;background:#993556;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;">🗜️ Compresser toutes les photos maintenant</button>
+                <div style="font-size:10px;color:#aaa;margin-top:5px;">Réduit fortement la taille des photos déjà enregistrées, sans les supprimer. Les nouvelles photos sont désormais compressées automatiquement.</div>
               </div>`;
           })()}
         </div>
@@ -4258,17 +4260,38 @@ window.supprimerLigneReception = (idx) => {
   render();
 };
 
+window.compresserToutesLesPhotos = async () => {
+  const produitsAvecPhoto = STATE.products.filter(p=>p.photo && p.photo.length>3000);
+  if(produitsAvecPhoto.length===0) { alert("Aucune photo à compresser, ou elles le sont déjà."); return; }
+  if(!confirm("Compresser "+produitsAvecPhoto.length+" photo(s) ? Ça peut prendre une minute, ne ferme pas l'onglet pendant l'opération.")) return;
+
+  const tailleAvant = JSON.stringify(STATE.products).length;
+  let fait = 0;
+  for(const p of produitsAvecPhoto) {
+    try {
+      const nouvellePhoto = await compresserImage(p.photo, 500, 0.6);
+      STATE.products = STATE.products.map(x=>x.id===p.id ? {...x, photo:nouvellePhoto} : x);
+    } catch(e) { console.error("Erreur compression photo produit", p.id, e); }
+    fait++;
+    if(fait % 10 === 0) render(); // rafraîchir de temps en temps pour ne pas figer l'écran
+  }
+  const tailleApres = JSON.stringify(STATE.products).length;
+  lsSet("bj_products", STATE.products);
+  render();
+  const gainMo = ((tailleAvant-tailleApres)*2/1024/1024).toFixed(2);
+  alert("✅ "+fait+" photo(s) compressée(s) !\n\nEspace libéré : environ "+gainMo+" Mo.");
+};
+
+
 window.photoLigneReception = (idx, input) => {
   const file = input.files[0];
   if(!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
+  compresserImage(file, 500, 0.6).then(dataUrl => {
     if(STATE.receptionLignes[idx]) {
-      STATE.receptionLignes[idx].photo = e.target.result;
+      STATE.receptionLignes[idx].photo = dataUrl;
       render();
     }
-  };
-  reader.readAsDataURL(file);
+  });
 };
 
 window.preparerLigneReception = (idx) => {
@@ -5105,13 +5128,37 @@ window.removeCouleur = (c) => {
   });
 };
 
-// Photo
+// Photo — compressée automatiquement avant stockage (évite de saturer le stockage du navigateur)
 window.chargerPhoto = (input) => {
   const file=input.files[0]; if(!file) return;
-  const reader=new FileReader();
-  reader.onload=e=>{STATE.prodForm.photo=e.target.result; render();};
-  reader.readAsDataURL(file);
+  compresserImage(file, 500, 0.6).then(dataUrl => {
+    STATE.prodForm.photo = dataUrl;
+    render();
+  });
 };
+
+// Redimensionne et recompresse une image (fichier ou dataURL) en JPEG léger
+function compresserImage(source, maxDim, qualite) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let {width, height} = img;
+      if(width > maxDim || height > maxDim) {
+        if(width >= height) { height = Math.round(height * maxDim / width); width = maxDim; }
+        else { width = Math.round(width * maxDim / height); height = maxDim; }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width; canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      ctx.fillStyle = "#fff"; ctx.fillRect(0,0,width,height); // fond blanc (JPEG ne gère pas la transparence)
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(canvas.toDataURL("image/jpeg", qualite));
+    };
+    img.onerror = () => resolve(typeof source==="string" ? source : "");
+    if(typeof source === "string") { img.src = source; }
+    else { const reader = new FileReader(); reader.onload = e => { img.src = e.target.result; }; reader.readAsDataURL(source); }
+  });
+}
 
 // Enregistrer un produit
 window.saveProd = () => {
