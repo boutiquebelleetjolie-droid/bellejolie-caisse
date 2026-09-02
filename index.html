@@ -10233,6 +10233,7 @@ function renderCaisseJour() {
       <div style="background:#f5f0f2;border-radius:10px;padding:14px;">
         <div style="font-weight:500;font-size:12px;color:#993556;margin-bottom:4px;">🌅 Fond d'ouverture (matin)</div>
         <div style="font-size:11px;color:#888;margin-bottom:10px;">Pré-rempli automatiquement avec ce qui a été laissé hier soir : vérifiez en comptant le tiroir, et ajustez si besoin. Le total doit être de ${eur(FOND_RESERVE)}.</div>
+        ${totalOuv>FOND_RESERVE?`<button onclick="ajusterFondOuvertureCible()" style="width:100%;padding:8px;background:#fff3e8;color:#e07c00;border:1px solid #f0c090;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;margin-bottom:10px;">🎯 Ajuster automatiquement à ${eur(FOND_RESERVE)}</button>`:""}
         ${DENOMINATIONS.map(d=>rowDenom(d,"ouv_")).join("")}
         <div style="border-top:1px solid #e8e0e4;margin-top:8px;padding-top:8px;">
           <div style="display:flex;justify-content:space-between;font-weight:700;font-size:14px;color:#993556;margin-bottom:4px;">
@@ -10465,6 +10466,42 @@ window.updateFermetureTotal = () => {
   clearTimeout(window._fondSuggTimer);
   window._fondSuggTimer = setTimeout(()=>{ suggererFondLendemain(true); }, 500);
 };
+window.ajusterFondOuvertureCible = () => {
+  const dispo = {};
+  Object.entries(STATE.fondOuverture||{}).forEach(([k,v]) => {
+    const val = parseFloat(k.replace("ouv_","").replace("_","."));
+    dispo[val] = (dispo[val]||0) + (parseInt(v)||0);
+  });
+  const totalActuel = Object.entries(dispo).reduce((s,[val,q])=>s+parseFloat(val)*q,0);
+  const FOND_RESERVE = 80;
+  if(totalActuel<=FOND_RESERVE) { alert("Le total actuel ("+eur(totalActuel)+") n'est pas supérieur au nouveau fond cible ("+eur(FOND_RESERVE)+"), rien à retirer."); return; }
+
+  // Même logique que la répartition du soir : on choisit ce qu'on GARDE dans le tiroir pour atteindre 80€,
+  // en partant de ce qui est déjà pré-rempli, puis on affiche ce qui doit en sortir.
+  let reste = FOND_RESERVE;
+  const garde = {};
+  const prendre = (val, maxSouhaite) => {
+    const dispoVal = dispo[val]||0;
+    const dejaPris = garde[val]||0;
+    const maxParReste = Math.floor((reste/val) + 1e-9);
+    const qty = Math.max(0, Math.min(dispoVal-dejaPris, maxSouhaite, maxParReste));
+    garde[val] = dejaPris+qty;
+    reste = +(reste - qty*val).toFixed(2);
+  };
+  prendre(2,20); prendre(1,20); prendre(0.5,6); prendre(0.2,5); prendre(5,3); prendre(10,2); prendre(20,10);
+  [0.5,1,2,5,10,20,50,100,200,500,0.1].forEach(val => { if(reste>0.001) prendre(val, dispo[val]||0); });
+
+  const aRetirer = DENOMINATIONS.filter(d=>(dispo[d.val]||0)-(garde[d.val]||0)>0).map(d=>({...d, qty:(dispo[d.val]||0)-(garde[d.val]||0)}));
+  const detailRetrait = aRetirer.map(d=>`${d.qty} × ${d.label}`).join("\n");
+  const totalRetrait = aRetirer.reduce((s,d)=>s+d.qty*d.val,0);
+
+  if(!confirm("💰 À retirer du tiroir avant d'ouvrir (total "+eur(totalRetrait)+") :\n\n"+detailRetrait+"\n\nUne fois retiré physiquement, clique sur OK pour mettre à jour le comptage à l'écran.")) return;
+
+  STATE.fondOuverture = {};
+  Object.entries(garde).forEach(([val,qty]) => { if(qty>0) STATE.fondOuverture["ouv_"+String(val).replace(".","_")] = qty; });
+  render();
+};
+
 window.suggererFondLendemain = (silencieux) => {
   // Ce qui est disponible d'après le comptage complet de fermeture
   const dispo = {};
