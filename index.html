@@ -2896,16 +2896,21 @@ window.appliquerBonFid400 = (avoirId) => {
 
 // Scan avoir à la caisse (champ code-barres principal ou champ dédié)
 window.scanAvoir = (code) => {
-  const avoir = (STATE.avoirs||[]).find(a=>a.code===code.trim()&&!a.utilise&&a.solde>0&&(!a.expiration||new Date(a.expiration)>=new Date()));
+  const avoir = (STATE.avoirs||[]).find(a=>a.code===code.trim()&&!a.utilise&&a.solde>0&&(!a.expiration||new Date(a.expiration)>=new Date())&&(!a.date||new Date(a.date)<=new Date()));
   if(avoir) {
     utiliserAvoirId(avoir.id);
     return true;
+  }
+  // Message clair si le bon existe mais n'est pas encore valide (démarre plus tard)
+  const avoirPasEncore = (STATE.avoirs||[]).find(a=>a.code===code.trim()&&!a.utilise&&a.solde>0&&a.date&&new Date(a.date)>new Date());
+  if(avoirPasEncore) {
+    alert("⚠️ Ce bon n'est pas encore valide, il sera utilisable à partir du "+new Date(avoirPasEncore.date).toLocaleDateString("fr-FR")+".");
   }
   return false;
 };
 
 window.utiliserAvoir = () => {
-  const avoirs = (STATE.avoirs||[]).filter(a=>!a.utilise&&a.solde>0);
+  const avoirs = (STATE.avoirs||[]).filter(a=>!a.utilise&&a.solde>0&&(!a.date||new Date(a.date)<=new Date()));
   if(!avoirs.length) return;
   utiliserAvoirId(avoirs[0].id);
 };
