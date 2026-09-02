@@ -47,6 +47,9 @@
     #etiquette-print-area{position:fixed;top:20px;left:20px;}
   }
 </style>
+<!-- Firebase : sauvegarde cloud automatique en complément du stockage local -->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 </head>
 <body>
 <div id="root"></div>
@@ -90,6 +93,41 @@ const BOUTIQUE_CONFIG = {
 // COUCHE DE STOCKAGE — aujourd'hui localStorage, demain Firebase
 // Pour migrer vers Firebase : remplacer dbGet/dbSet par des appels Firestore
 // ════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════
+//  FIREBASE — sauvegarde cloud (en complément du stockage local)
+// ════════════════════════════════════════════════════════════════
+const firebaseConfig = {
+  apiKey: "AIzaSyCvVw95lpAgkt6Gj2yTlUxgNNJX-0uL4qo",
+  authDomain: "bellejolie-caisse.firebaseapp.com",
+  projectId: "bellejolie-caisse",
+  storageBucket: "bellejolie-caisse.firebasestorage.app",
+  messagingSenderId: "74749897291",
+  appId: "1:74749897291:web:aad914030301e15d56fbce"
+};
+let _fbDb = null;
+try {
+  if(typeof firebase !== "undefined") {
+    firebase.initializeApp(firebaseConfig);
+    _fbDb = firebase.firestore();
+  }
+} catch(e) { console.error("Firebase init error:", e); }
+
+// Pousse une clé vers Firestore, en arrière-plan, sans jamais bloquer ni faire planter l'appli
+function firestorePush(key, val) {
+  if(!_fbDb) return;
+  _fbDb.collection("bellejolie").doc(key).set({ value: val, maj: new Date().toISOString() })
+    .catch(err => console.error("Firestore push error pour '"+key+"':", err));
+}
+
+// Récupère toutes les clés depuis Firestore (utilisé pour la restauration manuelle)
+async function firestorePullAll() {
+  if(!_fbDb) throw new Error("Firebase non initialisé");
+  const snap = await _fbDb.collection("bellejolie").get();
+  const result = {};
+  snap.forEach(doc => { result[doc.id] = doc.data().value; });
+  return result;
+}
+
 const DB = {
   // Moteur actif : "local" ou "firebase" (futur)
   moteur: "local",
@@ -109,6 +147,7 @@ const DB = {
     if(this.moteur === "local") {
       try {
         localStorage.setItem(key, JSON.stringify(val));
+        firestorePush(key, val); // sauvegarde cloud en tâche de fond, ne bloque jamais l'appli
       } catch(err) {
         console.error("Échec de sauvegarde localStorage pour la clé '"+key+"':", err);
         const estStockagePlein = err && (err.name==="QuotaExceededError" || err.code===22 || err.code===1014);
@@ -1430,6 +1469,13 @@ function renderVendeurSettings() {
 
         <!-- Sauvegarde -->
         <div style="border-top:0.5px solid #e8e0e4;padding-top:14px;margin-bottom:14px;">
+          <div style="font-weight:500;font-size:13px;margin-bottom:8px;">☁️ Sauvegarde cloud (Firebase)</div>
+          <div style="font-size:12px;color:#888;margin-bottom:10px;">${_fbDb?"Chaque modification est automatiquement sauvegardée dans le cloud, en plus de cet appareil.":"⚠️ Non connectée."}</div>
+          <button onclick="restaurerDepuisCloud()" style="width:100%;padding:10px;background:#854f0b;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:6px;">🔄 Restaurer depuis le cloud</button>
+          <div style="font-size:11px;color:#aaa;">À utiliser en cas de souci sur cet appareil, ou pour retrouver tes données sur un nouvel appareil. Remplace les données actuellement affichées ici par celles sauvegardées dans le cloud.</div>
+        </div>
+
+        <div style="border-top:0.5px solid #e8e0e4;padding-top:14px;margin-bottom:14px;">
           <div style="font-weight:500;font-size:13px;margin-bottom:8px;">💾 Sauvegarde des données</div>
           <div style="font-size:12px;color:#888;margin-bottom:10px;">Exportez toutes vos données en fichier JSON. Gardez-le précieusement !</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
@@ -1568,6 +1614,22 @@ window.exporterDonnees = () => {
   STATE.sauvegarde=new Date().toISOString();
   lsSet("bj_sauvegarde",STATE.sauvegarde);
   alert("✅ Sauvegarde téléchargée !\n\nTransférez ce fichier JSON avec le fichier HTML sur vos autres appareils.");
+};
+
+window.restaurerDepuisCloud = async () => {
+  if(!_fbDb) { alert("⚠️ Firebase n'est pas connecté sur cet appareil."); return; }
+  if(!confirm("🔄 Ça va remplacer TOUTES les données actuellement affichées sur cet appareil par celles sauvegardées dans le cloud.\n\nContinuer ?")) return;
+  try {
+    const data = await firestorePullAll();
+    const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisseJour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
+    let compte = 0;
+    cles.forEach(k => { if(data[k]!==undefined) { localStorage.setItem(k, JSON.stringify(data[k])); compte++; } });
+    alert("✅ "+compte+" éléments restaurés depuis le cloud !\n\nL'application va se recharger.");
+    location.reload();
+  } catch(err) {
+    console.error("Erreur restauration cloud:", err);
+    alert("❌ Erreur lors de la restauration : "+(err?.message||err));
+  }
 };
 
 window.importerDonnees = (input) => {
