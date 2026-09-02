@@ -11043,22 +11043,27 @@ window.envoyerSauvegardeEmail = async (silencieux) => {
     });
     STATE.sauvegarde = now.toISOString();
     setState({sauvegarde:STATE.sauvegarde});
-    // Télécharger aussi le fichier en local par sécurité
-    const blob = new Blob([dataStr],{type:"application/json"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href=url; a.download=`bellejolie-sauvegarde-${now.toISOString().slice(0,10)}.json`;
-    a.click(); URL.revokeObjectURL(url);
-    if(!silencieux) alert(`✅ Sauvegarde envoyée à ${dest}\n📥 Fichier téléchargé localement`);
+    lsSet("bj_sauvegarde", STATE.sauvegarde);
+    // Télécharger aussi le fichier en local (seulement si déclenché manuellement, pas lors de la vérification automatique silencieuse)
+    if(!silencieux) {
+      const blob = new Blob([dataStr],{type:"application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href=url; a.download=`bellejolie-sauvegarde-${now.toISOString().slice(0,10)}.json`;
+      a.click(); URL.revokeObjectURL(url);
+      alert(`✅ Sauvegarde envoyée à ${dest}\n📥 Fichier téléchargé localement`);
+    }
   } catch(err) {
     console.error("Sauvegarde email error:", err);
-    // Fallback: télécharger en local
-    const blob = new Blob([dataStr],{type:"application/json"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href=url; a.download=`bellejolie-sauvegarde-${now.toISOString().slice(0,10)}.json`;
-    a.click(); URL.revokeObjectURL(url);
-    if(!silencieux) alert("⚠️ Email non envoyé (vérifiez EmailJS)\n📥 Fichier téléchargé localement à la place.");
+    // Fallback: télécharger en local (seulement si manuel)
+    if(!silencieux) {
+      const blob = new Blob([dataStr],{type:"application/json"});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href=url; a.download=`bellejolie-sauvegarde-${now.toISOString().slice(0,10)}.json`;
+      a.click(); URL.revokeObjectURL(url);
+      alert("⚠️ Email non envoyé (vérifiez EmailJS)\n📥 Fichier téléchargé localement à la place.");
+    }
   }
 };
 
