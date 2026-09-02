@@ -3078,6 +3078,39 @@ function renderCarteCadeauModal() {
   </style>`;
 }
 
+// ─── Ticket cadeau (sans prix) ──────────────────────────────────
+window.imprimerTicketCadeau = () => {
+  const v = STATE.showTicket;
+  if(!v) return;
+  const articles = (v.panier||[]).filter(x=>!x.retour);
+  const date = new Date(v.date).toLocaleDateString("fr-FR");
+  const win = window.open("", "_blank", "width=400,height=600");
+  win.document.write(`
+    <html><head><title>Ticket cadeau</title>
+    <style>
+      body{font-family:monospace;font-size:13px;padding:16px;max-width:320px;margin:0 auto;color:#111;}
+      .center{text-align:center;}
+      .ligne{padding:5px 0;border-bottom:1px dashed #ccc;}
+      .titre{font-size:14px;font-weight:700;letter-spacing:2px;color:#993556;}
+    </style></head><body>
+      <div class="center"><img src="${LOGO_TICKET_B64}" width="60" height="60" style="border-radius:50%;"/></div>
+      <div class="center titre" style="margin:8px 0;">🎁 TICKET CADEAU</div>
+      <div class="center" style="font-size:11px;color:#888;margin-bottom:12px;">${date}</div>
+      <div style="border-top:1px solid #333;margin-bottom:8px;"></div>
+      ${articles.map(a=>{
+        const infos = [a.taille?"T."+a.taille:"", a.couleur&&a.couleur!=="_"?a.couleur:""].filter(Boolean).join(" · ");
+        return `<div class="ligne">${a.qty||1}× ${a.name}${infos?" ("+infos+")":""}</div>`;
+      }).join("")}
+      <div style="border-top:1px solid #333;margin-top:10px;"></div>
+      <div class="center" style="font-size:10px;color:#888;margin-top:14px;">📍 ${BOUTIQUE_ADRESSE}<br>🕐 ${BOUTIQUE_HORAIRES}</div>
+      <div class="center" style="font-size:10px;color:#888;margin-top:10px;">Merci pour votre confiance !<br>Belle&Jolie vous dit à bientôt ✿</div>
+      <div class="center" style="font-size:9px;color:#aaa;margin-top:10px;">Article échangeable sous 30 jours sur présentation de ce ticket.<br>Non porté, non lavé, sans odeur, étiquette intacte.</div>
+    </body></html>
+  `);
+  win.document.close();
+  setTimeout(()=>win.print(), 300);
+};
+
 function renderTicketModal() {
   const v = STATE.showTicket;
   const mL = {cb:"Carte bleue",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Carte cadeau",mixte:"Paiement mixte"};
@@ -3348,6 +3381,9 @@ function renderTicketModal() {
           </div>
         </div>
         <button onclick="window.print()" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le ticket</button>
+        <button onclick="imprimerTicketCadeau()" style="width:100%;padding:10px;background:#fbf3e6;color:#854f0b;border:1px solid #f0dcb0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:8px;">
+          🎁 Ticket cadeau (sans prix)
+        </button>
         <button onclick="imprimerViaUSB()" style="width:100%;padding:10px;background:#eaf3de;color:#3b6d11;border:1px solid #b5d89a;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:8px;">
           🔌 Imprimer via USB (essai)
         </button>
