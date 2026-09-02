@@ -2635,7 +2635,7 @@ window.addRetour = (pid) => {
 window.retourBcKeyDown = e => {
   if(e.key!=="Enter") return;
   const q = STATE.searchRetourBC.trim();
-  const p = STATE.products.find(x=>x.barcode===q||x.ref===q);
+  const p = STATE.products.find(x=>x.barcode===q||x.ref===q||x.ref.toLowerCase()===("ref-"+q).toLowerCase());
   if(p) {
     addRetour(p.id);
     STATE.searchRetourBC="";
@@ -3452,7 +3452,7 @@ window.bcKeyDown = e => {
   if(found) return;
   
   // Chercher par code-barre principal ou référence
-  const p=STATE.products.find(x=>x.barcode===q||x.ref===q);
+  const p=STATE.products.find(x=>x.barcode===q||x.ref===q||x.ref.toLowerCase()===("ref-"+q).toLowerCase());
   if(p&&p.stock>0){addToCart(p.id);STATE.searchBC="";}
   else if(p){alert("Stock insuffisant pour : "+p.name);STATE.searchBC="";}
   else {alert("Produit introuvable : "+q);STATE.searchBC="";}
@@ -13672,7 +13672,7 @@ window.resaBcKeyDown = (e) => {
   }
   // Puis par code-barres générique ou référence
   const p = STATE.products.find(x=>
-    (x.barcode && x.barcode===q) || (x.ref && x.ref===q)
+    (x.barcode && x.barcode===q) || (x.ref && (x.ref===q || x.ref.toLowerCase()===("ref-"+q).toLowerCase() || x.ref.toLowerCase()===q.toLowerCase()))
   );
   if(p && p.stock>0) {
     ajouterArticleResa(p.id);
