@@ -112,11 +112,15 @@ try {
   }
 } catch(e) { console.error("Firebase init error:", e); }
 
+// Identifiant unique de cet appareil, pour distinguer "mes propres écritures" des changements venant d'ailleurs
+let DEVICE_ID = localStorage.getItem("bj_device_id");
+if(!DEVICE_ID) { DEVICE_ID = "dev_"+Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem("bj_device_id", DEVICE_ID); }
+
 // Pousse une clé vers Firestore, en arrière-plan, sans jamais bloquer ni faire planter l'appli
 function firestorePush(key, val) {
   if(!_fbDb) return;
   const maintenant = new Date().toISOString();
-  _fbDb.collection("bellejolie").doc(key).set({ value: val, maj: maintenant })
+  _fbDb.collection("bellejolie").doc(key).set({ value: val, maj: maintenant, device: DEVICE_ID })
     .then(() => { try { localStorage.setItem("bj_dernier_push_local", maintenant); } catch{} })
     .catch(err => console.error("Firestore push error pour '"+key+"':", err));
 }
@@ -128,6 +132,38 @@ async function firestorePullAll() {
   const result = {};
   snap.forEach(doc => { result[doc.id] = doc.data().value; });
   return result;
+}
+
+// ─── Synchronisation temps réel entre appareils ─────────────────
+// Écoute les changements sur les données les plus importantes en cours de journée.
+// Ignore ses propres écritures (via DEVICE_ID) pour éviter toute boucle.
+const CLES_SYNC_TEMPS_REEL = {
+  bj_products: "products", bj_clients: "clients", bj_ventes: "ventes", bj_avoirs: "avoirs",
+};
+window._syncBannerTimeout = null;
+function demarrerSyncTempsReel() {
+  if(!_fbDb) return;
+  Object.entries(CLES_SYNC_TEMPS_REEL).forEach(([storageKey, stateKey]) => {
+    _fbDb.collection("bellejolie").doc(storageKey).onSnapshot(doc => {
+      if(!doc.exists) return;
+      const data = doc.data();
+      if(!data || data.device === DEVICE_ID) return; // c'est notre propre écriture, on ignore
+      if(doc.metadata.hasPendingWrites) return; // écriture locale pas encore confirmée par le serveur, on ignore
+      // Appliquer la mise à jour venue d'un autre appareil
+      try {
+        localStorage.setItem(storageKey, JSON.stringify(data.value));
+        STATE[stateKey] = data.value;
+        render();
+        afficherBandeauSyncDiscret();
+      } catch(err) { console.error("Erreur application sync temps réel pour '"+storageKey+"':", err); }
+    }, err => console.error("Erreur écoute Firestore pour '"+storageKey+"':", err));
+  });
+}
+function afficherBandeauSyncDiscret() {
+  window._syncRecente = true;
+  clearTimeout(window._syncBannerTimeout);
+  window._syncBannerTimeout = setTimeout(()=>{ window._syncRecente=false; render(); }, 5000);
+  render();
 }
 
 const DB = {
@@ -2173,6 +2209,7 @@ function renderCaisse() {
   ${alerteBloc}
   ${bandeauEvenements}
   <button onclick="ouvrirTicketsDuJour()" style="width:100%;text-align:left;background:#eef4fd;border:1px solid #b3d0f0;border-radius:9px;padding:9px 14px;cursor:pointer;font-size:12px;color:#185fa5;font-weight:500;margin-bottom:10px;">🧾 Voir les tickets du jour</button>
+  ${window._syncRecente?`<div style="width:100%;background:#eaf3de;border:1px solid #b5d89a;border-radius:9px;padding:9px 14px;font-size:12px;color:#3b6d11;font-weight:500;margin-bottom:10px;">☁️ Données mises à jour depuis un autre appareil</div>`:""}
   <button onclick="verifierMAJCloud()" style="width:100%;text-align:left;background:#f2ede6;border:1px solid #d9c5a0;border-radius:9px;padding:9px 14px;cursor:pointer;font-size:12px;color:#854f0b;font-weight:500;margin-bottom:10px;">☁️ Vérifier les mises à jour (autre appareil)</button>
   <div style="display:grid;grid-template-columns:1fr 360px;gap:14px;height:calc(100vh - 140px);">
 
@@ -14455,6 +14492,9 @@ if(!localStorage.getItem("bj_clean_v1")) {
 }
 
 render();
+
+// Démarrer la synchronisation temps réel avec les autres appareils
+demarrerSyncTempsReel();
 
 // Vérifier anniversaires et sauvegarde auto après chargement
 setTimeout(() => {
