@@ -136,32 +136,20 @@ function lsSet(key, val) { DB.set(key, val); }
 // ════════════════════════════════════════════════════════════════
 // VERROUILLAGE AUTOMATIQUE — 5 min d'inactivité
 // ════════════════════════════════════════════════════════════════
-const INACTIVITE_MS = 5 * 60 * 1000; // 5 minutes
+const INACTIVITE_MS = 3 * 60 * 1000; // 3 minutes
 let _timerVerrouillage = null;
-let _verrouille = false;
 
 function resetTimerVerrouillage() {
   if(!STATE.vendeur) return; // pas connecté → rien à faire
   clearTimeout(_timerVerrouillage);
   _timerVerrouillage = setTimeout(() => {
-    _verrouille = true;
-    STATE._lockPin = "";
-    STATE._lockError = "";
-    render();
+    logout(); // retour direct à l'écran de choix des profils après inactivité
   }, INACTIVITE_MS);
-}
-
-function deverrouiller() {
-  _verrouille = false;
-  STATE._lockPin = "";
-  STATE._lockError = "";
-  resetTimerVerrouillage();
-  render();
 }
 
 // Écouter les interactions pour réinitialiser le timer
 ["click","touchstart","keydown"].forEach(ev =>
-  document.addEventListener(ev, () => { if(STATE.vendeur && !_verrouille) resetTimerVerrouillage(); }, {passive:true})
+  document.addEventListener(ev, () => { if(STATE.vendeur) resetTimerVerrouillage(); }, {passive:true})
 );
 
 const VENDEURS = [
