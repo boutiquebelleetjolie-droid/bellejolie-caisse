@@ -1363,24 +1363,6 @@ window.viderPanier = () => {
 };
 
 window.logout = () => {
-  // Vérifier si le mémo du jour a été rempli
-  const aujourdhui = dateLocaleStr();
-  const memoJour = (STATE.memos||[]).find(m => m.date && m.date.slice(0,10)===aujourdhui && m.texte && m.texte.trim());
-  
-  // Vérifier si le Z caisse du soir a été fait
-  const zFait = (STATE.caisseJour||[]).some(z => {
-    return z.date && z.date.slice(0,10)===aujourdhui && z.type==='cloture';
-  });
-
-  let rappels = [];
-  if(!memoJour) rappels.push("📝 Le mémo & météo du jour n'a pas été rempli");
-  if(!zFait) rappels.push("🏦 Le Z Caisse du soir n'a pas été fait");
-
-  if(rappels.length > 0) {
-    const msg = "⚠️ Avant de quitter :\n\n" + rappels.join("\n") + "\n\nVoulez-vous quand même quitter ?";
-    if(!confirm(msg)) return;
-  }
-
   clearTimeout(_timerVerrouillage);
   _verrouille=false;
   lsSet("bj_vendeur",null);
