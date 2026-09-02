@@ -10296,12 +10296,21 @@ function renderCaisseJour() {
             const val = parseFloat(k.replace("lend_","").replace("_","."));
             gardeLend[val] = (gardeLend[val]||0) + (parseInt(v)||0);
           });
-          const retraits = DENOMINATIONS.map(d => {
-            const dispoNum = Math.max(0, dispoFer[d.val]||0);
-            const gardeNum = Math.max(0, gardeLend[d.val]||0);
-            return {...d, qty: Math.min(dispoNum, Math.max(0, dispoNum - gardeNum))};
-          }).filter(d=>d.qty>0);
+          // Détecter une incohérence : garder pour demain plus d'une dénomination que ce qui a été réellement compté
+          const incoherences = DENOMINATIONS.filter(d => (gardeLend[d.val]||0) > (dispoFer[d.val]||0));
+          if(incoherences.length>0) {
+            return `
+            <div style="background:#fcebeb;border-radius:10px;padding:12px;margin-top:12px;border:1px solid #e8a5a5;">
+              <div style="font-weight:500;font-size:12px;color:#a32d2d;margin-bottom:6px;">⚠️ Incohérence détectée</div>
+              <div style="font-size:12px;color:#a32d2d;">
+                Tu gardes pour demain plus de ${incoherences.map(d=>d.label).join(", ")} que ce qui a été compté ce soir.
+                Reclique sur "💡 Suggérer une répartition logique" pour resynchroniser, ou corrige les quantités à la main.
+              </div>
+            </div>`;
+          }
+          const retraits = DENOMINATIONS.map(d => ({...d, qty: Math.max(0, (dispoFer[d.val]||0) - (gardeLend[d.val]||0))})).filter(d=>d.qty>0);
           if(retraits.length===0) return "";
+          const sommeRetraits = retraits.reduce((s,d)=>s+d.qty*d.val,0);
           return `
           <div style="background:#eef4fd;border-radius:10px;padding:12px;margin-top:12px;border:1px solid #b3d0f0;">
             <div style="font-weight:500;font-size:12px;color:#185fa5;margin-bottom:8px;">💵 Détail du retrait à faire (${eur(aDeposer)} au total)</div>
@@ -10311,6 +10320,7 @@ function renderCaisseJour() {
                 <span>× ${d.qty} = <strong>${eur(d.qty*d.val)}</strong></span>
               </div>
             `).join("")}
+            ${Math.abs(sommeRetraits-aDeposer)>=0.01?`<div style="margin-top:6px;font-size:11px;color:#a32d2d;">⚠️ Le détail (${eur(sommeRetraits)}) ne correspond pas exactement au total attendu (${eur(aDeposer)}). Vérifie ton comptage.</div>`:""}
           </div>`;
         })()}
       </div>
