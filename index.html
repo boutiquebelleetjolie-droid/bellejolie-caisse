@@ -3483,16 +3483,19 @@ window.searchProdInput = v => {
   if(container) {
     if(!v) { container.innerHTML=""; container.style.marginTop="0"; return; }
     container.style.marginTop="10px";
-    const matches = STATE.products.filter(p=>
-      p.name.toLowerCase().includes(v.toLowerCase())||
-      p.ref.toLowerCase().includes(v.toLowerCase())
-    ).slice(0,12);
+    // Recherche mot par mot (chaque mot tapé doit se retrouver quelque part dans nom+référence+marque,
+    // peu importe l'ordre) plutôt qu'une seule phrase exacte — et la marque est maintenant prise en compte.
+    const mots = v.toLowerCase().split(/\s+/).filter(Boolean);
+    const matches = STATE.products.filter(p=>{
+      const texte = (p.name+" "+p.ref+" "+(p.marque||"")).toLowerCase();
+      return mots.every(m=>texte.includes(m));
+    }).slice(0,12);
     container.innerHTML = matches.length===0
       ? `<div style="font-size:13px;color:#aaa;padding:8px;">Aucun article trouvé</div>`
       : matches.map(p=>`
         <div onclick="addToCart('${p.id}')" style="padding:9px;border-radius:8px;border:0.5px solid #e8e0e4;background:#fff;cursor:${p.stock>0?"pointer":"not-allowed"};opacity:${p.stock===0?0.5:1};">
           <div style="font-size:12px;font-weight:500;">${p.name}</div>
-          <div style="font-size:11px;color:#888;">${p.ref}</div>
+          <div style="font-size:11px;color:#888;">${p.marque?p.marque+" · ":""}${p.ref}</div>
           <div style="font-size:13px;font-weight:500;color:#993556;margin-top:3px;">${eur(p.price)}</div>
           <div style="font-size:11px;color:${p.stock<3?"#a32d2d":"#888"};">Stock: ${p.stock}</div>
         </div>
@@ -4952,9 +4955,11 @@ function renderStock() {
 
   const q = (STATE.searchProd||"").toLowerCase();
   const filtreDateStock = STATE.dateEtiqFiltreActif ? (STATE.dateEtiq||"") : "";
-  let filtered = STATE.products.filter(p=>
-    p.name.toLowerCase().includes(q)||p.ref.toLowerCase().includes(q)||(p.marque||"").toLowerCase().includes(q)
-  );
+  const motsStock = q.split(/\s+/).filter(Boolean);
+  let filtered = STATE.products.filter(p=>{
+    const texte = (p.name+" "+p.ref+" "+(p.marque||"")).toLowerCase();
+    return motsStock.every(m=>texte.includes(m));
+  });
   if(filtreDateStock) {
     filtered = filtered.filter(p => (p.dateAjout||"").slice(0,10)===filtreDateStock);
   }
