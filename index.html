@@ -13669,7 +13669,18 @@ window.resaBcKeyDown = (e) => {
   if(e.key !== "Enter") return;
   const q = STATE.resaProdSearch?.trim();
   if(!q) return;
-  // Chercher par code-barres ou référence d'abord
+  // Chercher d'abord dans les codes-barres de variantes (taille/couleur), comme en caisse
+  for(const prod of STATE.products) {
+    const bv = prod.barcodeVariantes||{};
+    for(const bc of Object.values(bv)) {
+      if(bc === q && prod.stock>0) {
+        ajouterArticleResa(prod.id);
+        STATE.resaProdSearch = "";
+        return;
+      }
+    }
+  }
+  // Puis par code-barres générique ou référence
   const p = STATE.products.find(x=>
     (x.barcode && x.barcode===q) || (x.ref && x.ref===q)
   );
