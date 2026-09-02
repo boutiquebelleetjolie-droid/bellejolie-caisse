@@ -10453,6 +10453,9 @@ window.updateOuvertureTotal = () => {
   const total = Object.entries(STATE.fondOuverture||{}).reduce((s,[k,v])=>{
     const val=parseFloat(k.replace("ouv_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
   const el=document.getElementById("total-ouverture");if(el)el.textContent=eur(total);
+  // Rafraîchir aussi l'affichage de l'écart et le bouton de validation, qui ne se mettaient pas à jour tout seuls
+  clearTimeout(window._ouvTimer);
+  window._ouvTimer = setTimeout(render, 400);
 };
 window.updateFermetureTotal = () => {
   const total = Object.entries(STATE.fondFermeture||{}).reduce((s,[k,v])=>{
