@@ -115,7 +115,9 @@ try {
 // Pousse une clé vers Firestore, en arrière-plan, sans jamais bloquer ni faire planter l'appli
 function firestorePush(key, val) {
   if(!_fbDb) return;
-  _fbDb.collection("bellejolie").doc(key).set({ value: val, maj: new Date().toISOString() })
+  const maintenant = new Date().toISOString();
+  _fbDb.collection("bellejolie").doc(key).set({ value: val, maj: maintenant })
+    .then(() => { try { localStorage.setItem("bj_dernier_push_local", maintenant); } catch{} })
     .catch(err => console.error("Firestore push error pour '"+key+"':", err));
 }
 
@@ -1630,6 +1632,27 @@ window.pousserToutVersCloud = async () => {
   alert("✅ "+compte+" élément(s) envoyé(s) vers le cloud."+(erreurs>0?"\n⚠️ "+erreurs+" échec(s), vérifie les règles Firestore.":""));
 };
 
+window.verifierMAJCloud = async () => {
+  if(!_fbDb) { alert("⚠️ Firebase n'est pas connecté sur cet appareil."); return; }
+  try {
+    const doc = await _fbDb.collection("bellejolie").doc("bj_ventes").get();
+    if(!doc.exists) { alert("Aucune donnée trouvée sur le cloud pour l'instant."); return; }
+    const majCloud = doc.data().maj;
+    const majLocale = localStorage.getItem("bj_dernier_push_local");
+    if(!majCloud) { alert("Impossible de déterminer la date de la dernière modification cloud."); return; }
+    if(!majLocale || new Date(majCloud) > new Date(majLocale)) {
+      if(confirm("🔔 Des données plus récentes existent sur le cloud (probablement modifiées sur un autre appareil).\n\nDernière mise à jour cloud : "+new Date(majCloud).toLocaleString("fr-FR")+"\n\nVeux-tu synchroniser cet appareil maintenant ? (remplace les données locales par celles du cloud)")) {
+        restaurerDepuisCloud();
+      }
+    } else {
+      alert("✅ Cet appareil est déjà à jour.");
+    }
+  } catch(err) {
+    console.error("Erreur vérification cloud:", err);
+    alert("❌ Erreur lors de la vérification : "+(err?.message||err));
+  }
+};
+
 window.restaurerDepuisCloud = async () => {
   if(!_fbDb) { alert("⚠️ Firebase n'est pas connecté sur cet appareil."); return; }
   if(!confirm("🔄 Ça va remplacer TOUTES les données actuellement affichées sur cet appareil par celles sauvegardées dans le cloud.\n\nContinuer ?")) return;
@@ -2150,6 +2173,7 @@ function renderCaisse() {
   ${alerteBloc}
   ${bandeauEvenements}
   <button onclick="ouvrirTicketsDuJour()" style="width:100%;text-align:left;background:#eef4fd;border:1px solid #b3d0f0;border-radius:9px;padding:9px 14px;cursor:pointer;font-size:12px;color:#185fa5;font-weight:500;margin-bottom:10px;">🧾 Voir les tickets du jour</button>
+  <button onclick="verifierMAJCloud()" style="width:100%;text-align:left;background:#f2ede6;border:1px solid #d9c5a0;border-radius:9px;padding:9px 14px;cursor:pointer;font-size:12px;color:#854f0b;font-weight:500;margin-bottom:10px;">☁️ Vérifier les mises à jour (autre appareil)</button>
   <div style="display:grid;grid-template-columns:1fr 360px;gap:14px;height:calc(100vh - 140px);">
 
     <!-- GAUCHE -->
