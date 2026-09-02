@@ -6030,8 +6030,8 @@ function renderCRM() {
 window.openClientModal = id => {
   STATE.editClientId=id;
   STATE._creationDepuisCaisse=false;
-  if(id){const c=STATE.clients.find(x=>x.id===id);STATE.clientForm={nom:c.nom||'',prenom:c.prenom||'',tel:c.tel||'',email:c.email||'',cp:c.cp||'',anniversaire:c.anniversaire||''};}
-  else STATE.clientForm={nom:"",prenom:"",tel:"",email:"",cp:"",anniversaire:""};
+  if(id){const c=STATE.clients.find(x=>x.id===id);STATE.clientForm={nom:c.nom||'',prenom:c.prenom||'',tel:c.tel||'',email:c.email||'',cp:c.cp||'',anniversaire:c.anniversaire||'',suitReseaux:c.suitReseaux||false,remiseReseauxAccordee:c.remiseReseauxAccordee||false,pasDeMailPromo:c.pasDeMailPromo||false};}
+  else STATE.clientForm={nom:"",prenom:"",tel:"",email:"",cp:"",anniversaire:"",suitReseaux:false,remiseReseauxAccordee:false,pasDeMailPromo:false};
   STATE.showClientModal=true; render();
 };
 window.supprimerCliente = (id) => {
