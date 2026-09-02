@@ -10073,7 +10073,7 @@ window.exporterInventaireCSV = (invId) => {
 function renderCaisseJour() {
   const now = new Date();
   const moisNoms=["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
-  const FOND_RESERVE = 100;
+  const FOND_RESERVE = 80;
 
   // Navigation jour (pour consulter les jours précédents)
   if(STATE.zDateOffset===undefined) STATE.zDateOffset=0;
@@ -10427,7 +10427,7 @@ function renderBoutonOuverture() {
 window.validerOuvertureCaisse = () => {
   const totalOuv = Object.entries(STATE.fondOuverture||{}).reduce((s,[k,v])=>{
     const val=parseFloat(k.replace("ouv_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
-  const FOND_RESERVE = 100;
+  const FOND_RESERVE = 80;
   const ecart = totalOuv - FOND_RESERVE;
   if(Math.abs(ecart) > 0.01) {
     alert("⚠️ Le fond de caisse compté est de "+eur(totalOuv)+", ce qui fait un écart de "+(ecart>0?"+":"")+eur(ecart)+" par rapport aux "+eur(FOND_RESERVE)+" attendus.\n\nRecompte le tiroir : la validation n'est possible que si le montant est exactement "+eur(FOND_RESERVE)+".\n\nSi le montant réel est bien différent, préviens Elodie avant de continuer.");
@@ -10476,7 +10476,7 @@ window.suggererFondLendemain = (silencieux) => {
     if(!silencieux) alert("⚠️ Comptez d'abord la caisse dans la section \"Comptage fermeture (soir)\" avant de demander une suggestion.");
     return;
   }
-  let reste = 100;
+  let reste = 80;
   const choix = {};
   const prendre = (val, maxSouhaite) => {
     const dispoVal = dispo[val]||0;
@@ -10561,7 +10561,7 @@ window.cloturerCaisse = (targetDateStr) => {
     }
   });
   const especes=payM["especes"]||0;
-  const FOND_RESERVE=100;
+  const FOND_RESERVE=80;
   const totalOuvBrut=Object.entries(STATE.fondOuverture||{}).reduce((s,[k,v])=>{const val=parseFloat(k.replace("ouv_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
   const ouvertureJourCloture = ls("bj_ouverture_"+dateStr, null);
   const totalOuv = totalOuvBrut || ouvertureJourCloture?.totalOuv || FOND_RESERVE;
