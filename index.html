@@ -10639,6 +10639,7 @@ window.cloturerCaisse = (targetDateStr) => {
   lsSet("bj_fond_lendemain", STATE.fondLendemain||{});
   STATE.fondFermeture = {}; STATE.fondLendemain = {};
   imprimerZ(z);
+  if(STATE.sauvegardeEmail) envoyerSauvegardeEmail(true); // sauvegarde fraîche juste après la clôture
   // Envoyer le relevé CA + remises par email automatiquement
   envoyerReleveCloture(z, ventesJour, dateStr);
 };
@@ -10872,11 +10873,11 @@ window.sauvegarderConfig = () => {
 };
 
 // Sauvegarde auto : appelée à chaque démarrage + export manuel
-window.envoyerSauvegardeEmail = async () => {
+window.envoyerSauvegardeEmail = async (silencieux) => {
   const dest = STATE.sauvegardeEmail;
-  if(!dest) { alert("Entrez d'abord un email de sauvegarde dans ⚙️ PIN"); return; }
+  if(!dest) { if(!silencieux) alert("Entrez d'abord un email de sauvegarde dans ⚙️ PIN"); return; }
   if(!STATE.emailjsServiceId||!STATE.emailjsTemplateId||!STATE.emailjsPublicKey) {
-    alert("Configurez d'abord EmailJS dans ⚙️ PIN pour l'envoi automatique.\nÀ défaut, utilisez le bouton Exporter pour télécharger votre sauvegarde.");
+    if(!silencieux) alert("Configurez d'abord EmailJS dans ⚙️ PIN pour l'envoi automatique.\nÀ défaut, utilisez le bouton Exporter pour télécharger votre sauvegarde.");
     return;
   }
   const data = {
@@ -10889,17 +10890,18 @@ window.envoyerSauvegardeEmail = async () => {
   const dataStr = JSON.stringify(data);
   const now = new Date();
   const dateLabel = now.toLocaleDateString("fr-FR");
+  const tailleKo = Math.round(dataStr.length/1024);
   try {
     await emailjs.init(STATE.emailjsPublicKey);
     await emailjs.send(STATE.emailjsServiceId, STATE.emailjsTemplateId, {
       to_email:   dest,
       to_name:    "Belle&Jolie",
       subject:    "Sauvegarde données Belle&Jolie — " + dateLabel,
-      message:    `Sauvegarde automatique du ${dateLabel}<br><br>Nb produits : ${STATE.products.length}<br>Nb clients : ${STATE.clients.length}<br>Nb ventes : ${STATE.ventes.length}<br><br>[Données JSON en pièce jointe simulée - taille: ${Math.round(dataStr.length/1024)}Ko]`,
+      message:    `Sauvegarde automatique du ${dateLabel} (${tailleKo} Ko)<br><br>Nb produits : ${STATE.products.length}<br>Nb clients : ${STATE.clients.length}<br>Nb ventes : ${STATE.ventes.length}<br><br>⚠️ Pour restaurer, copiez tout le texte ci-dessous (à partir de la accolade) dans un fichier .json, puis utilisez "Importer une sauvegarde" dans la caisse :<br><br>${dataStr}`,
       date_achat: dateLabel,
-      articles:   `Sauvegarde automatique du ${dateLabel}\n\nNb produits: ${STATE.products.length}\nNb clients: ${STATE.clients.length}\nNb ventes: ${STATE.ventes.length}`,
+      articles:   `Sauvegarde du ${dateLabel} — ${STATE.products.length} produits, ${STATE.clients.length} clients, ${STATE.ventes.length} ventes (${tailleKo} Ko)`,
       total:      "Sauvegarde données Belle&Jolie",
-      paiement:   `[Données JSON en pièce jointe simulée - taille: ${Math.round(dataStr.length/1024)}Ko]`,
+      paiement:   dataStr,
       vendeur:    "Système automatique",
     });
     STATE.sauvegarde = now.toISOString();
@@ -10910,7 +10912,7 @@ window.envoyerSauvegardeEmail = async () => {
     const a = document.createElement("a");
     a.href=url; a.download=`bellejolie-sauvegarde-${now.toISOString().slice(0,10)}.json`;
     a.click(); URL.revokeObjectURL(url);
-    alert(`✅ Sauvegarde envoyée à ${dest}\n📥 Fichier téléchargé localement`);
+    if(!silencieux) alert(`✅ Sauvegarde envoyée à ${dest}\n📥 Fichier téléchargé localement`);
   } catch(err) {
     console.error("Sauvegarde email error:", err);
     // Fallback: télécharger en local
@@ -10919,20 +10921,18 @@ window.envoyerSauvegardeEmail = async () => {
     const a = document.createElement("a");
     a.href=url; a.download=`bellejolie-sauvegarde-${now.toISOString().slice(0,10)}.json`;
     a.click(); URL.revokeObjectURL(url);
-    alert("⚠️ Email non envoyé (vérifiez EmailJS)\n📥 Fichier téléchargé localement à la place.");
+    if(!silencieux) alert("⚠️ Email non envoyé (vérifiez EmailJS)\n📥 Fichier téléchargé localement à la place.");
   }
 };
 
 // Sauvegarde auto quotidienne : vérifier si déjà fait aujourd'hui
+// Sauvegarde auto quotidienne : envoyée automatiquement, sans confirmation manuelle
 window.verifierSauvegardeAuto = () => {
   if(!STATE.sauvegardeEmail) return;
   const today = dateLocaleStr();
   const lastSauvegarde = STATE.sauvegarde ? STATE.sauvegarde.slice(0,10) : null;
-  // Si pas de sauvegarde aujourd'hui et après 19h → proposer
-  const heure = new Date().getHours();
-  if(lastSauvegarde !== today && heure >= 19) {
-    const ok = confirm("🔔 Rappel : vous n'avez pas encore effectué votre sauvegarde du jour.\n\nVoulez-vous envoyer la sauvegarde maintenant ?");
-    if(ok) envoyerSauvegardeEmail();
+  if(lastSauvegarde !== today) {
+    envoyerSauvegardeEmail(true); // silencieux, pas de popup de confirmation
   }
 };
 
