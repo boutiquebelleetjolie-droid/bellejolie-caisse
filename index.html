@@ -6448,6 +6448,10 @@ function renderClientDetail() {
     +'<div style="background:#f9f6f8;border-radius:8px;padding:8px;"><div style="color:#888;margin-bottom:2px;">📅 Fréquence</div><div style="font-weight:500;">'+(freqMoy!==null?"tous les "+freqMoy+"j":"—")+'</div></div>'
     +'<div style="background:#f9f6f8;border-radius:8px;padding:8px;"><div style="color:#888;margin-bottom:2px;">❤️ Catégorie préférée</div><div style="font-weight:500;">'+(topCat?topCat[0]:"—")+'</div></div>'
     +'</div>'
+    +'<div style="background:'+(c.suitReseaux?"#eaf3de":"#f9f6f8")+';border-radius:8px;padding:10px;margin-bottom:12px;font-size:12px;">'
+    +'<div style="font-weight:500;margin-bottom:4px;">📱 '+(c.suitReseaux?"Abonnée aux réseaux sociaux":"Pas encore abonnée aux réseaux")+'</div>'
+    +(c.suitReseaux?('<div style="color:'+(c.remiseReseauxAccordee?"#3b6d11":"#e07c00")+';">'+(c.remiseReseauxAccordee?"✅ Remise -5€ déjà accordée":"⏳ Remise -5€ pas encore accordée")+'</div>'):'')
+    +'</div>'
     +(topArts.length>0?'<div style="background:#f9f6f8;border-radius:8px;padding:8px;margin-bottom:12px;"><div style="font-size:11px;color:#888;margin-bottom:6px;">💝 Articles favoris</div><div style="display:flex;flex-wrap:wrap;gap:4px;">'+topArts.map(([n,q])=>'<span style="background:#fbeaf0;color:#993556;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:500;">'+n.slice(0,20)+' ×'+q+'</span>').join("")+'</div></div>':"")
     +(cv.length>0?'<div style="background:#f9f6f8;border-radius:8px;padding:10px;margin-bottom:12px;"><div style="font-size:11px;color:#888;margin-bottom:8px;">📈 Dépenses sur 6 mois</div><div style="display:flex;align-items:flex-end;gap:4px;height:50px;">'+mois6.map(m=>'<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;"><div style="width:100%;height:'+Math.max(2,(m.ca/maxM6)*44)+'px;background:'+(m.ca>0?"#993556":"#e8e0e4")+';border-radius:2px 2px 0 0;"></div><div style="font-size:8px;color:#888;">'+m.label+'</div></div>').join("")+'</div></div>':"");
 
