@@ -1471,6 +1471,7 @@ function renderVendeurSettings() {
         <div style="border-top:0.5px solid #e8e0e4;padding-top:14px;margin-bottom:14px;">
           <div style="font-weight:500;font-size:13px;margin-bottom:8px;">☁️ Sauvegarde cloud (Firebase)</div>
           <div style="font-size:12px;color:#888;margin-bottom:10px;">${_fbDb?"Chaque modification est automatiquement sauvegardée dans le cloud, en plus de cet appareil.":"⚠️ Non connectée."}</div>
+          <button onclick="pousserToutVersCloud()" style="width:100%;padding:10px;background:#3b6d11;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:6px;">☁️ Envoyer toutes mes données vers le cloud maintenant</button>
           <button onclick="restaurerDepuisCloud()" style="width:100%;padding:10px;background:#854f0b;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:6px;">🔄 Restaurer depuis le cloud</button>
           <div style="font-size:11px;color:#aaa;">À utiliser en cas de souci sur cet appareil, ou pour retrouver tes données sur un nouvel appareil. Remplace les données actuellement affichées ici par celles sauvegardées dans le cloud.</div>
         </div>
@@ -1614,6 +1615,19 @@ window.exporterDonnees = () => {
   STATE.sauvegarde=new Date().toISOString();
   lsSet("bj_sauvegarde",STATE.sauvegarde);
   alert("✅ Sauvegarde téléchargée !\n\nTransférez ce fichier JSON avec le fichier HTML sur vos autres appareils.");
+};
+
+window.pousserToutVersCloud = async () => {
+  if(!_fbDb) { alert("⚠️ Firebase n'est pas connecté sur cet appareil."); return; }
+  const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisseJour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
+  let compte = 0, erreurs = 0;
+  for(const k of cles) {
+    try {
+      const v = ls(k, null);
+      if(v!==null) { await _fbDb.collection("bellejolie").doc(k).set({ value: v, maj: new Date().toISOString() }); compte++; }
+    } catch(err) { console.error("Erreur envoi '"+k+"':", err); erreurs++; }
+  }
+  alert("✅ "+compte+" élément(s) envoyé(s) vers le cloud."+(erreurs>0?"\n⚠️ "+erreurs+" échec(s), vérifie les règles Firestore.":""));
 };
 
 window.restaurerDepuisCloud = async () => {
