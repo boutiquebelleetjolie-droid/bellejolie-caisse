@@ -13629,7 +13629,7 @@ function renderModalReservation() {
             <div style="background:#f5f0f2;border-radius:8px;padding:8px;">
               ${resaArticles.map((a,i)=>`
                 <div style="display:flex;align-items:center;justify-content:space-between;font-size:13px;padding:4px 0;">
-                  <span>${a.name} — ${eur(a.price)}</span>
+                  <span>${nomArticleResa(a)} — ${eur(a.price)}</span>
                   <button onclick="STATE.resaArticles.splice(${i},1);render()" style="background:none;border:none;color:#a32d2d;cursor:pointer;font-size:16px;">×</button>
                 </div>
               `).join("")}
@@ -13672,9 +13672,12 @@ window.resaBcKeyDown = (e) => {
   // Chercher d'abord dans les codes-barres de variantes (taille/couleur), comme en caisse
   for(const prod of STATE.products) {
     const bv = prod.barcodeVariantes||{};
-    for(const bc of Object.values(bv)) {
+    for(const [varKey, bc] of Object.entries(bv)) {
       if(bc === q && prod.stock>0) {
-        ajouterArticleResa(prod.id);
+        const parts = varKey.split('_');
+        const taille = parts[0]==='_'?'':parts[0];
+        const couleur = parts.slice(1).join('_').replace(/^_/,'');
+        ajouterArticleResa(prod.id, taille||null, couleur||null);
         STATE.resaProdSearch = "";
         return;
       }
@@ -13702,15 +13705,23 @@ window.resaBcKeyDown = (e) => {
   }
 };
 
-window.ajouterArticleResa = (prodId) => {
+window.ajouterArticleResa = (prodId, taille, couleur) => {
   const p = STATE.products.find(x=>x.id===prodId);
   if(!p) return;
-  if(!(STATE.resaArticles||[]).find(a=>a.id===prodId)) {
-    STATE.resaArticles = [...(STATE.resaArticles||[]), {...p, qty:1}];
+  const cle = prodId+"_"+(taille||"")+"_"+(couleur||"");
+  const existant = (STATE.resaArticles||[]).find(a=>(a.id+"_"+(a.taille||"")+"_"+(a.couleur||""))===cle);
+  if(!existant) {
+    STATE.resaArticles = [...(STATE.resaArticles||[]), {...p, qty:1, taille:taille||null, couleur:couleur||null}];
   }
   STATE.resaProdSearch = "";
   render();
 };
+
+// Formatte le nom d'un article de réservation avec sa taille/couleur si précisée
+function nomArticleResa(a) {
+  const infos = [a.taille?"T."+a.taille:"", a.couleur||""].filter(Boolean).join(" · ");
+  return a.name + (infos?" ("+infos+")":"");
+}
 
 window.validerReservation = async () => {
   const client   = STATE.resaClient;
@@ -13729,7 +13740,7 @@ window.validerReservation = async () => {
     clientNom:  client.nom,
     clientEmail:client.email||"",
     clientTel:  client.tel||"",
-    articles:   articles.map(a=>({id:a.id,name:a.name,price:a.price,qty:a.qty||1})),
+    articles:   articles.map(a=>({id:a.id,name:a.name,price:a.price,qty:a.qty||1,taille:a.taille||null,couleur:a.couleur||null})),
     note,
     statut:     "active",
     rappelEnvoye: false,
@@ -13757,9 +13768,9 @@ window.validerReservation = async () => {
         to_email:   client.email,
         to_name:    client.prenom||client.nom,
         subject:    `Votre réservation Belle&Jolie jusqu'au ${expiration.toLocaleDateString("fr-FR")}`,
-        message:    `Bonjour ${client.prenom||client.nom},<br><br>Voici la confirmation de votre réservation :<br><br>${articles.map(a=>`• ${a.name} — ${eur(a.price)}`).join("<br>")}<br><br>📌 Article${articles.length>1?"s":""} mis de côté jusqu'au ${expiration.toLocaleDateString("fr-FR")}<br>${note?"Note : "+note+"<br>":""}<br>Belle&amp;Jolie · ${BOUTIQUE_ADRESSE}<br>🕐 ${BOUTIQUE_HORAIRES}`,
+        message:    `Bonjour ${client.prenom||client.nom},<br><br>Voici la confirmation de votre réservation :<br><br>${articles.map(a=>`• ${nomArticleResa(a)} — ${eur(a.price)}`).join("<br>")}<br><br>📌 Article${articles.length>1?"s":""} mis de côté jusqu'au ${expiration.toLocaleDateString("fr-FR")}<br>${note?"Note : "+note+"<br>":""}<br>Belle&amp;Jolie · ${BOUTIQUE_ADRESSE}<br>🕐 ${BOUTIQUE_HORAIRES}`,
         date_achat: now.toLocaleDateString("fr-FR"),
-        articles:   articles.map(a=>`• ${a.name} — ${eur(a.price)}`).join("\n"),
+        articles:   articles.map(a=>`• ${nomArticleResa(a)} — ${eur(a.price)}`).join("\n"),
         total:      `📌 Article${articles.length>1?"s":""} mis de côté jusqu'au ${expiration.toLocaleDateString("fr-FR")}`,
         paiement:   note?"Note : "+note:"",
         vendeur:    STATE.vendeur.nom,
@@ -13785,9 +13796,9 @@ window.envoyerRappelReservation = async (resaId) => {
       to_email:   resa.clientEmail,
       to_name:    resa.clientNom.split(" ")[0],
       subject:    `⏰ Votre réservation Belle&Jolie expire dans ${joursRest} jour${joursRest>1?"s":""}`,
-      message:    `Bonjour ${resa.clientNom.split(" ")[0]},<br><br>Petit rappel : votre réservation arrive bientôt à échéance !<br><br>${resa.articles.map(a=>`• ${a.name} — ${eur(a.price)}`).join("<br>")}<br><br>⏰ Expire dans ${joursRest} jour${joursRest>1?"s":""} — dernier délai : ${expDate.toLocaleDateString("fr-FR")}<br><br>Belle&amp;Jolie · ${BOUTIQUE_ADRESSE}<br>🕐 ${BOUTIQUE_HORAIRES}`,
+      message:    `Bonjour ${resa.clientNom.split(" ")[0]},<br><br>Petit rappel : votre réservation arrive bientôt à échéance !<br><br>${resa.articles.map(a=>`• ${nomArticleResa(a)} — ${eur(a.price)}`).join("<br>")}<br><br>⏰ Expire dans ${joursRest} jour${joursRest>1?"s":""} — dernier délai : ${expDate.toLocaleDateString("fr-FR")}<br><br>Belle&amp;Jolie · ${BOUTIQUE_ADRESSE}<br>🕐 ${BOUTIQUE_HORAIRES}`,
       date_achat: new Date(resa.date).toLocaleDateString("fr-FR"),
-      articles:   resa.articles.map(a=>`• ${a.name} — ${eur(a.price)}`).join("\n"),
+      articles:   resa.articles.map(a=>`• ${nomArticleResa(a)} — ${eur(a.price)}`).join("\n"),
       total:      `⏰ Votre réservation expire dans ${joursRest} jour${joursRest>1?"s":""}`,
       paiement:   `Dernier délai : ${expDate.toLocaleDateString("fr-FR")}`,
       vendeur:    "Belle&Jolie",
@@ -13832,16 +13843,17 @@ window.encaisserReservation = (resaId) => {
   alert(`✅ Articles de ${resa.clientNom} chargés en caisse !`);
 };
 
-// Vérifier les rappels à envoyer (J+3 après réservation)
+// Vérifier les rappels à envoyer (la veille de l'expiration)
 window.verifierRappelsReservation = async () => {
   const now = new Date();
   for(const resa of (STATE.reservations||[])) {
     if(resa.statut !== "active") continue;
     if(resa.rappelEnvoye) continue;
     if(!resa.clientEmail) continue;
-    const dateResa = new Date(resa.date);
-    const joursEcoules = (now-dateResa)/86400000;
-    if(joursEcoules >= 3) {
+    const dateExpiration = new Date(resa.expiration);
+    const joursRestants = (dateExpiration-now)/86400000;
+    // Envoyer dès qu'il reste 1 jour ou moins avant l'expiration (et pas encore expiré)
+    if(joursRestants <= 1 && joursRestants > -1) {
       await envoyerRappelReservation(resa.id);
     }
   }
