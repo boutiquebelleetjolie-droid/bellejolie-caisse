@@ -2757,11 +2757,27 @@ window.setRemiseArtVal = (id, val) => {
 window.addRetour = (pid) => {
   const p = STATE.products.find(x=>x.id===pid);
   if(!p) return;
-  // Ajouter ligne retour (qty négatif visuellement, mais on soustrait au total)
   const retourId = "R_"+pid;
   const ex = STATE.panier.find(x=>x.id===retourId);
-  if(ex) { STATE.panier = STATE.panier.map(x=>x.id===retourId?{...x,qty:x.qty+1}:x); }
-  else STATE.panier = [...STATE.panier, {...p, id:retourId, qty:1, retour:true, remise:"", remiseType:""}];
+  if(ex) { STATE.panier = STATE.panier.map(x=>x.id===retourId?{...x,qty:x.qty+1}:x); render(); STATE.searchRetour=""; STATE.searchRetourBC=""; return; }
+
+  // Chercher si la cliente sélectionnée a bien acheté cet article, pour reprendre le prix réellement payé (remise éventuelle incluse)
+  let ligneOrigine = null, venteOrigineId = null;
+  if(STATE.client) {
+    const ventesClient = (STATE.ventes||[])
+      .filter(v=>!v.annulee && v.client?.id===STATE.client.id)
+      .sort((a,b)=>new Date(b.date)-new Date(a.date)); // la plus récente d'abord
+    for(const v of ventesClient) {
+      const art = (v.panier||[]).find(x=>!x.retour && !x.avoirId && x.id===pid);
+      if(art) { ligneOrigine = art; venteOrigineId = v.id; break; }
+    }
+  }
+
+  if(ligneOrigine) {
+    STATE.panier = [...STATE.panier, {...ligneOrigine, id:retourId, qty:1, retour:true, retourVenteId:venteOrigineId}];
+  } else {
+    STATE.panier = [...STATE.panier, {...p, id:retourId, qty:1, retour:true, remise:"", remiseType:""}];
+  }
   STATE.searchRetour=""; STATE.searchRetourBC=""; STATE.searchRetourBC="";
   render();
 };
@@ -9394,6 +9410,7 @@ window.ouvrirAppEmail = () => {
   const body = buildMsgEmail(v);
   const href = `mailto:${dest||""}?subject=${encodeURIComponent("Votre ticket Belle&Jolie du "+date)}&body=${encodeURIComponent(body)}`;
   window.open(href, "_blank");
+  setTimeout(()=>setState({showEnvoiTicket:false, showTicket:null}), 800);
 };
 
 // ── Email : envoi direct via EmailJS ────────────────────────────
@@ -9510,8 +9527,8 @@ window.envoyerEmailJS = async () => {
     if(statusEl){ statusEl.style.display="block"; statusEl.textContent="✅ Email envoyé avec succès !"; statusEl.style.color="#3b6d11"; }
     if(btnEl)   { btnEl.textContent="✅ Envoyé !"; btnEl.style.background="#3b6d11"; btnEl.disabled=false; }
     
-    // Fermer le modal après 2 secondes
-    setTimeout(()=>setState({showEnvoiTicket:false}), 2000);
+    // Fermer le modal d'envoi ET la fenêtre du ticket après 2 secondes
+    setTimeout(()=>setState({showEnvoiTicket:false, showTicket:null}), 2000);
     
   } catch(err) {
     console.error("EmailJS error complet:", err);
