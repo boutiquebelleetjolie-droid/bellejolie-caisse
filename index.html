@@ -2253,10 +2253,15 @@ function renderCaisse() {
             <th></th>
           </tr></thead>
           <tbody>
-            ${panier.map(it=>{
+            ${(()=>{
+              // Taux de remise globale effectif (fidélité + remise panier + remise progressive), à répercuter ligne par ligne pour l'affichage
+              const totalRemiseGlobale = (remGlobal||0) + (remiseFidMontant||0) + (remiseProgMontant||0);
+              const tauxRemiseGlobale = stTotal>0 ? Math.min(1, totalRemiseGlobale/stTotal) : 0;
+              return panier.map(it=>{
               const remArt = it.remiseType==="pct" ? it.price*(parseFloat(it.remise||0)/100)
                            : it.remiseType==="eur" ? parseFloat(it.remise||0)/it.qty : 0;
               const puNet = Math.max(0, it.price - remArt);
+              const puNetFinal = it.retour ? puNet : puNet * (1 - tauxRemiseGlobale);
               const ligneTotal = puNet * it.qty;
               return `
               <tr style="border-bottom:0.5px solid #e8e0e4;${it.retour?"background:#fff8f0;":""}">
@@ -2283,7 +2288,9 @@ function renderCaisse() {
                   </div>`}
                 </td>
                 <td style="text-align:right;padding:8px 4px;">
-                  ${it.remise&&!it.retour?`<span style="text-decoration:line-through;color:#aaa;font-size:11px;">${eur(it.price)}</span><br/><span style="color:#3b6d11;font-weight:500;">${eur(puNet)}</span>`:eur(it.price)}
+                  ${!it.retour && (it.remise || tauxRemiseGlobale>0.0001) ?
+                    `<span style="text-decoration:line-through;color:#aaa;font-size:11px;">${eur(it.price)}</span><br/><span style="color:#3b6d11;font-weight:500;">${eur(puNetFinal)}</span>`
+                    : eur(it.price)}
                 </td>
                 <td style="text-align:center;padding:8px 4px;">
                   ${it.retour?"-":`
@@ -2303,7 +2310,8 @@ function renderCaisse() {
                   <button onclick="supprimerLignePanier(${STATE.panier.indexOf(it)})" style="background:none;border:none;color:#a32d2d;font-size:20px;cursor:pointer;">×</button>
                 </td>
               </tr>`;
-            }).join("")}
+            }).join("");
+            })()}
           </tbody>
         </table>`}
       </div>
