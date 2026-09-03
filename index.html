@@ -5016,10 +5016,20 @@ prods.forEach(p=>{
     const pa=p.prixAchat||0, pv=p.price||0, pvht=pv/1.20;
     const mb=pa>0?Math.round((pvht-pa)/pvht*100):null;
     const co=pa>0?parseFloat((pvht/pa).toFixed(2)):null;
-    // Marge finale : PV moyen réel des ventes (après remises)
-    const lignesVendues=(STATE.ventes||[]).filter(v=>!v.annulee).flatMap(v=>(v.panier||[]).filter(i=>(i.prodIdOriginal||i.id)===p.id&&!i.retour));
-    const qtyVendue=lignesVendues.reduce((s,i)=>s+(i.qty||1),0);
-    const caReel=lignesVendues.reduce((s,i)=>s+i.price*(i.qty||1),0);
+    // Marge finale : PV moyen RÉELLEMENT encaissé (remises par article ET remises globales/braderie incluses)
+    const ventesConcernees = (STATE.ventes||[]).filter(v=>!v.annulee && (v.panier||[]).some(i=>(i.prodIdOriginal||i.id)===p.id && !i.retour));
+    let qtyVendue = 0, caReel = 0;
+    ventesConcernees.forEach(v=>{
+      const lignesBrutes = (v.panier||[]).filter(i=>!i.retour && !i.avoirId);
+      const sommeAffichee = lignesBrutes.reduce((s,i)=>s+i.price*(i.qty||1),0);
+      // Ratio effectif de cette vente : montant réellement payé / somme des prix affichés (capte remise article + remise globale/braderie/fidélité)
+      const ratioNet = sommeAffichee>0 ? Math.min(1, v.total/sommeAffichee) : 1;
+      const lignesArticle = (v.panier||[]).filter(i=>(i.prodIdOriginal||i.id)===p.id && !i.retour);
+      lignesArticle.forEach(i=>{
+        qtyVendue += (i.qty||1);
+        caReel += i.price*(i.qty||1)*ratioNet;
+      });
+    });
     const pvMoyTTC=qtyVendue>0?caReel/qtyVendue:null;
     const pvMoyHT=pvMoyTTC?pvMoyTTC/1.20:null;
     const coFinal=pa>0&&pvMoyHT?parseFloat((pvMoyHT/pa).toFixed(2)):null;
