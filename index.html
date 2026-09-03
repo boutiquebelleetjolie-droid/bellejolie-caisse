@@ -10337,8 +10337,18 @@ function renderCaisseJour() {
   const pm     = nbV?caTTC/nbV:0;
   const mL     = {cb:"Carte bleue",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Carte cadeau",mixte:"Mixte"};
 
+  // Ventiler les paiements mixtes dans leur mode réel (CB, espèces, chèque...) au lieu de tout regrouper sous "mixte"
   const payM={};
-  ventesJour.forEach(v=>{payM[v.payMode]=(payM[v.payMode]||0)+v.total;});
+  ventesJour.forEach(v=>{
+    if(v.mixed && Array.isArray(v.pays)) {
+      v.pays.forEach(p=>{
+        const m = p.mode||"autre";
+        payM[m]=(payM[m]||0)+parseFloat(p.montant||0);
+      });
+    } else {
+      payM[v.payMode]=(payM[v.payMode]||0)+v.total;
+    }
+  });
   const especes      = payM["especes"]||0;
   const totalAvoirs  = payM["avoir"]||0;
   const totalCadeaux = payM["cadeau"]||0;
@@ -10453,10 +10463,6 @@ function renderCaisseJour() {
       <div style="background:${totalCadeaux>0?"#fbeaf0":"#f5f0f2"};border-radius:10px;padding:12px;border:${totalCadeaux>0?"1px solid #993556":"none"};">
         <div style="font-size:11px;color:#888;margin-bottom:4px;">🎁 Chèques cadeaux</div>
         <div style="font-size:16px;font-weight:600;color:${totalCadeaux>0?"#993556":"#aaa"};">${eur(totalCadeaux)}</div>
-      </div>
-      <div style="background:${totalMixte>0?"#e6f8f5":"#f5f0f2"};border-radius:10px;padding:12px;border:${totalMixte>0?"1px solid #4fae9e":"none"};">
-        <div style="font-size:11px;color:#888;margin-bottom:4px;">🔀 Paiement mixte</div>
-        <div style="font-size:16px;font-weight:600;color:${totalMixte>0?"#2f8a7a":"#aaa"};">${eur(totalMixte)}</div>
       </div>
     </div>
     ${(totalCB+especes+totalCheque+totalAvoirs+totalCadeaux+totalMixte).toFixed(2)!==caTTC.toFixed(2)?`
