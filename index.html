@@ -3469,8 +3469,10 @@ function renderTicketModal() {
             </div>
           `).join("")}
           ${(()=>{
-            const avoirLigne = v.panier.find(x=>x.avoirId) || (v.avoirsPayes?.length?{price:v.avoirsPayes[0].montant}:null);
-            if(avoirLigne) return `<div style="font-size:11px;color:#185fa5;font-weight:500;margin-top:2px;">💳 Bon d'avoir : ${eur(avoirLigne.price)}</div>`;
+            const ligneAvoir = v.panier.find(x=>x.avoirId);
+            const avoirLigne = ligneAvoir || (v.avoirsPayes?.length?{price:v.avoirsPayes[0].montant, code:v.avoirsPayes[0].code}:null);
+            const codeAvoir = ligneAvoir ? (STATE.avoirs||[]).find(a=>a.id===ligneAvoir.avoirId)?.code : avoirLigne?.code;
+            if(avoirLigne) return `<div style="font-size:11px;color:#185fa5;font-weight:500;margin-top:2px;">💳 Bon d'avoir : ${eur(avoirLigne.price)}${codeAvoir?" (code "+codeAvoir+")":""}</div>`;
             if(v.mixed) return `<div style="font-size:11px;color:#555;margin-top:2px;">${v.pays.map(p=>mL[p.mode]+": "+eur(parseFloat(p.montant||0))).join(" + ")}</div>`;
             return `<div style="font-size:11px;color:#555;margin-top:2px;">Règlement : ${mL[v.payMode]||v.payMode}</div>`;
           })()}
@@ -10377,8 +10379,8 @@ function renderCaisseJour() {
         </div>`).join("")}
     </div>
 
-    <!-- Avoirs + Chèques cadeaux (toujours visibles) -->
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:10px;margin-bottom:14px;">
+    <!-- Tous les modes de paiement (toujours visibles) -->
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px;">
       <div style="background:${totalCB>0?"#e6f1fb":"#f5f0f2"};border-radius:10px;padding:12px;border:${totalCB>0?"1px solid #b3d0f0":"none"};">
         <div style="font-size:11px;color:#888;margin-bottom:4px;">💳 Carte bleue</div>
         <div style="font-size:16px;font-weight:600;color:${totalCB>0?"#185fa5":"#aaa"};">${eur(totalCB)}</div>
@@ -10386,6 +10388,10 @@ function renderCaisseJour() {
       <div style="background:${especes>0?"#eaf3de":"#f5f0f2"};border-radius:10px;padding:12px;border:${especes>0?"1px solid #aed882":"none"};">
         <div style="font-size:11px;color:#888;margin-bottom:4px;">💵 Espèces</div>
         <div style="font-size:16px;font-weight:600;color:${especes>0?"#3b6d11":"#aaa"};">${eur(especes)}</div>
+      </div>
+      <div style="background:${totalCheque>0?"#f0eaf9":"#f5f0f2"};border-radius:10px;padding:12px;border:${totalCheque>0?"1px solid #a084c9":"none"};">
+        <div style="font-size:11px;color:#888;margin-bottom:4px;">📝 Chèque</div>
+        <div style="font-size:16px;font-weight:600;color:${totalCheque>0?"#6a3fa0":"#aaa"};">${eur(totalCheque)}</div>
       </div>
       <div style="background:${totalAvoirs>0?"#fff3e8":"#f5f0f2"};border-radius:10px;padding:12px;border:${totalAvoirs>0?"1px solid #e07c00":"none"};">
         <div style="font-size:11px;color:#888;margin-bottom:4px;">🎟️ Avoirs</div>
@@ -10395,7 +10401,15 @@ function renderCaisseJour() {
         <div style="font-size:11px;color:#888;margin-bottom:4px;">🎁 Chèques cadeaux</div>
         <div style="font-size:16px;font-weight:600;color:${totalCadeaux>0?"#993556":"#aaa"};">${eur(totalCadeaux)}</div>
       </div>
+      <div style="background:${totalMixte>0?"#e6f8f5":"#f5f0f2"};border-radius:10px;padding:12px;border:${totalMixte>0?"1px solid #4fae9e":"none"};">
+        <div style="font-size:11px;color:#888;margin-bottom:4px;">🔀 Paiement mixte</div>
+        <div style="font-size:16px;font-weight:600;color:${totalMixte>0?"#2f8a7a":"#aaa"};">${eur(totalMixte)}</div>
+      </div>
     </div>
+    ${(totalCB+especes+totalCheque+totalAvoirs+totalCadeaux+totalMixte).toFixed(2)!==caTTC.toFixed(2)?`
+    <div style="background:#fcebeb;border:1px solid #e8a5a5;border-radius:8px;padding:8px 12px;margin-bottom:14px;font-size:12px;color:#a32d2d;">
+      ⚠️ La somme des modes de paiement (${eur(totalCB+especes+totalCheque+totalAvoirs+totalCadeaux+totalMixte)}) ne correspond pas exactement au CA TTC (${eur(caTTC)}). Vérifie les ventes du jour.
+    </div>`:""}
 
     <!-- Fond de caisse billets/pièces -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px;">
