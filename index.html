@@ -3186,7 +3186,7 @@ function renderCarteCadeauModal() {
 
   return `
   <div class="modal-bg" onclick="if(event.target===this)setState({showCarteCadeau:null})">
-    <div class="modal" style="max-width:640px;">
+    <div class="modal" style="max-width:720px;">
       <div class="modal-header">
         <span style="font-weight:500;">🎁 Carte(s) cadeau à imprimer</span>
         <button onclick="setState({showCarteCadeau:null})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
@@ -3194,21 +3194,42 @@ function renderCarteCadeauModal() {
       <div class="modal-body">
         <div id="carte-cadeau-print-area">
           ${chqs.map(chq=>`
-            <div class="carte-cadeau" style="border:3px double #993556;border-radius:16px;padding:36px 28px;text-align:center;background:linear-gradient(#fffdfb,#fdf6f3);margin-bottom:24px;position:relative;">
-              <div style="position:absolute;top:14px;left:14px;right:14px;bottom:14px;border:1px solid #d9a86c;border-radius:10px;pointer-events:none;"></div>
-              <img src="${LOGO_B64}" alt="Belle&Jolie" style="width:150px;height:auto;display:block;margin:6px auto 10px;"/>
-              <div style="font-size:12px;letter-spacing:4px;color:#d9a86c;text-transform:uppercase;font-weight:600;margin-bottom:6px;">Carte Cadeau</div>
-              <div style="font-size:44px;font-weight:800;color:#993556;margin:10px 0;">${eur(chq.montant)}</div>
-              <div style="font-size:12px;color:#888;margin-bottom:18px;">à valoir sur l'ensemble de la boutique</div>
-              <div style="display:inline-block;background:#fbf3e6;border:1.5px dashed #d9a86c;border-radius:10px;padding:12px 24px;margin-bottom:14px;">
-                <div style="font-size:10px;color:#aaa;letter-spacing:2px;text-transform:uppercase;margin-bottom:4px;">Code</div>
-                <div style="font-size:22px;font-family:monospace;font-weight:700;color:#854f0b;letter-spacing:2px;">${chq.code}</div>
+            <div class="carte-cadeau" style="position:relative;width:100%;aspect-ratio:1.55;box-sizing:border-box;padding:26px 34px;text-align:center;background:#fffdfc;border:2.5px solid #d63875;border-radius:6px;margin-bottom:24px;overflow:hidden;font-family:'Poppins',sans-serif;">
+              <!-- Filets décoratifs coins -->
+              <svg style="position:absolute;top:8px;left:8px;width:90px;height:90px;" viewBox="0 0 90 90"><path d="M2,55 A70,70 0 0,1 55,2" fill="none" stroke="#c99a54" stroke-width="1.4"/></svg>
+              <svg style="position:absolute;bottom:8px;right:8px;width:90px;height:90px;transform:rotate(180deg);" viewBox="0 0 90 90"><path d="M2,55 A70,70 0 0,1 55,2" fill="none" stroke="#c99a54" stroke-width="1.4"/></svg>
+
+              <img src="${LOGO_B64}" alt="Belle&Jolie" style="width:118px;height:auto;display:block;margin:0 auto 4px;"/>
+              <div style="font-size:11px;letter-spacing:2.5px;color:#333;font-weight:500;margin-bottom:10px;">MODE FEMME &nbsp;|&nbsp; BIJOUX &nbsp;|&nbsp; ACCESSOIRES &nbsp;|&nbsp; MAROQUINERIE</div>
+              <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:2px;">
+                <div style="flex:1;max-width:80px;height:1px;background:#c99a54;"></div>
+                <span style="color:#d63875;font-size:14px;">❤</span>
+                <div style="flex:1;max-width:80px;height:1px;background:#c99a54;"></div>
               </div>
-              <div style="display:flex;justify-content:center;margin-bottom:10px;">${genererSVGBarcode(chq.code)}</div>
-              <div style="font-size:11px;color:#999;">Valable jusqu'au ${new Date(chq.expiration).toLocaleDateString("fr-FR")}</div>
-              <div style="border-top:1px solid #eee;margin:16px 0 10px;"></div>
-              <div style="font-size:11px;color:#993556;font-weight:600;">Belle&Jolie</div>
-              <div style="font-size:10px;color:#aaa;">${BOUTIQUE_ADRESSE}</div>
+              <div style="font-family:Georgia,'Times New Roman',serif;font-size:34px;letter-spacing:5px;color:#1a1a1a;margin:8px 0 4px;">BON CADEAU</div>
+              <div style="font-family:Georgia,serif;font-size:56px;font-weight:700;color:#d63875;line-height:1.1;">${eur(chq.montant)}</div>
+              <div style="width:60px;height:2px;background:#c99a54;margin:10px auto;position:relative;">
+                <span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:6px;height:6px;border-radius:50%;background:#c99a54;"></span>
+              </div>
+              <div style="font-family:Georgia,serif;font-style:italic;font-size:16px;color:#333;margin-bottom:14px;">Faites-vous plaisir avec Belle&Jolie !</div>
+
+              <div style="display:flex;justify-content:center;align-items:center;gap:26px;margin-bottom:10px;flex-wrap:wrap;">
+                <div style="text-align:left;">
+                  <div style="font-size:10px;color:#999;letter-spacing:1px;">VALABLE JUSQU'AU</div>
+                  <div style="font-size:13px;font-weight:600;color:#333;">${new Date(chq.expiration).toLocaleDateString("fr-FR")}</div>
+                </div>
+                <div style="width:1px;height:28px;background:#e8d8de;"></div>
+                <div style="text-align:left;">
+                  <div style="font-size:10px;color:#999;letter-spacing:1px;">CODE</div>
+                  <div style="font-size:15px;font-weight:700;color:#854f0b;font-family:monospace;letter-spacing:1px;">${chq.code}</div>
+                </div>
+              </div>
+              <div style="display:flex;justify-content:center;margin-bottom:8px;">${genererSVGBarcode(chq.code)}</div>
+
+              <div style="font-size:11px;font-weight:600;letter-spacing:1px;color:#1a1a1a;margin-top:6px;">SUIVEZ-NOUS</div>
+              <div style="font-size:9px;letter-spacing:1px;color:#d63875;margin-bottom:6px;">SUR NOS RÉSEAUX SOCIAUX</div>
+              <div style="font-size:10px;color:#555;">Facebook Belle&Jolie · Instagram boutiquebellejolie · TikTok @bellejolie28</div>
+              <div style="font-size:9px;color:#aaa;margin-top:8px;">${BOUTIQUE_ADRESSE}</div>
             </div>
           `).join("")}
         </div>
@@ -3221,7 +3242,7 @@ function renderCarteCadeauModal() {
     @media print {
       body * { visibility: hidden; }
       #carte-cadeau-print-area, #carte-cadeau-print-area * { visibility: visible; }
-      #carte-cadeau-print-area { position: fixed; top: 20mm; left: 50%; transform: translateX(-50%); width: 160mm; }
+      #carte-cadeau-print-area { position: fixed; top: 15mm; left: 50%; transform: translateX(-50%); width: 180mm; }
       .carte-cadeau { break-inside: avoid; page-break-inside: avoid; }
     }
   </style>`;
