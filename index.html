@@ -10355,7 +10355,11 @@ function renderCaisseJour() {
   const totalCB      = payM["cb"]||0;
   const totalCheque  = payM["cheque"]||0;
   const totalMixte   = payM["mixte"]||0;
-  const retours = ventesJour.reduce((s,v)=>s+v.panier.filter(x=>x.retour&&!x.avoirId).reduce((ss,i)=>ss+i.price*i.qty,0),0);
+  // Retours espèces = uniquement les ventes où le total net est négatif ou nul (vrai remboursement),
+  // pas les échanges (retour + nouvel achat dans le même ticket, déjà capté par le mode de paiement normal)
+  const retours = ventesJour
+    .filter(v=>v.total<=0 && v.panier.some(x=>x.retour&&!x.avoirId))
+    .reduce((s,v)=>s+v.panier.filter(x=>x.retour&&!x.avoirId).reduce((ss,i)=>ss+i.price*i.qty,0),0);
   const annulJour = (STATE.annulLignes||[]).filter(a=>new Date(a.date).toDateString()===zDate.toDateString());
   const totalAnnul = annulJour.reduce((s,a)=>s+a.prix*a.qty,0);
   const paniersVidesJour = (STATE.panierVides||[]).filter(p=>new Date(p.date).toDateString()===zDate.toDateString());
