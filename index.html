@@ -4073,6 +4073,21 @@ window.validerPaiement = () => {
 
   const {stTotal, remGlobal, fidPct, remiseFidMontant, remiseProgMontant, remiseProgPct, total} = calcPanier();
 
+  // ── Vérification paiement mixte : les deux montants doivent totaliser exactement le total, modes différents ──
+  if(STATE.payMixed) {
+    const m0 = parseFloat(STATE.pays[0].montant||0);
+    const m1 = parseFloat(STATE.pays[1].montant||0);
+    if(STATE.pays[0].mode === STATE.pays[1].mode) {
+      const mLlocal = {cb:"Carte bleue",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Carte cadeau"};
+      alert("⚠️ Les deux modes de paiement doivent être différents pour un paiement mixte (actuellement les deux sont sur \""+(mLlocal[STATE.pays[0].mode]||STATE.pays[0].mode)+"\").");
+      return;
+    }
+    if(Math.abs((m0+m1) - total) >= 0.01) {
+      alert("⚠️ Le détail du paiement mixte ("+eur(m0)+" + "+eur(m1)+" = "+eur(m0+m1)+") ne correspond pas au total de la vente ("+eur(total)+"). Corrige les montants avant de valider.");
+      return;
+    }
+  }
+
   // ── Vérification avoir/cadeau en mode simple ──
   const mode1 = STATE.pays[0].mode;
   if(!STATE.payMixed && (mode1==="avoir"||mode1==="cadeau")) {
