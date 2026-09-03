@@ -10368,6 +10368,12 @@ function renderCaisseJour() {
   const totalMixte   = payM["mixte"]||0;
   // Sécurité : tout ce qui n'est dans aucune des 5 catégories ci-dessus (mode manquant, inconnu, etc.)
   const totalAutre = Object.entries(payM).filter(([k])=>!["especes","avoir","cadeau","cb","cheque","mixte"].includes(k)).reduce((s,[,v])=>s+v,0);
+  // Détecter les ventes mixtes dont le détail des paiements saisis ne correspond pas au vrai total de la vente
+  const ventesMixtesIncoherentes = ventesJour.filter(v=>{
+    if(!v.mixed || !Array.isArray(v.pays)) return false;
+    const sommePays = v.pays.reduce((s,p)=>s+parseFloat(p.montant||0),0);
+    return Math.abs(sommePays - v.total) >= 0.01;
+  });
   // Retours espèces = uniquement les ventes où le total net est négatif ou nul (vrai remboursement),
   // pas les échanges (retour + nouvel achat dans le même ticket, déjà capté par le mode de paiement normal)
   const retours = ventesJour
@@ -10494,6 +10500,14 @@ function renderCaisseJour() {
     ${(totalCB+especes+totalCheque+totalAvoirs+totalCadeaux+totalMixte+totalAutre).toFixed(2)!==caTTC.toFixed(2)?`
     <div style="background:#fcebeb;border:1px solid #e8a5a5;border-radius:8px;padding:8px 12px;margin-bottom:14px;font-size:12px;color:#a32d2d;">
       ⚠️ La somme des modes de paiement (${eur(totalCB+especes+totalCheque+totalAvoirs+totalCadeaux+totalMixte+totalAutre)}) ne correspond pas exactement au CA TTC (${eur(caTTC)}). Vérifie les ventes du jour.
+      ${ventesMixtesIncoherentes.length>0?`
+      <div style="margin-top:8px;padding-top:8px;border-top:1px solid #e8a5a5;">
+        <strong>Ticket(s) en paiement mixte avec un détail incohérent :</strong><br>
+        ${ventesMixtesIncoherentes.map(v=>{
+          const sommePays = v.pays.reduce((s,p)=>s+parseFloat(p.montant||0),0);
+          return new Date(v.date).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})+" · Total vente : "+eur(v.total)+" · Détail saisi : "+eur(sommePays)+" ("+v.pays.map(p=>mL[p.mode]+" "+eur(parseFloat(p.montant||0))).join(" + ")+") · Écart : "+eur(v.total-sommePays);
+        }).join("<br>")}
+      </div>`:""}
     </div>`:""}
 
     <!-- Fond de caisse billets/pièces -->
