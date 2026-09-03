@@ -3211,7 +3211,8 @@ function renderCarteCadeauModal() {
               <div style="width:60px;height:2px;background:#c99a54;margin:10px auto;position:relative;">
                 <span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:6px;height:6px;border-radius:50%;background:#c99a54;"></span>
               </div>
-              <div style="font-family:Georgia,serif;font-style:italic;font-size:16px;color:#333;margin-bottom:14px;">Faites-vous plaisir avec Belle&Jolie !</div>
+              <div style="font-family:Georgia,serif;font-style:italic;font-size:16px;color:#333;margin-bottom:6px;">Faites-vous plaisir avec Belle&Jolie !</div>
+              <div style="font-size:10px;color:#999;letter-spacing:0.5px;margin-bottom:14px;">Valable sur l'ensemble des articles de la boutique</div>
 
               <div style="display:flex;justify-content:center;align-items:center;gap:26px;margin-bottom:10px;flex-wrap:wrap;">
                 <div style="text-align:left;">
@@ -4140,8 +4141,9 @@ window.validerPaiement = () => {
       if(nouveauSolde >= 2) {
         const expReliquat = new Date(); expReliquat.setMonth(expReliquat.getMonth()+3);
         // Distinguer reliquat chèque cadeau vs reliquat avoir classique
-        const isCadeau = avoir.typeAvoir==="cadeau_reliquat" || avoir.source==="cheque_cadeau"
-                      || (avoir.code||"").startsWith("CC");
+        const isCadeau = avoir.typeAvoir==="cadeau_reliquat" || avoir.typeAvoir==="cheque_cadeau_vendu"
+                      || avoir.source==="cheque_cadeau" || avoir.source==="vente_cheque_cadeau"
+                      || (avoir.code||"").startsWith("CC") || (avoir.code||"").startsWith("377");
         const avoirReliquat = {
           id:uid("AV"),
           code:"AV"+Date.now().toString().slice(-10),
@@ -6697,7 +6699,7 @@ function renderClientDetail() {
                 +"<div>"
                 +"<div style='font-size:13px;font-weight:600;color:#e07c00;'>"+eur(a.solde)+"</div>"
                 +"<div style='font-size:11px;color:#888;font-family:monospace;'>"+a.code+"</div>"
-                +(a.typeAvoir==="cadeau_reliquat"||a.source==="cheque_cadeau"?"<div style='font-size:10px;color:#185fa5;font-weight:500;'>💳 Reliquat chèque cadeau</div>"
+                +(a.typeAvoir==="cadeau_reliquat"||a.source==="cheque_cadeau"||a.source==="vente_cheque_cadeau"?"<div style='font-size:10px;color:#185fa5;font-weight:500;'>💳 Reliquat chèque cadeau</div>"
                   :a.typeAvoir==="fidelite400"?"<div style='font-size:10px;color:#993556;font-weight:500;'>🎀 Fidélité -15% / 400€</div>"                :a.typeAvoir==="bienvenue"?"<div style='font-size:10px;color:#3b6d11;font-weight:500;'>🎁 Bon de bienvenue</div>"
                   :a.typeAvoir==="anniversaire"?"<div style='font-size:10px;color:#993556;font-weight:500;'>🎂 Bon anniversaire</div>"
                   :a.reliquat?"<div style='font-size:10px;color:#e07c00;'>Reliquat d'avoir</div>"
