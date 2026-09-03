@@ -10356,7 +10356,8 @@ function renderCaisseJour() {
         payM[m]=(payM[m]||0)+parseFloat(p.montant||0);
       });
     } else {
-      payM[v.payMode]=(payM[v.payMode]||0)+v.total;
+      const m = v.payMode || "autre";
+      payM[m]=(payM[m]||0)+v.total;
     }
   });
   const especes      = payM["especes"]||0;
@@ -10365,6 +10366,8 @@ function renderCaisseJour() {
   const totalCB      = payM["cb"]||0;
   const totalCheque  = payM["cheque"]||0;
   const totalMixte   = payM["mixte"]||0;
+  // Sécurité : tout ce qui n'est dans aucune des 5 catégories ci-dessus (mode manquant, inconnu, etc.)
+  const totalAutre = Object.entries(payM).filter(([k])=>!["especes","avoir","cadeau","cb","cheque","mixte"].includes(k)).reduce((s,[,v])=>s+v,0);
   // Retours espèces = uniquement les ventes où le total net est négatif ou nul (vrai remboursement),
   // pas les échanges (retour + nouvel achat dans le même ticket, déjà capté par le mode de paiement normal)
   const retours = ventesJour
@@ -10479,10 +10482,18 @@ function renderCaisseJour() {
         <div style="font-size:11px;color:#888;margin-bottom:4px;">🎁 Chèques cadeaux</div>
         <div style="font-size:16px;font-weight:600;color:${totalCadeaux>0?"#993556":"#aaa"};">${eur(totalCadeaux)}</div>
       </div>
+      ${totalAutre>0.001?`
+      <div style="background:#fcebeb;border-radius:10px;padding:12px;border:1px solid #e8a5a5;">
+        <div style="font-size:11px;color:#888;margin-bottom:4px;">❓ Autre / non catégorisé</div>
+        <div style="font-size:16px;font-weight:600;color:#a32d2d;">${eur(totalAutre)}</div>
+        <div style="font-size:10px;color:#a32d2d;margin-top:4px;">
+          ${ventesJour.filter(v=>!v.mixed && !["especes","avoir","cadeau","cb","cheque"].includes(v.payMode)).map(v=>new Date(v.date).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})+" · "+eur(v.total)+" · mode: "+(v.payMode||"vide")).join("<br>")}
+        </div>
+      </div>`:""}
     </div>
-    ${(totalCB+especes+totalCheque+totalAvoirs+totalCadeaux+totalMixte).toFixed(2)!==caTTC.toFixed(2)?`
+    ${(totalCB+especes+totalCheque+totalAvoirs+totalCadeaux+totalMixte+totalAutre).toFixed(2)!==caTTC.toFixed(2)?`
     <div style="background:#fcebeb;border:1px solid #e8a5a5;border-radius:8px;padding:8px 12px;margin-bottom:14px;font-size:12px;color:#a32d2d;">
-      ⚠️ La somme des modes de paiement (${eur(totalCB+especes+totalCheque+totalAvoirs+totalCadeaux+totalMixte)}) ne correspond pas exactement au CA TTC (${eur(caTTC)}). Vérifie les ventes du jour.
+      ⚠️ La somme des modes de paiement (${eur(totalCB+especes+totalCheque+totalAvoirs+totalCadeaux+totalMixte+totalAutre)}) ne correspond pas exactement au CA TTC (${eur(caTTC)}). Vérifie les ventes du jour.
     </div>`:""}
 
     <!-- Fond de caisse billets/pièces -->
