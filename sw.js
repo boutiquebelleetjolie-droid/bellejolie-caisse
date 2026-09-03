@@ -3,7 +3,7 @@
 // affiche toujours la dernière version déployée dès qu'il y a une connexion.
 // Le cache ne sert que de secours en cas de coupure réseau (mode hors-ligne).
 
-const CACHE_NAME = "bj-caisse-cache-v2"; // change ce numéro si tu ajoutes des fichiers à mettre en cache
+const CACHE_NAME = "bj-caisse-cache-v3"; // change ce numéro si tu ajoutes des fichiers à mettre en cache
 
 self.addEventListener("install", (event) => {
   // Active la nouvelle version tout de suite, sans attendre la fermeture des onglets ouverts
