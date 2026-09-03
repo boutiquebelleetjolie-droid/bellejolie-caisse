@@ -1262,6 +1262,7 @@ function renderApp() {
   ${STATE.showTicketsDuJour ? renderTicketsDuJourModal() : ""}
   ${STATE.showVenteChequeCadeau ? renderVenteChequeCadeauModal() : ""}
   ${STATE.showCarteCadeau ? renderCarteCadeauModal() : ""}
+  ${STATE.showCorrectionPaiement ? renderCorrectionPaiementModal() : ""}
   ${STATE.showVendeurSettings ? renderVendeurSettings() : ""}
   ${STATE.showAnnulLigne ? renderAnnulLigneModal() : ""}
   ${STATE.showVarianteModal ? renderVarianteModal() : ""}
@@ -2104,8 +2105,7 @@ function renderTicketsDuJourModal() {
         }).join("")}
       </div>
     </div>
-  </div>
-  ${STATE.showCorrectionPaiement ? renderCorrectionPaiementModal() : ""}`;
+  </div>`;
 }
 
 // ─── Correction manuelle du paiement d'une vente déjà enregistrée (admin uniquement) ──
@@ -6304,7 +6304,8 @@ function renderCRM() {
   ${STATE.showNouveauDepot ? renderNouveauDepotModal() : ""}
   ${STATE.showTicketsDuJour ? renderTicketsDuJourModal() : ""}
   ${STATE.showVenteChequeCadeau ? renderVenteChequeCadeauModal() : ""}
-  ${STATE.showCarteCadeau ? renderCarteCadeauModal() : ""}`;
+  ${STATE.showCarteCadeau ? renderCarteCadeauModal() : ""}
+  ${STATE.showCorrectionPaiement ? renderCorrectionPaiementModal() : ""}`;
 }
 
 window.openClientModal = id => {
