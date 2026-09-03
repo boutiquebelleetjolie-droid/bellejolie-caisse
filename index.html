@@ -10920,13 +10920,14 @@ window.suggererFondLendemain = (silencieux) => {
 window.updateLendemainTotal = () => {
   const total = Object.entries(STATE.fondLendemain||{}).reduce((s,[k,v])=>{
     const val=parseFloat(k.replace("lend_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
-  const conforme = Math.abs(total-100)<0.01;
+  const FOND_RESERVE_LEND = 80;
+  const conforme = Math.abs(total-FOND_RESERVE_LEND)<0.01;
   const el=document.getElementById("total-lendemain");
   if(el){ el.textContent=eur(total); el.style.color = conforme?"#3b6d11":"#a32d2d"; }
   const msg=document.getElementById("msg-lendemain");
   if(msg){
     msg.style.color = conforme?"#3b6d11":"#a32d2d";
-    msg.textContent = conforme?"✅ Conforme, prêt pour demain.":"⚠️ Doit être exactement 100,00 € pour pouvoir clôturer.";
+    msg.textContent = conforme?"✅ Conforme, prêt pour demain.":"⚠️ Doit être exactement "+eur(FOND_RESERVE_LEND)+" pour pouvoir clôturer.";
   }
 };
 
@@ -10943,7 +10944,7 @@ window.cloturerCaisse = (targetDateStr) => {
     return;
   }
   // Vérifier que le fond laissé pour demain est exactement 100€ — OBLIGATOIRE
-  const FOND_RESERVE_CHECK = 100;
+  const FOND_RESERVE_CHECK = 80;
   const totalLendemainCheck = Object.entries(STATE.fondLendemain||{}).reduce((s,[k,v])=>{
     const val=parseFloat(k.replace("lend_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
   if(Math.abs(totalLendemainCheck-FOND_RESERVE_CHECK) >= 0.01) {
@@ -10990,7 +10991,7 @@ window.cloturerCaisse = (targetDateStr) => {
 window.envoyerReleveCloture = async (z, ventesJour, dateStr) => {
   try {
     // Détail des billets/pièces à retirer, basé sur le comptage réel et le fond validé pour demain
-    const FOND_RESERVE_MAIL = 100;
+    const FOND_RESERVE_MAIL = 80;
     const DENOMS_MAIL = [
       {val:500,label:"Billet 500€"},{val:200,label:"Billet 200€"},{val:100,label:"Billet 100€"},
       {val:50, label:"Billet 50€"}, {val:20, label:"Billet 20€"}, {val:10, label:"Billet 10€"},
