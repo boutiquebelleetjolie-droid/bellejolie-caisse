@@ -4220,6 +4220,10 @@ window.validerPaiement = () => {
   // ── Vérification paiement mixte : les deux montants doivent totaliser exactement le total ──
   // (les deux modes peuvent être identiques, ex: deux clientes qui paient chacune leur part en carte)
   if(STATE.payMixed) {
+    if(!STATE.pays[0].mode || !STATE.pays[1].mode) {
+      alert("⚠️ Choisis le mode de paiement du 2ème montant (CB, espèces, chèque...) avant de valider.");
+      return;
+    }
     const m0 = parseFloat(STATE.pays[0].montant||0);
     const m1 = parseFloat(STATE.pays[1].montant||0);
     if(Math.abs((m0+m1) - total) >= 0.01) {
@@ -4237,7 +4241,7 @@ window.validerPaiement = () => {
       alert("Montant insuffisant (\"" + eur(montantDoc) + "\"). Utilisez le paiement mixte pour combiner deux modes.");
       STATE.payMixed=true;
       STATE.pays[0].montant=String(montantDoc);
-      STATE.pays[1]={mode:"cb",montant:String(parseFloat((total-montantDoc).toFixed(2)))};
+      STATE.pays[1]={mode:"",montant:String(parseFloat((total-montantDoc).toFixed(2)))};
       render(); return;
     }
     // Montant >= total : noter le reliquat pour créer un bon après paiement
