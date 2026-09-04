@@ -516,6 +516,16 @@ function normStr(s) {
   return (s==null?"":String(s)).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
 }
 
+// Le sac à 0,20€ ne doit compter que dans le chiffre d'affaires (l'argent réellement encaissé),
+// jamais dans les statistiques articles : IDV, panier moyen, prix moyen/article, meilleures ventes.
+function estArticleSac(i) {
+  return !!i && normStr(i.name||"").includes("sac") && (parseFloat(i.price)||0) <= 0.5;
+}
+// Total du CA d'une vente provenant du sac (à retrancher des stats "panier moyen" qui doivent l'exclure)
+function caSacVente(v) {
+  return (v?.panier||[]).filter(x=>!x.retour && estArticleSac(x)).reduce((s,i)=>s+(i.price*i.qty),0);
+}
+
 // Date locale au format YYYY-MM-DD, à utiliser partout à la place de .toISOString().slice(0,10)
 // qui convertit en UTC et décale d'un jour en France (UTC+1/+2)
 function dateLocaleStr(d) {
@@ -6760,7 +6770,7 @@ function renderClientDetail() {
   const mL={cb:"CB",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Cadeau",mixte:"Mixte"};
 
   // Calculs enrichis
-  const panierMoyen = cv.length ? cv.reduce((s,v)=>s+v.total,0)/cv.length : 0;
+  const panierMoyen = cv.length ? cv.reduce((s,v)=>s+v.total-caSacVente(v),0)/cv.length : 0;
   const derniereVisite = cv.length ? new Date(cv[cv.length-1].date) : null;
   const joursDepuis = derniereVisite ? Math.floor((new Date()-derniereVisite)/86400000) : null;
   let freqMoy = null;
@@ -6769,7 +6779,7 @@ function renderClientDetail() {
     freqMoy=Math.round((dates[dates.length-1]-dates[0])/(86400000*(cv.length-1)));
   }
   const artMap={};
-  cv.forEach(v=>v.panier.filter(x=>!x.retour).forEach(i=>{if(!artMap[i.name])artMap[i.name]=0;artMap[i.name]+=(i.qty||1);}));
+  cv.forEach(v=>v.panier.filter(x=>!x.retour&&!estArticleSac(x)).forEach(i=>{if(!artMap[i.name])artMap[i.name]=0;artMap[i.name]+=(i.qty||1);}));
   const topArts=Object.entries(artMap).sort((a,b)=>b[1]-a[1]).slice(0,3);
   const catMap={};
   cv.forEach(v=>v.panier.filter(x=>!x.retour).forEach(i=>{
@@ -6947,15 +6957,16 @@ function renderHistorique() {
 
   // Récap
   // Calcul IDV pour la période
-  const totalArtsVF = vf.reduce((s,v)=>(v.annulee?s:s+(v.panier||[]).filter(x=>!x.retour&&!x.avoirId).reduce((a,x)=>a+(x.qty||1),0)),0);
+  const totalArtsVF = vf.reduce((s,v)=>(v.annulee?s:s+(v.panier||[]).filter(x=>!x.retour&&!x.avoirId&&!estArticleSac(x)).reduce((a,x)=>a+(x.qty||1),0)),0);
   const idvPeriode = nbVentes > 0 ? Math.round(totalArtsVF/nbVentes*10)/10 : 0;
+  const caSacVF = vf.reduce((s,v)=>s+caSacVente(v),0);
 
   html += '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:8px;">';
   html += '<div style="background:#fbeaf0;border-radius:10px;padding:12px;text-align:center;"><div style="font-size:20px;font-weight:700;color:#993556;">'+nbVentes+'</div><div style="font-size:11px;color:#888;">Ventes</div></div>';
   html += '<div style="background:#fbeaf0;border-radius:10px;padding:12px;text-align:center;"><div style="font-size:16px;font-weight:700;color:#993556;">'+eur(caTotal)+'</div><div style="font-size:11px;color:#888;">CA total</div></div>';
   html += '</div>';
   html += '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-bottom:14px;">';
-  html += '<div style="background:#eef4fd;border-radius:10px;padding:12px;text-align:center;"><div style="font-size:16px;font-weight:700;color:#185fa5;">'+(nbVentes?eur(caTotal/nbVentes):"—")+'</div><div style="font-size:11px;color:#888;">💰 Panier moyen</div></div>';
+  html += '<div style="background:#eef4fd;border-radius:10px;padding:12px;text-align:center;"><div style="font-size:16px;font-weight:700;color:#185fa5;">'+(nbVentes?eur((caTotal-caSacVF)/nbVentes):"—")+'</div><div style="font-size:11px;color:#888;">💰 Panier moyen</div></div>';
   html += '<div style="background:#eaf3de;border-radius:10px;padding:12px;text-align:center;"><div style="font-size:16px;font-weight:700;color:#3b6d11;">'+idvPeriode+'</div><div style="font-size:11px;color:#888;">🛒 IDV (art./ticket)</div></div>';
   html += '</div>';
 
@@ -7062,7 +7073,9 @@ function renderStats() {
     return false;
   });
 
-  const ca=vf.reduce((s,v)=>s+v.total,0), nb=vf.length, pm=nb?ca/nb:0;
+  const ca=vf.reduce((s,v)=>s+v.total,0), nb=vf.length;
+  const caSacTotal=vf.reduce((s,v)=>s+caSacVente(v),0);
+  const pm=nb?(ca-caSacTotal)/nb:0;
   const mL={cb:"Carte bleue",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Carte cadeau",mixte:"Mixte"};
 
   // ── Top articles ──────────────────────────────────────────────
@@ -7140,11 +7153,11 @@ function renderStats() {
   // ── KPIs avec IDV ─────────────────────────────────────────────
   const calcIDV = arr => {
     if(!arr.length) return 0;
-    const tot=arr.reduce((s,v)=>s+v.panier.filter(x=>!x.retour).reduce((ss,i)=>ss+i.qty,0),0);
+    const tot=arr.reduce((s,v)=>s+v.panier.filter(x=>!x.retour&&!estArticleSac(x)).reduce((ss,i)=>ss+i.qty,0),0);
     return tot/arr.length;
   };
   const idv = calcIDV(vf);
-  const nbArt = vf.reduce((s,v)=>s+v.panier.filter(x=>!x.retour).reduce((ss,i)=>ss+i.qty,0),0);
+  const nbArt = vf.reduce((s,v)=>s+v.panier.filter(x=>!x.retour&&!estArticleSac(x)).reduce((ss,i)=>ss+i.qty,0),0);
 
   // ── HTML ──────────────────────────────────────────────────────
   return `
@@ -7206,7 +7219,7 @@ function renderStats() {
       </div>
       <div style="background:#f5f0f2;border-radius:10px;padding:12px 16px;">
         <div style="font-size:12px;color:#888;margin-bottom:4px;">Prix moyen / article</div>
-        <div style="font-size:22px;font-weight:500;">${eur(nbArt?ca/nbArt:0)}</div>
+        <div style="font-size:22px;font-weight:500;">${eur(nbArt?(ca-caSacTotal)/nbArt:0)}</div>
         <div style="font-size:11px;color:#aaa;margin-top:2px;">${nb} ticket${nb>1?"s":""} · ${nbArt} articles</div>
       </div>
     </div>
@@ -7399,7 +7412,7 @@ function renderStats() {
     ${(()=>{
       const allV=STATE.ventes.filter(v=>!v.test&&!v.annulee);
       const amA={};
-      allV.forEach(v=>v.panier.filter(x=>!x.retour).forEach(i=>{if(!amA[i.id])amA[i.id]={name:i.name,qty:0,ca:0};amA[i.id].qty+=i.qty;amA[i.id].ca+=i.price*i.qty;}));
+      allV.forEach(v=>v.panier.filter(x=>!x.retour&&!estArticleSac(x)).forEach(i=>{if(!amA[i.id])amA[i.id]={name:i.name,qty:0,ca:0};amA[i.id].qty+=i.qty;amA[i.id].ca+=i.price*i.qty;}));
       const topQ=Object.values(amA).sort((a,b)=>b.qty-a.qty).slice(0,10);
       const topC=Object.values(amA).sort((a,b)=>b.ca-a.ca).slice(0,10);
       const maxQ=Math.max(...topQ.map(x=>x.qty),1);
@@ -7577,7 +7590,8 @@ function renderBilan() {
   const tva    = caTTC * TVA_TAUX / (1+TVA_TAUX);
   const caHT   = caTTC - tva;
   const nbV    = vf.length;
-  const pm     = nbV ? caTTC/nbV : 0;
+  const caSacBilan = vf.reduce((s,v)=>s+caSacVente(v),0);
+  const pm     = nbV ? (caTTC-caSacBilan)/nbV : 0;
 
   // Remises accordées
   const remises      = vf.reduce((s,v)=>s+(v.remise||0)+(v.remiseFid||0),0);
@@ -10626,7 +10640,8 @@ function renderCaisseJour() {
   const caHT   = caTTC/(1+TVA);
   const tvaCol = caTTC-caHT;
   const nbV    = ventesJour.length;
-  const pm     = nbV?caTTC/nbV:0;
+  const caSacJour = ventesJour.reduce((s,v)=>s+caSacVente(v),0);
+  const pm     = nbV?(caTTC-caSacJour)/nbV:0;
   const mL     = {cb:"Carte bleue",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Carte cadeau",mixte:"Mixte"};
 
   // Ventiler les paiements mixtes dans leur mode réel (CB, espèces, chèque...) au lieu de tout regrouper sous "mixte"
@@ -11119,8 +11134,8 @@ window.envoyerReleveCloture = async (z, ventesJour, dateStr) => {
       : '<tr><td colspan="5" style="padding:8px;color:#888;text-align:center;">Aucune ligne annulée ce jour</td></tr>';
 
     // Calculs IDV, panier moyen et fidélisation
-    const panierMoyen = z.nbVentes > 0 ? z.caTTC / z.nbVentes : 0;
-    const totalArticles = ventesJour.reduce((s,v) => s + (v.panier||[]).filter(x=>!x.retour&&!x.avoirId).reduce((a,x)=>a+(x.qty||1),0), 0);
+    const panierMoyen = z.nbVentes > 0 ? (z.caTTC - ventesJour.reduce((s,v)=>s+caSacVente(v),0)) / z.nbVentes : 0;
+    const totalArticles = ventesJour.reduce((s,v) => s + (v.panier||[]).filter(x=>!x.retour&&!x.avoirId&&!estArticleSac(x)).reduce((a,x)=>a+(x.qty||1),0), 0);
     const idv = z.nbVentes > 0 ? Math.round(totalArticles / z.nbVentes * 10) / 10 : 0;
     const clientsAvecFidel = ventesJour.filter(v => v.clientId).length;
     const tauxFidel = z.nbVentes > 0 ? Math.round(clientsAvecFidel / z.nbVentes * 100) : 0;
