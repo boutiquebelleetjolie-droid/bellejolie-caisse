@@ -6916,7 +6916,7 @@ function renderClientDetail() {
 
 // ─── HISTORIQUE VENTES ─────────────────────────────────────────
 function renderHistorique() {
-  if(!STATE.histoFilters) STATE.histoFilters = {dateDebut:'',dateFin:'',vendeur:'',categorie:'',payMode:'',search:''};
+  if(!STATE.histoFilters) STATE.histoFilters = {dateDebut:'',dateFin:'',vendeur:'',categorie:'',payMode:'',search:'',montant:''};
   const f = STATE.histoFilters;
   const mL={cb:"CB",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Cadeau",mixte:"Mixte"};
 
@@ -6928,6 +6928,10 @@ function renderHistorique() {
   if(f.payMode)   vf=vf.filter(v=>v.payMode===f.payMode);
   if(f.search)    vf=vf.filter(v=>normStr(v.client?.nom||'').includes(normStr(f.search))||normStr(v.client?.prenom||'').includes(normStr(f.search))||v.panier?.some(i=>normStr(i.name).includes(normStr(f.search))));
   if(f.categorie) vf=vf.filter(v=>v.panier?.some(i=>{const p=STATE.products.find(x=>x.id===(i.prodIdOriginal||i.id));return p?.category===f.categorie;}));
+  if(f.montant)   {
+    const cible = parseFloat(String(f.montant).replace(",","."));
+    if(!isNaN(cible)) vf=vf.filter(v => Math.abs(v.total-cible)<0.01 || (v.pays||[]).some(p=>Math.abs(parseFloat(p.montant||0)-cible)<0.01));
+  }
 
   vf = vf.sort((a,b)=>new Date(b.date)-new Date(a.date));
 
@@ -6942,6 +6946,10 @@ function renderHistorique() {
   // Filtres
   html += '<div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;margin-bottom:14px;">';
   html += '<div style="font-weight:500;font-size:13px;margin-bottom:10px;">🔍 Filtres</div>';
+  html += '<div style="display:flex;gap:6px;margin-bottom:10px;">';
+  html += '<button onclick="const d=new Date();d.setDate(d.getDate()-1);const s=dateLocaleStr(d);STATE.histoFilters.dateDebut=s;STATE.histoFilters.dateFin=s;render()" style="padding:6px 12px;background:#f5f0f2;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;color:#993556;">📅 Hier</button>';
+  html += '<button onclick="const s=dateLocaleStr();STATE.histoFilters.dateDebut=s;STATE.histoFilters.dateFin=s;render()" style="padding:6px 12px;background:#f5f0f2;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;color:#993556;">📅 Aujourd\'hui</button>';
+  html += '</div>';
   html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">';
   html += '<div><label style="font-size:11px;color:#888;">Du</label><input type="date" value="'+f.dateDebut+'" oninput="STATE.histoFilters.dateDebut=this.value;render()" style="width:100%;border:1px solid #ddd;border-radius:6px;padding:5px;font-size:13px;box-sizing:border-box;"/></div>';
   html += '<div><label style="font-size:11px;color:#888;">Au</label><input type="date" value="'+f.dateFin+'" oninput="STATE.histoFilters.dateFin=this.value;render()" style="width:100%;border:1px solid #ddd;border-radius:6px;padding:5px;font-size:13px;box-sizing:border-box;"/></div>';
@@ -6950,12 +6958,14 @@ function renderHistorique() {
   html += '<select onchange="STATE.histoFilters.vendeur=this.value;render()" style="border:1px solid #ddd;border-radius:6px;padding:5px;font-size:13px;"><option value="">Toutes vendeures</option>'+vendeurs.map(v=>'<option value="'+v+'"'+(f.vendeur===v?' selected':'')+'>'+v+'</option>').join('')+'</select>';
   html += '<select onchange="STATE.histoFilters.payMode=this.value;render()" style="border:1px solid #ddd;border-radius:6px;padding:5px;font-size:13px;"><option value="">Tous paiements</option>'+Object.entries(mL).map(([k,v])=>'<option value="'+k+'"'+(f.payMode===k?' selected':'')+'>'+v+'</option>').join('')+'</select>';
   html += '</div>';
-  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">';
+  html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">';
   html += '<select onchange="STATE.histoFilters.categorie=this.value;render()" style="border:1px solid #ddd;border-radius:6px;padding:5px;font-size:13px;"><option value="">Toutes catégories</option>'+CATEGORIES.map(c=>'<option value="'+c+'"'+(f.categorie===c?' selected':'')+'>'+c+'</option>').join('')+'</select>';
   html += '<input type="text" placeholder="Chercher client ou article..." value="'+f.search+'" oninput="STATE.histoFilters.search=this.value;clearTimeout(window._histoTimer);window._histoTimer=setTimeout(render,300)" style="border:1px solid #ddd;border-radius:6px;padding:5px;font-size:13px;"/>';
   html += '</div>';
-  if(f.dateDebut||f.dateFin||f.vendeur||f.payMode||f.categorie||f.search) {
-    html += '<button onclick="STATE.histoFilters={dateDebut:\'\',dateFin:\'\',vendeur:\'\',categorie:\'\',payMode:\'\',search:\'\'};render()" style="margin-top:8px;padding:5px 12px;background:#f5f0f2;border:none;border-radius:6px;cursor:pointer;font-size:12px;color:#888;">✕ Effacer filtres</button>';
+  html += '<input type="text" inputmode="decimal" placeholder="🔎 Chercher par montant (ex: 69,50)" value="'+(f.montant||'')+'" oninput="STATE.histoFilters.montant=this.value;clearTimeout(window._histoTimer);window._histoTimer=setTimeout(render,300)" style="width:100%;box-sizing:border-box;border:1px solid #ddd;border-radius:6px;padding:5px;font-size:13px;"/>';
+  html += '<div style="font-size:10px;color:#aaa;margin-top:3px;">Retrouve le ticket dont le total (ou l\'un des deux montants d\'un paiement mixte) correspond.</div>';
+  if(f.dateDebut||f.dateFin||f.vendeur||f.payMode||f.categorie||f.search||f.montant) {
+    html += '<button onclick="STATE.histoFilters={dateDebut:\'\',dateFin:\'\',vendeur:\'\',categorie:\'\',payMode:\'\',search:\'\',montant:\'\'};render()" style="margin-top:8px;padding:5px 12px;background:#f5f0f2;border:none;border-radius:6px;cursor:pointer;font-size:12px;color:#888;">✕ Effacer filtres</button>';
   }
   html += '</div>';
 
@@ -6991,7 +7001,7 @@ function renderHistorique() {
       html += '</div>';
       html += '<div style="text-align:right;flex-shrink:0;">';
       html += '<div style="font-size:14px;font-weight:700;color:'+(annulee?"#aaa":"#993556")+';">'+(annulee?'<s>':'')+eur(v.total)+(annulee?'</s>':'')+'</div>';
-      html += '<div style="font-size:10px;color:#aaa;">'+(mL[v.payMode]||v.payMode)+(v.vendeur?" · "+v.vendeur.nom:"")+'</div>';
+      html += '<div style="font-size:10px;color:#aaa;">'+(v.mixed&&Array.isArray(v.pays)?"Mixte : "+v.pays.map(p=>(mL[p.mode]||p.mode||"?")+" "+eur(parseFloat(p.montant||0))).join(" + "):(mL[v.payMode]||v.payMode))+(v.vendeur?" · "+v.vendeur.nom:"")+'</div>';
       if(annulee) html += '<div style="font-size:10px;color:#a32d2d;">✕ Annulée</div>';
       if(hasRetour) html += '<div style="font-size:10px;color:#e07c00;">↩ Retour</div>';
       html += '</div>';
