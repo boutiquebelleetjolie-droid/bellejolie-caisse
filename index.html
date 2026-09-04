@@ -4115,7 +4115,15 @@ function renderPayModal() {
 
 window.pays0Mode    = m => { STATE.pays[0].mode=m; render(); };
 window.pays1Mode    = m => { STATE.pays[1].mode=m; render(); };
-window.pays0Montant = v => { STATE.pays[0].montant=v; render(); };
+window.pays0Montant = v => {
+  STATE.pays[0].montant = v;
+  // En paiement mixte, on propose automatiquement le reste sur le 2e montant (l'utilisateur peut toujours le modifier ensuite)
+  if(STATE.payMixed) {
+    const reste = getCaisseTotal() - parseFloat(v||0);
+    STATE.pays[1].montant = reste>0.001 ? String(parseFloat(reste.toFixed(2))) : "";
+  }
+  render();
+};
 window.pays1Montant = v => { STATE.pays[1].montant=v; render(); };
 window.openPayModal = () => {
   if(!STATE.panier.length) return;
