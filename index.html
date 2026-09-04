@@ -2560,7 +2560,10 @@ function renderCaisse() {
                 </div>`;
               })()}
             </div>
-            <button onclick="setState({client:null});STATE._ficheIncomplete=null;" style="background:none;border:none;font-size:20px;color:#aaa;flex-shrink:0;">×</button>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0;">
+              <button onclick="openClientModal(STATE.client.id)" title="Modifier la fiche client" style="background:none;border:none;font-size:15px;color:#993556;cursor:pointer;padding:2px;">✏️</button>
+              <button onclick="setState({client:null});STATE._ficheIncomplete=null;" style="background:none;border:none;font-size:20px;color:#aaa;">×</button>
+            </div>
           </div>
           ${(()=>{
             const manque = STATE._ficheIncomplete||[];
@@ -6546,6 +6549,11 @@ window.saveClient = () => {
   if(STATE.editClientId) {
     // Modification client existant
     STATE.clients=STATE.clients.map(c=>c.id===STATE.editClientId?{...c,...f}:c);
+    // Si c'est la cliente actuellement sélectionnée en caisse, on rafraîchit aussi l'affichage immédiatement
+    if(STATE.client?.id===STATE.editClientId) {
+      STATE.client = STATE.clients.find(c=>c.id===STATE.editClientId);
+      STATE._ficheIncomplete = calculerFicheIncomplete(STATE.client);
+    }
     setState({clients:STATE.clients,showClientModal:false,showNewClient:false});
   } else {
     // Nouveau client → créer un bon de bienvenue
