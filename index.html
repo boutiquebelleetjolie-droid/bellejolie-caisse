@@ -86,7 +86,7 @@ const BOUTIQUE_CONFIG = {
   // Données "locales" propres à cette boutique (ventes, stock, Z de caisse, réservations)
   // Cette distinction sera utilisée lors de la migration vers Firebase
   DONNEES_GLOBALES: ["bj_clients","bj_avoirs","bj_promotions"],
-  DONNEES_LOCALES:  ["bj_products","bj_ventes","bj_caisseJour","bj_reservations","bj_annul_lignes","bj_attente","bj_depots_vente"],
+  DONNEES_LOCALES:  ["bj_products","bj_ventes","bj_caisseJour","bj_reservations","bj_annul_lignes","bj_attente","bj_depots_vente","bj_depots_banque"],
 };
 
 // ════════════════════════════════════════════════════════════════
@@ -566,6 +566,7 @@ let STATE = {
   sauvegarde:     ls("bj_sauvegarde",      null),
   sauvegardeEmail:ls("bj_sauvegarde_email",""),
   caisseJour:  ls("bj_caisse_jour", []),
+  depotsBanque: ls("bj_depots_banque", []),
   fondOuverture: {},
   fondFermeture: {},      // Z de caisse journaliers
   transferts:      ls("bj_transferts",       []),
@@ -659,6 +660,7 @@ function setState(patch) {
   if(patch.depenses    !== undefined) lsSet("bj_depenses",    STATE.depenses);
   if(patch.annulLignes !== undefined) lsSet("bj_annul_lignes", STATE.annulLignes);
   if(patch.caisseJour    !== undefined) lsSet("bj_caisse_jour",   STATE.caisseJour);
+  if(patch.depotsBanque  !== undefined) lsSet("bj_depots_banque", STATE.depotsBanque);
   if(patch.reservations  !== undefined) lsSet("bj_reservations",  STATE.reservations);
   if(patch.transferts  !== undefined) lsSet("bj_transferts",   STATE.transferts);
   if(patch.memos    !== undefined) lsSet("bj_memos",    STATE.memos);
@@ -1638,6 +1640,7 @@ window.exporterDonnees = () => {
     remiseProgressive:STATE.remiseProgressive||{},
     reservations:STATE.reservations||[], historiquePromo:STATE.historiquePromo||[],
     depotsVente:STATE.depotsVente||[],
+    depotsBanque:STATE.depotsBanque||[],
     // Config EmailJS incluse pour ne pas la perdre si le navigateur efface ses données
     emailjsServiceId:STATE.emailjsServiceId||"", emailjsTemplateId:STATE.emailjsTemplateId||"", emailjsPublicKey:STATE.emailjsPublicKey||"",
     geminiApiKey:STATE.geminiApiKey||"",
@@ -1658,7 +1661,7 @@ window.exporterDonnees = () => {
 
 window.pousserToutVersCloud = async () => {
   if(!_fbDb) { alert("⚠️ Firebase n'est pas connecté sur cet appareil."); return; }
-  const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisseJour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
+  const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisseJour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
   let compte = 0, erreurs = 0;
   for(const k of cles) {
     try {
@@ -1695,7 +1698,7 @@ window.restaurerDepuisCloud = async () => {
   if(!confirm("🔄 Ça va remplacer TOUTES les données actuellement affichées sur cet appareil par celles sauvegardées dans le cloud.\n\nContinuer ?")) return;
   try {
     const data = await firestorePullAll();
-    const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisseJour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
+    const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisseJour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
     let compte = 0;
     cles.forEach(k => { if(data[k]!==undefined) { localStorage.setItem(k, JSON.stringify(data[k])); compte++; } });
     alert("✅ "+compte+" éléments restaurés depuis le cloud !\n\nL'application va se recharger.");
@@ -1789,6 +1792,7 @@ window.importerDonnees = (input) => {
       if(data.remiseProgressive) {STATE.remiseProgressive=data.remiseProgressive;lsSet("bj_remise_progressive",data.remiseProgressive);}
       if(data.reservations) {STATE.reservations=data.reservations;lsSet("bj_reservations",data.reservations);}
       if(data.depotsVente) {STATE.depotsVente=data.depotsVente;lsSet("bj_depots_vente",data.depotsVente);}
+      if(data.depotsBanque) {STATE.depotsBanque=data.depotsBanque;lsSet("bj_depots_banque",data.depotsBanque);}
       if(data.historiquePromo){STATE.historiquePromo=data.historiquePromo;lsSet("bj_historique_promo",data.historiquePromo);}
       // Config EmailJS : restaurée si présente dans la sauvegarde (évite de la reperdre si le navigateur efface ses données)
       if(data.emailjsServiceId)  { STATE.emailjsServiceId=data.emailjsServiceId;   lsSet("bj_ejs_service",data.emailjsServiceId); }
@@ -8658,7 +8662,7 @@ function renderCompta() {
   <div>
     <!-- Tabs vue -->
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
-      ${[["mensuel","📅 Saisie mensuelle"],["factures","🧾 Détail factures"],["annuel","📊 Tableau de bord annuel"],["declaration","📋 Déclaration CA3"]].map(([k,l])=>`
+      ${[["mensuel","📅 Saisie mensuelle"],["factures","🧾 Détail factures"],["annuel","📊 Tableau de bord annuel"],["declaration","📋 Déclaration CA3"],["depot","🏦 Bordereau de dépôt"]].map(([k,l])=>`
         <button onclick="STATE.comptaView='${k}';render()" style="padding:7px 14px;border-radius:8px;border:none;background:${STATE.comptaView===k?"#993556":"#f5f0f2"};color:${STATE.comptaView===k?"#fff":"#333"};cursor:pointer;font-weight:${STATE.comptaView===k?500:400};font-size:13px;">${l}</button>
       `).join("")}
     </div>
@@ -8891,8 +8895,149 @@ function renderCompta() {
       🖨️ Imprimer la déclaration CA3
     </button>
     `:""}
+
+    ${STATE.comptaView==="depot"?renderDepotBanque():""}
   </div>`;
 }
+
+// ─── BORDEREAU DE DÉPÔT EN BANQUE (espèces) ─────────────────────
+function renderDepotBanque() {
+  if(!STATE.depotSelection) STATE.depotSelection = {};
+  if(!STATE.depotDateEffective) STATE.depotDateEffective = dateLocaleStr();
+
+  // Jours de caisse avec un montant à déposer, du plus récent au plus ancien
+  const jours = [...(STATE.caisseJour||[])]
+    .filter(z => (z.aDeposer||0) > 0.001)
+    .sort((a,b) => b.date.localeCompare(a.date));
+
+  // Retrouve, pour un jour donné, le dépôt dans lequel il a déjà été inclus (s'il y en a un)
+  const depotDeJour = (dateStr) => (STATE.depotsBanque||[]).find(d => (d.jours||[]).some(j=>j.date===dateStr));
+
+  const totalSelection = jours.reduce((s,z) => {
+    if(depotDeJour(z.date)) return s; // déjà déposé, ne compte pas dans une nouvelle sélection
+    return STATE.depotSelection[z.date] ? s+z.aDeposer : s;
+  }, 0);
+
+  const historique = [...(STATE.depotsBanque||[])].sort((a,b) => (b.creeLe||"").localeCompare(a.creeLe||""));
+
+  return `
+  <div style="max-width:560px;margin:0 auto;">
+    <div style="font-weight:600;font-size:15px;margin-bottom:6px;">🏦 Bordereau de dépôt en banque</div>
+    <div style="font-size:12px;color:#888;margin-bottom:14px;">Cochez les journées dont les espèces sont dans le dépôt à faire, indiquez la date du dépôt, puis imprimez le bordereau.</div>
+
+    <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:6px 14px;margin-bottom:14px;">
+      ${jours.length===0?`<div style="padding:14px 0;color:#aaa;font-size:13px;text-align:center;">Aucune clôture avec des espèces à déposer.</div>`:
+        jours.map(z => {
+          const depot = depotDeJour(z.date);
+          const checked = !depot && !!STATE.depotSelection[z.date];
+          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:0.5px solid #f0ebee;">
+            <label style="display:flex;align-items:center;gap:10px;${depot?"opacity:0.5;":"cursor:pointer;"}">
+              <input type="checkbox" ${checked?"checked":""} ${depot?"disabled":""} onchange="toggleDepotJour('${z.date}')" style="width:16px;height:16px;"/>
+              <span style="font-size:13px;">${new Date(z.date).toLocaleDateString("fr-FR",{weekday:"short",day:"numeric",month:"short",year:"numeric"})}</span>
+            </label>
+            <div style="display:flex;align-items:center;gap:10px;">
+              ${depot?`<span style="font-size:11px;color:#3b6d11;background:#eaf3de;padding:2px 8px;border-radius:6px;">✅ Déposé le ${new Date(depot.dateDepot).toLocaleDateString("fr-FR")}</span>`:""}
+              <span style="font-weight:600;font-size:13px;color:#993556;">${eur(z.aDeposer)}</span>
+            </div>
+          </div>`;
+        }).join("")}
+    </div>
+
+    <div style="background:#fbeaf0;border-radius:10px;padding:14px;margin-bottom:14px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <span style="font-weight:500;font-size:13px;color:#993556;">Total sélectionné</span>
+        <span style="font-weight:700;font-size:17px;color:#993556;">${eur(totalSelection)}</span>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+        <label style="font-size:12px;color:#555;">Date du dépôt</label>
+        <input type="date" value="${STATE.depotDateEffective}" onchange="STATE.depotDateEffective=this.value" style="border:1px solid #ddd;border-radius:7px;padding:6px 8px;font-size:13px;"/>
+      </div>
+    </div>
+
+    <button onclick="imprimerBordereauDepot()" ${totalSelection<=0?"disabled":""} class="btn-primary" style="width:100%;opacity:${totalSelection<=0?0.5:1};">
+      🖨️ Imprimer le bordereau (${eur(totalSelection)})
+    </button>
+
+    ${historique.length>0?`
+    <div style="font-weight:500;font-size:13px;margin:22px 0 8px;color:#555;">📜 Dépôts précédents</div>
+    <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;">
+      ${historique.map(d => `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:0.5px solid #f0ebee;">
+          <div>
+            <div style="font-size:13px;font-weight:500;">Déposé le ${new Date(d.dateDepot).toLocaleDateString("fr-FR")}</div>
+            <div style="font-size:11px;color:#888;">${(d.jours||[]).length} journée${(d.jours||[]).length>1?"s":""} — ${(d.jours||[]).map(j=>new Date(j.date).toLocaleDateString("fr-FR",{day:"numeric",month:"numeric"})).join(", ")}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-weight:600;color:#3b6d11;">${eur(d.total)}</span>
+            <button onclick="supprimerDepotBanque('${d.id}')" title="Supprimer ce dépôt (les journées redeviennent disponibles)" style="background:none;border:none;color:#a32d2d;cursor:pointer;font-size:14px;">🗑️</button>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+    `:""}
+  </div>`;
+}
+
+window.toggleDepotJour = (dateStr) => {
+  STATE.depotSelection = STATE.depotSelection||{};
+  STATE.depotSelection[dateStr] = !STATE.depotSelection[dateStr];
+  render();
+};
+
+window.imprimerBordereauDepot = () => {
+  const depotDeJour = (dateStr) => (STATE.depotsBanque||[]).find(d => (d.jours||[]).some(j=>j.date===dateStr));
+  const jours = [...(STATE.caisseJour||[])]
+    .filter(z => (z.aDeposer||0) > 0.001 && !depotDeJour(z.date) && STATE.depotSelection?.[z.date])
+    .sort((a,b) => a.date.localeCompare(b.date))
+    .map(z => ({date:z.date, montant:z.aDeposer}));
+
+  if(jours.length===0) { alert("Sélectionnez au moins une journée avant d'imprimer le bordereau."); return; }
+
+  const total = jours.reduce((s,j)=>s+j.montant,0);
+  const dateDepot = STATE.depotDateEffective || dateLocaleStr();
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Bordereau de dépôt</title>
+  <style>
+    body{font-family:Arial,sans-serif;padding:30px;max-width:600px;margin:0 auto;color:#111;}
+    h1{color:#993556;border-bottom:2px solid #993556;padding-bottom:8px;font-size:20px;}
+    table{width:100%;border-collapse:collapse;margin-top:14px;}
+    th,td{padding:9px 10px;text-align:left;border-bottom:1px solid #eee;}
+    th{background:#f5f0f2;font-weight:600;font-size:13px;}
+    td{font-size:13px;}
+    .right{text-align:right;}
+    .total{font-weight:700;background:#fbeaf0;font-size:14px;}
+    .signature{margin-top:50px;display:flex;justify-content:space-between;}
+    .signature div{width:45%;border-top:1px solid #888;padding-top:6px;font-size:12px;color:#555;text-align:center;}
+    @media print{body{padding:10px;}}
+  </style></head><body>
+  <h1>Belle&amp;Jolie — Bordereau de dépôt en banque</h1>
+  <p style="color:#888;font-size:12px;">Édité le ${new Date().toLocaleDateString("fr-FR")}</p>
+  <p style="font-size:14px;"><strong>Date du dépôt : ${new Date(dateDepot).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</strong></p>
+  <table>
+    <tr><th>☑</th><th>Journée</th><th class="right">Montant</th></tr>
+    ${jours.map(j=>`<tr><td>☑</td><td>${new Date(j.date).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</td><td class="right">${eur(j.montant)}</td></tr>`).join("")}
+    <tr class="total"><td></td><td>TOTAL DÉPOSÉ</td><td class="right">${eur(total)}</td></tr>
+  </table>
+  <div class="signature">
+    <div>Signature</div>
+    <div>Cachet banque</div>
+  </div>
+  <script>window.onload=()=>window.print()<\/script>
+  </body></html>`;
+
+  const w = window.open("","_blank","width=750,height=900");
+  if(w) { w.document.write(html); w.document.close(); }
+
+  STATE.depotsBanque = [...(STATE.depotsBanque||[]), {id:uid("DEP"), dateDepot, jours, total, creeLe:new Date().toISOString()}];
+  STATE.depotSelection = {};
+  setState({depotsBanque:STATE.depotsBanque});
+};
+
+window.supprimerDepotBanque = (depotId) => {
+  if(!confirm("Supprimer ce dépôt ? Les journées concernées redeviendront disponibles pour un futur dépôt.")) return;
+  STATE.depotsBanque = (STATE.depotsBanque||[]).filter(d=>d.id!==depotId);
+  setState({depotsBanque:STATE.depotsBanque});
+};
 
 window.ajouterFacture = () => {
   const num      = document.getElementById("fac-num")?.value||("");
@@ -9575,11 +9720,11 @@ function renderActionsResaModal() {
             style="padding:12px;background:#993556;color:#fff;border:none;border-radius:9px;cursor:pointer;font-size:14px;font-weight:600;">
             💳 Mettre en caisse
           </button>
-          <button onclick="imprimerTicketReservation('${r.id}')"
+          <button onclick="setState({showActionsResa:null});imprimerTicketReservation('${r.id}')"
             style="padding:10px;background:#e6f1fb;color:#185fa5;border:none;border-radius:9px;cursor:pointer;font-size:13px;font-weight:500;">
             🖨️ Imprimer le ticket de réservation
           </button>
-          <button onclick="if(r.clientTel||r.clientEmail)envoyerRappelReservation('${r.id}')"
+          <button onclick="if(r.clientTel||r.clientEmail){setState({showActionsResa:null});envoyerRappelReservation('${r.id}')}"
             style="padding:10px;background:#f5f5f5;color:#555;border:none;border-radius:9px;cursor:pointer;font-size:13px;">
             📧 Envoyer un rappel
           </button>
