@@ -3368,7 +3368,7 @@ window.imprimerTicketCadeau = () => {
     </body></html>
   `);
   win.document.close();
-  setTimeout(()=>win.print(), 300);
+  setTimeout(()=>{ win.print(); setTimeout(()=>win.close(),500); }, 300);
 };
 
 function renderTicketModal() {
@@ -3403,7 +3403,7 @@ function renderTicketModal() {
             <div style="text-align:center;font-size:10px;color:#888;">Belle&Jolie — Mode & Élégance</div>
           </div>
           <style>@media print{body *{visibility:hidden !important}#ticket-print-area,#ticket-print-area *{visibility:visible !important}#ticket-print-area{position:fixed;top:0;left:0;width:280px;background:#fff;}}</style>
-          <button onclick="window.print()" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le reçu</button>
+          <button onclick="window.print();setState({showTicket:null})" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le reçu</button>
           <button onclick="setState({showTicket:null})" class="btn-ghost" style="width:100%;padding:10px;">Fermer</button>
         </div>
       </div>
@@ -3449,7 +3449,7 @@ function renderTicketModal() {
             <div style="text-align:center;font-size:10px;color:#888;">Avoir valable 3 mois à compter de la date d'émission.<br>Belle&Jolie — Mode & Élégance</div>
           </div>
           <style>@media print{body *{visibility:hidden !important}#ticket-print-area,#ticket-print-area *,#ticket-print-area svg,#ticket-print-area svg *{visibility:visible !important}#ticket-print-area{position:fixed;top:0;left:0;width:280px;background:#fff;}}</style>
-          <button onclick="window.print()" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le bon d'avoir</button>
+          <button onclick="window.print();setState({showTicket:null})" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le bon d'avoir</button>
           `:`
           <div style="background:#eaf3de;border-radius:8px;padding:10px;margin-bottom:14px;font-size:13px;color:#3b6d11;text-align:center;">
             ✅ Remboursement en espèces — pas d'avoir généré
@@ -3498,7 +3498,7 @@ function renderTicketModal() {
             <div style="text-align:center;font-size:10px;color:#888;">Valable jusqu'au ${v.avoir.expiration?new Date(v.avoir.expiration).toLocaleDateString("fr-FR"):"—"}<br>Sur présentation de ce bon.<br>Belle&Jolie — Mode & Élégance</div>
           </div>
           <style>@media print{body *{visibility:hidden}#ticket-print-area,#ticket-print-area *,#ticket-print-area svg,#ticket-print-area svg *{visibility:visible!important}#ticket-print-area{position:fixed;top:0;left:0;width:280px;font-size:12px;}}</style>
-          <button onclick="window.print()" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le bon d'avoir</button>
+          <button onclick="window.print();setState({showTicket:null})" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le bon d'avoir</button>
           <button onclick="ouvrirEnvoiTicket()" style="width:100%;padding:10px;background:#e6f1fb;color:#185fa5;border:1px solid #b3d0f0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:8px;">
             📧 Envoyer le bon par Email
           </button>
@@ -3642,7 +3642,7 @@ function renderTicketModal() {
             <div style="font-size:9px;color:#aaa;margin-top:6px;">Article échangeable sous 30 jours sur présentation du ticket.<br>Non porté, non lavé, sans odeur, étiquette intacte. Aucun remboursement.</div>
           </div>
         </div>
-        <button onclick="window.print()" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le ticket</button>
+        <button onclick="window.print();setState({showTicket:null})" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le ticket</button>
         <button onclick="imprimerTicketCadeau()" style="width:100%;padding:10px;background:#fbf3e6;color:#854f0b;border:1px solid #f0dcb0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:8px;">
           🎁 Ticket cadeau (sans prix)
         </button>
