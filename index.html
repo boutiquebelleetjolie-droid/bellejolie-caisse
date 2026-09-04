@@ -2511,7 +2511,7 @@ function renderCaisse() {
                 return html;
               })()}
               ${(()=>{
-                const avoirsClient=(STATE.avoirs||[]).filter(a=>a.clientId===STATE.client.id&&!a.utilise&&a.solde>0&&(!a.expiration||new Date(a.expiration)>=new Date())&&a.typeAvoir!=="anniversaire");
+                const avoirsClient=(STATE.avoirs||[]).filter(a=>a.clientId===STATE.client.id&&!a.utilise&&a.solde>0&&(!a.expiration||new Date(a.expiration)>=new Date())&&a.typeAvoir!=="anniversaire"&&a.typeAvoir!=="bienvenue");
                 const bonBienv=(STATE.avoirs||[]).find(a=>a.clientId===STATE.client.id&&!a.utilise&&a.solde>0&&a.typeAvoir==="bienvenue"&&(!a.expiration||new Date(a.expiration)>=new Date())&&(!a.date||new Date(a.date)<=new Date()));
                 const bonFid400=(STATE.avoirs||[]).find(a=>a.clientId===STATE.client.id&&!a.utilise&&a.typeAvoir==="fidelite400"&&(!a.expiration||new Date(a.expiration)>=new Date()));
                 const bonAnniv = verifierBonAnniversaireClient(STATE.client);
@@ -3101,6 +3101,10 @@ function getDateRemiseReseaux(c) {
 window.utiliserAvoirId = (avoirId) => {
   const avoir = (STATE.avoirs||[]).find(a=>a.id===avoirId&&!a.utilise&&a.solde>0&&(!a.expiration||new Date(a.expiration)>=new Date()));
   if(!avoir) return;
+  if(avoir.date && new Date(avoir.date) > new Date()) {
+    alert("⚠️ Ce bon n'est pas encore utilisable.\n\nDisponible à partir du "+new Date(avoir.date).toLocaleDateString("fr-FR")+".");
+    return;
+  }
   if(avoir.typeAvoir==="bienvenue") {
     const sousTotal = calcPanier().stTotal;
     if(sousTotal < 20) { alert("⚠️ Le bon de bienvenue n'est utilisable qu'à partir de 20€ d'achat (panier actuel : "+eur(sousTotal)+")."); return; }
