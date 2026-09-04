@@ -510,6 +510,12 @@ const eur = v => Number(v||0).toFixed(2).replace(".",",") + " €";
 const uid = p => p + Date.now().toString(36).toUpperCase();
 const genBC = () => "376000" + String(Math.floor(Math.random()*9999999)).padStart(7,"0");
 
+// Normalise une chaîne pour la recherche : minuscules + accents retirés (é/è/ê -> e, etc.)
+// À utiliser partout où on compare une saisie utilisateur à des données (client, produit, référence, marque...)
+function normStr(s) {
+  return (s==null?"":String(s)).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+}
+
 // Date locale au format YYYY-MM-DD, à utiliser partout à la place de .toISOString().slice(0,10)
 // qui convertit en UTC et décale d'un jour en France (UTC+1/+2)
 function dateLocaleStr(d) {
@@ -1111,7 +1117,7 @@ function renderDepotVente() {
 function renderNouveauDepotModal() {
   const d = STATE._newDepot;
   const resultatsRecherche = d.rechercheTel && d.rechercheTel.length>=2
-    ? STATE.clients.filter(c => c.tel?.includes(d.rechercheTel) || `${c.prenom} ${c.nom}`.toLowerCase().includes(d.rechercheTel.toLowerCase())).slice(0,5)
+    ? STATE.clients.filter(c => c.tel?.includes(d.rechercheTel) || normStr(`${c.prenom} ${c.nom}`).includes(normStr(d.rechercheTel))).slice(0,5)
     : [];
 
   return `
@@ -2678,7 +2684,7 @@ function renderCaisse() {
             <input id="client-search" value="${STATE.searchClient||''}" oninput="clientSearchInput(this.value)" placeholder="Rechercher client..." style="flex:1;" autocomplete="off" autocorrect="off" autocapitalize="off"/>
             <button onclick="openNewClientModal()" class="btn-ghost" style="white-space:nowrap;">+ Nouveau</button>
            <div id="client-results" style="border:0.5px solid #e8e0e4;border-radius:8px;overflow:hidden;display:${STATE.searchClient?'block':'none'};">
-             ${(STATE.clients.filter(c=>(c.prenom+" "+c.nom+" "+c.tel).toLowerCase().includes((STATE.searchClient||'').toLowerCase())).slice(0,5).map(c=>`
+             ${(STATE.clients.filter(c=>normStr(c.prenom+" "+c.nom+" "+c.tel).includes(normStr(STATE.searchClient||''))).slice(0,5).map(c=>`
                <div onclick="selectClient('${c.id}')" style="padding:8px 10px;border-bottom:0.5px solid #e8e0e4;cursor:pointer;font-size:13px;">
                  ${c.prenom} ${c.nom} · ${c.tel}
                </div>
@@ -2709,7 +2715,7 @@ function renderCaisse() {
         </div>
         ${STATE.searchRetour?`
           <div style="border:0.5px solid #e8e0e4;border-radius:8px;overflow:hidden;max-height:130px;overflow-y:auto;">
-            ${STATE.products.filter(p=>(p.name+p.ref).toLowerCase().includes(STATE.searchRetour.toLowerCase())).slice(0,6).map(p=>`
+            ${STATE.products.filter(p=>normStr(p.name+p.ref).includes(normStr(STATE.searchRetour))).slice(0,6).map(p=>`
               <div style="padding:7px 10px;border-bottom:0.5px solid #e8e0e4;font-size:13px;display:flex;justify-content:space-between;align-items:center;">
                 <div><div style="font-weight:500;">${p.name}</div><div style="font-size:11px;color:#888;">${p.ref} — ${eur(p.price)}</div></div>
                 <button onclick="addRetour('${p.id}')" style="background:#fff3e8;border:1px solid #e07c00;border-radius:6px;padding:4px 8px;font-size:11px;color:#e07c00;cursor:pointer;">↩ Retour</button>
@@ -3778,9 +3784,9 @@ window.searchProdInput = v => {
     container.style.marginTop="10px";
     // Recherche mot par mot (chaque mot tapé doit se retrouver quelque part dans nom+référence+marque,
     // peu importe l'ordre) plutôt qu'une seule phrase exacte — et la marque est maintenant prise en compte.
-    const mots = v.toLowerCase().split(/\s+/).filter(Boolean);
+    const mots = normStr(v).split(/\s+/).filter(Boolean);
     const matches = STATE.products.filter(p=>{
-      const texte = (p.name+" "+p.ref+" "+(p.marque||"")).toLowerCase();
+      const texte = normStr(p.name+" "+p.ref+" "+(p.marque||""));
       return mots.every(m=>texte.includes(m));
     }).slice(0,12);
     container.innerHTML = matches.length===0
@@ -3804,8 +3810,8 @@ window.clientSearchInput = v => {
   if(!div) return;
   if(!v) { div.style.display='none'; return; }
   div.style.display = 'block';
-  const q = v.toLowerCase();
-  const matches = STATE.clients.filter(c=>(c.prenom+' '+c.nom+' '+c.tel).toLowerCase().includes(q)).slice(0,6);
+  const q = normStr(v);
+  const matches = STATE.clients.filter(c=>normStr(c.prenom+' '+c.nom+' '+c.tel).includes(q)).slice(0,6);
   if(matches.length === 0) {
     div.innerHTML = '<div style="padding:8px 10px;font-size:12px;color:#aaa;">Aucun client trouvé</div>';
   } else {
@@ -5276,11 +5282,11 @@ function renderStock() {
   if(!STATE.stockTab) STATE.stockTab = "liste";
   if(STATE.stockTab === "reception") return renderStockReception();
 
-  const q = (STATE.searchProd||"").toLowerCase();
+  const q = normStr(STATE.searchProd||"");
   const filtreDateStock = STATE.dateEtiqFiltreActif ? (STATE.dateEtiq||"") : "";
   const motsStock = q.split(/\s+/).filter(Boolean);
   let filtered = STATE.products.filter(p=>{
-    const texte = (p.name+" "+p.ref+" "+(p.marque||"")).toLowerCase();
+    const texte = normStr(p.name+" "+p.ref+" "+(p.marque||""));
     return motsStock.every(m=>texte.includes(m));
   });
   if(filtreDateStock) {
@@ -6281,8 +6287,8 @@ window.saveMvt = () => {
 
 // ─── CRM ────────────────────────────────────────────────────────
 function renderCRM() {
-  const s=(STATE.searchProd||"").toLowerCase();
-  const filtered=STATE.clients.filter(c=>`${c.prenom} ${c.nom} ${c.tel} ${c.cp}`.toLowerCase().includes(s));
+  const s=normStr(STATE.searchProd||"");
+  const filtered=STATE.clients.filter(c=>normStr(`${c.prenom} ${c.nom} ${c.tel} ${c.cp}`).includes(s));
   return `
   <div>
     <div style="display:flex;gap:10px;margin-bottom:14px;">
@@ -6870,7 +6876,7 @@ function renderHistorique() {
   if(f.dateFin)   { const d=new Date(f.dateFin);   d.setHours(23,59,59,999); vf=vf.filter(v=>new Date(v.date)<=d); }
   if(f.vendeur)   vf=vf.filter(v=>v.vendeur?.nom===f.vendeur);
   if(f.payMode)   vf=vf.filter(v=>v.payMode===f.payMode);
-  if(f.search)    vf=vf.filter(v=>(v.client?.nom||'').toLowerCase().includes(f.search.toLowerCase())||(v.client?.prenom||'').toLowerCase().includes(f.search.toLowerCase())||v.panier?.some(i=>i.name.toLowerCase().includes(f.search.toLowerCase())));
+  if(f.search)    vf=vf.filter(v=>normStr(v.client?.nom||'').includes(normStr(f.search))||normStr(v.client?.prenom||'').includes(normStr(f.search))||v.panier?.some(i=>normStr(i.name).includes(normStr(f.search))));
   if(f.categorie) vf=vf.filter(v=>v.panier?.some(i=>{const p=STATE.products.find(x=>x.id===(i.prodIdOriginal||i.id));return p?.category===f.categorie;}));
 
   vf = vf.sort((a,b)=>new Date(b.date)-new Date(a.date));
@@ -10352,7 +10358,7 @@ function renderInventaire() {
 
   const filtered = prods.filter(p=>
     (!STATE.invCateg || p.category===STATE.invCateg) &&
-    (p.name+p.ref+p.category).toLowerCase().includes(STATE.invSearch.toLowerCase())
+    normStr(p.name+p.ref+p.category).includes(normStr(STATE.invSearch))
   );
 
   const temp = STATE.invTemp||{};
@@ -11943,7 +11949,7 @@ function renderPromoArticles() {
         </label>
         ${!np.tousArticles?(()=>{
           if(!STATE._promoSearchArt) STATE._promoSearchArt = "";
-          const q = STATE._promoSearchArt.toLowerCase();
+          const q = normStr(STATE._promoSearchArt);
 
           // Suggestions articles peu vendus / sans vente (depuis le réassort)
           const artsReassort = getArticlesAReassortir();
@@ -11972,7 +11978,7 @@ function renderPromoArticles() {
           // Regrouper par catégorie
           const parCateg = {};
           STATE.products
-            .filter(p => !q || p.name.toLowerCase().includes(q) || (p.category||"").toLowerCase().includes(q) || (p.ref||"").toLowerCase().includes(q))
+            .filter(p => !q || normStr(p.name).includes(q) || normStr(p.category||"").includes(q) || normStr(p.ref||"").includes(q))
             .forEach(p => {
               const cat = p.category || "Sans catégorie";
               if(!parCateg[cat]) parCateg[cat] = [];
@@ -13931,13 +13937,13 @@ function renderModalReservation() {
   if(!STATE.showModalReservation) return "";
   const clients = STATE.clients.filter(c=>{
     if(!STATE.resaSearch) return true;
-    const q = STATE.resaSearch.toLowerCase();
-    return (c.prenom+" "+c.nom+" "+c.tel).toLowerCase().includes(q);
+    const q = normStr(STATE.resaSearch);
+    return normStr(c.prenom+" "+c.nom+" "+c.tel).includes(q);
   });
   const produits = STATE.products.filter(p=>{
     if(!STATE.resaProdSearch) return false;
-    const q = STATE.resaProdSearch.toLowerCase();
-    return p.stock>0 && (p.name+p.ref+p.category).toLowerCase().includes(q);
+    const q = normStr(STATE.resaProdSearch);
+    return p.stock>0 && normStr(p.name+p.ref+p.category).includes(q);
   });
   const resaClient  = STATE.resaClient;
   const resaArticles= STATE.resaArticles||[];
@@ -14068,7 +14074,7 @@ window.resaBcKeyDown = (e) => {
   if(!p) {
     // Chercher par nom aussi
     const byName = STATE.products.filter(x=>
-      x.stock>0 && x.name.toLowerCase().includes(q.toLowerCase())
+      x.stock>0 && normStr(x.name).includes(normStr(q))
     );
     if(byName.length===1) {
       ajouterArticleResa(byName[0].id);
