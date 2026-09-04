@@ -3106,14 +3106,14 @@ function getDateRemiseReseaux(c) {
   return null;
 }
 
-// Statut d'un avoir expiré : tolérance de 15j (utilisable normalement), bloqué entre 15 et 30j,
-// et au-delà d'un mois (30j) utilisable uniquement avec un code manager.
+// Statut d'un avoir expiré : tolérance de 15j (utilisable normalement), code manager requis
+// de 16j jusqu'à 6 mois, et au-delà de 6 mois totalement impossible à utiliser.
 function statutExpirationAvoir(avoir) {
   if(!avoir.expiration) return {joursDepasse:0, bloque:false, needsManager:false};
   const joursDepasse = Math.floor((Date.now()-new Date(avoir.expiration).getTime())/86400000);
   if(joursDepasse <= 15)  return {joursDepasse, bloque:false, needsManager:false};
-  if(joursDepasse <= 30)  return {joursDepasse, bloque:true,  needsManager:false};
-  return {joursDepasse, bloque:false, needsManager:true};
+  if(joursDepasse <= 182) return {joursDepasse, bloque:false, needsManager:true};
+  return {joursDepasse, bloque:true, needsManager:false};
 }
 // Demande le code d'un vendeur "admin" (gérante) pour débloquer une action sensible
 function verifierCodeManager(motif) {
@@ -3133,10 +3133,10 @@ window.utiliserAvoirId = (avoirId) => {
   }
   const st = statutExpirationAvoir(avoir);
   if(st.bloque) {
-    alert("⚠️ Ce bon est expiré depuis "+st.joursDepasse+" jours (au-delà de 15 jours de tolérance). Il ne peut plus être utilisé.");
+    alert("⚠️ Ce bon est expiré depuis "+st.joursDepasse+" jours (plus de 6 mois). Il ne peut plus être utilisé.");
     return;
   }
-  if(st.needsManager && !verifierCodeManager("Ce bon est expiré depuis "+st.joursDepasse+" jours (plus d'un mois).")) {
+  if(st.needsManager && !verifierCodeManager("Ce bon est expiré depuis "+st.joursDepasse+" jours (plus de 15 jours).")) {
     return;
   }
   if(avoir.typeAvoir==="bienvenue") {
@@ -3162,8 +3162,8 @@ window.appliquerBonFid400 = (avoirId) => {
   const avoir = (STATE.avoirs||[]).find(a=>a.id===avoirId&&a.typeAvoir==="fidelite400"&&!a.utilise);
   if(!avoir) { alert("Bon introuvable."); return; }
   const st = statutExpirationAvoir(avoir);
-  if(st.bloque) { alert("⚠️ Ce bon est expiré depuis "+st.joursDepasse+" jours (au-delà de 15 jours de tolérance). Il ne peut plus être utilisé."); return; }
-  if(st.needsManager && !verifierCodeManager("Ce bon est expiré depuis "+st.joursDepasse+" jours (plus d'un mois).")) return;
+  if(st.bloque) { alert("⚠️ Ce bon est expiré depuis "+st.joursDepasse+" jours (plus de 6 mois). Il ne peut plus être utilisé."); return; }
+  if(st.needsManager && !verifierCodeManager("Ce bon est expiré depuis "+st.joursDepasse+" jours (plus de 15 jours).")) return;
   // Active réellement la remise -15%/-20% (le montant exact, avec escalade éventuelle, est calculé dans calcPanier)
   STATE._fidAppliquee15 = STATE.client?.id;
   STATE._bonFid400EnCours = avoirId;
