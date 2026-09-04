@@ -1827,8 +1827,9 @@ function calcPanier() {
   let stTotalSansRemise = 0; // base pour la fidélité (-20% uniquement sur articles plein tarif)
   panier.forEach(x=>{
     const aRemiseArt = !x.retour && (parseFloat(x.remise||0)>0 || x._promoAuto);
-    const rem = (!x.retour && x.remiseType==="pct") ? x.price*(parseFloat(x.remise||0)/100)
-              : (!x.retour && x.remiseType==="eur") ? parseFloat(x.remise||0)/x.qty : 0;
+    // La remise doit s'appliquer aussi sur un retour : on rembourse le prix réellement payé (avec sa remise), pas le plein tarif
+    const rem = (x.remiseType==="pct") ? x.price*(parseFloat(x.remise||0)/100)
+              : (x.remiseType==="eur") ? parseFloat(x.remise||0)/x.qty : 0;
     const puNet = Math.max(0, x.price - rem);
     const mt = x.retour ? -puNet*x.qty : puNet*x.qty;
     stTotal += mt;
@@ -2364,8 +2365,8 @@ function renderCaisse() {
                   </div>`}
                 </td>
                 <td style="text-align:right;padding:8px 4px;">
-                  ${!it.retour && (it.remise || tauxRemiseGlobale>0.0001) ?
-                    `<span style="text-decoration:line-through;color:#aaa;font-size:11px;">${eur(it.price)}</span><br/><span style="color:#3b6d11;font-weight:500;">${eur(puNetFinal)}</span>`
+                  ${(it.remise || (!it.retour && tauxRemiseGlobale>0.0001)) ?
+                    `<span style="text-decoration:line-through;color:#aaa;font-size:11px;">${eur(it.price)}</span><br/><span style="color:${it.retour?"#e07c00":"#3b6d11"};font-weight:500;">${eur(it.retour?puNet:puNetFinal)}</span>`
                     : eur(it.price)}
                 </td>
                 <td style="text-align:center;padding:8px 4px;">
@@ -3550,7 +3551,11 @@ function renderTicketModal() {
           ${retours.length>0?`
             <div style="border-top:1px dashed #ccc;margin:4px 0;"></div>
             <div style="font-size:11px;color:#e07c00;font-weight:500;">Retours :</div>
-            ${retours.map(i=>`<div style="display:flex;justify-content:space-between;color:#e07c00;"><span>↩ ${i.qty}× ${i.name.slice(0,18)}</span><span>-${eur(i.price*i.qty)}</span></div>`).join("")}
+            ${retours.map(i=>{
+              const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
+              const puNet = Math.max(0,i.price-remArt);
+              return `<div style="display:flex;justify-content:space-between;color:#e07c00;"><span>↩ ${i.qty}× ${i.name.slice(0,18)}</span><span>-${eur(puNet*i.qty)}</span></div>`;
+            }).join("")}
           `:""}
           <div style="border-top:1px dashed #ccc;margin:6px 0;"></div>
           ${v.remise>0?`<div style="display:flex;justify-content:space-between;color:#2a6e1a;font-size:11px;"><span>Remise globale</span><span>-${eur(v.remise)}</span></div>`:""}
@@ -13667,6 +13672,7 @@ function buildTicketHTML(v) {
             <span class="art">↩ ${i.qty}× ${i.name.slice(0,22)}</span>
             <span class="prix">-${eur(i.price*i.qty)}</span>
           </div>
+          ${i.remise?`<div class="remise">  Remise : -${i.remise}${i.remiseType==="pct"?"%":"€"}</div>`:""}
         `).join("")}
       </div>
       <div class="sep"></div>
