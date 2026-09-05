@@ -86,7 +86,7 @@ const BOUTIQUE_CONFIG = {
   // Données "locales" propres à cette boutique (ventes, stock, Z de caisse, réservations)
   // Cette distinction sera utilisée lors de la migration vers Firebase
   DONNEES_GLOBALES: ["bj_clients","bj_avoirs","bj_promotions"],
-  DONNEES_LOCALES:  ["bj_products","bj_ventes","bj_caisseJour","bj_reservations","bj_annul_lignes","bj_attente","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux","bj_ouvertures"],
+  DONNEES_LOCALES:  ["bj_products","bj_ventes","bj_caisse_jour","bj_reservations","bj_annul_lignes","bj_attente","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux","bj_ouvertures"],
 };
 
 // ════════════════════════════════════════════════════════════════
@@ -139,7 +139,7 @@ async function firestorePullAll() {
 // Ignore ses propres écritures (via DEVICE_ID) pour éviter toute boucle.
 const CLES_SYNC_TEMPS_REEL = {
   bj_products: "products", bj_clients: "clients", bj_ventes: "ventes", bj_avoirs: "avoirs",
-  bj_ouvertures: "ouvertures",
+  bj_ouvertures: "ouvertures", bj_caisse_jour: "caisseJour",
 };
 window._syncBannerTimeout = null;
 function demarrerSyncTempsReel() {
@@ -1703,7 +1703,7 @@ window.exporterDonnees = () => {
 
 window.pousserToutVersCloud = async () => {
   if(!_fbDb) { alert("⚠️ Firebase n'est pas connecté sur cet appareil."); return; }
-  const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisseJour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux","bj_ouvertures","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
+  const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisse_jour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux","bj_ouvertures","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
   let compte = 0, erreurs = 0;
   for(const k of cles) {
     try {
@@ -1740,7 +1740,7 @@ window.restaurerDepuisCloud = async () => {
   if(!confirm("🔄 Ça va remplacer TOUTES les données actuellement affichées sur cet appareil par celles sauvegardées dans le cloud.\n\nContinuer ?")) return;
   try {
     const data = await firestorePullAll();
-    const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisseJour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux","bj_ouvertures","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
+    const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisse_jour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux","bj_ouvertures","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
     let compte = 0;
     cles.forEach(k => { if(data[k]!==undefined) { localStorage.setItem(k, JSON.stringify(data[k])); compte++; } });
     alert("✅ "+compte+" éléments restaurés depuis le cloud !\n\nL'application va se recharger.");
