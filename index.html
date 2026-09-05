@@ -5740,7 +5740,7 @@ window.openProdModal = id => {
   STATE.showProdModal=true; render();
 };
 window.openBCModal  = id => { STATE.showBCModal=STATE.products.find(p=>p.id===id); STATE.etiquetteTailleVal=''; STATE.etiquetteCouleurVal=''; render(); };
-window.openStkModal = id => { STATE.showStkModal=STATE.products.find(p=>p.id===id); STATE.mvtType="entree"; STATE.mvtQty=""; render(); };
+window.openStkModal = id => { STATE.showStkModal=STATE.products.find(p=>p.id===id); STATE.mvtType="entree"; STATE.mvtQty=""; STATE.mvtTaille=""; STATE.mvtCouleur=""; STATE.mvtDefectueux=false; render(); };
 window.deleteProd   = id => { if(confirm("Supprimer cet article ?"))setState({products:STATE.products.filter(p=>p.id!==id)}); };
 
 function renderProdModal() {
@@ -6359,6 +6359,31 @@ function renderStkModal() {
           <span style="font-size:13px;color:#a32d2d;">🔧 Article défectueux (retiré du stock, pas une vente)</span>
         </label>
         `:""}
+        ${STATE.mvtType==="sortie" && ((p.tailles||[]).length>0 || (p.couleurs||[]).length>0) ? `
+        <div style="display:grid;grid-template-columns:${(p.tailles||[]).length>0 && (p.couleurs||[]).length>0?"1fr 1fr":"1fr"};gap:8px;margin-bottom:10px;">
+          ${(p.tailles||[]).length>0?`
+          <div>
+            <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Taille</label>
+            <select onchange="STATE.mvtTaille=this.value;render()" style="width:100%;">
+              <option value="">—</option>
+              ${(p.tailles||[]).map(t=>`<option value="${t}" ${STATE.mvtTaille===t?"selected":""}>${t}</option>`).join("")}
+            </select>
+          </div>`:""}
+          ${(p.couleurs||[]).length>0?`
+          <div>
+            <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Couleur</label>
+            <select onchange="STATE.mvtCouleur=this.value;render()" style="width:100%;">
+              <option value="">—</option>
+              ${(p.couleurs||[]).map(c=>`<option value="${c}" ${STATE.mvtCouleur===c?"selected":""}>${c}</option>`).join("")}
+            </select>
+          </div>`:""}
+        </div>
+        ${(()=>{
+          const key = (STATE.mvtTaille||'_')+'_'+(STATE.mvtCouleur||'_');
+          const svQty = parseInt((p.stockVariantes||{})[key])||0;
+          return `<div style="font-size:11px;color:#888;margin:-4px 0 10px;">Stock de cette variante : ${svQty}</div>`;
+        })()}
+        `:""}
         <button onclick="saveMvt()" class="btn-primary">Valider</button>
         ${isV1Stk?`<button onclick="setState({showStkModal:null});STATE.showDefectueux=true;render()" class="btn-ghost" style="width:100%;margin-top:8px;">🔧 Voir l'historique des défectueux</button>`:""}
       </div>
@@ -6368,13 +6393,22 @@ function renderStkModal() {
 
 window.saveMvt = () => {
   const q=parseInt(STATE.mvtQty)||0, p=STATE.showStkModal;
-  STATE.products=STATE.products.map(x=>x.id===p.id?{...x,stock:Math.max(0,x.stock+(STATE.mvtType==="entree"?q:-q))}:x);
+  const aDesVariantes = (p.tailles||[]).length>0 || (p.couleurs||[]).length>0;
+  const key = (STATE.mvtTaille||'_')+'_'+(STATE.mvtCouleur||'_');
+  STATE.products=STATE.products.map(x=>{
+    if(x.id!==p.id) return x;
+    const nouveauStock = Math.max(0, x.stock+(STATE.mvtType==="entree"?q:-q));
+    if(!aDesVariantes) return {...x, stock:nouveauStock};
+    const sv = {...(x.stockVariantes||{})};
+    sv[key] = Math.max(0, (parseInt(sv[key])||0) + (STATE.mvtType==="entree"?q:-q));
+    return {...x, stock:nouveauStock, stockVariantes:sv};
+  });
   if(STATE.mvtType==="sortie" && STATE.mvtDefectueux && q>0) {
-    const mvt = {id:uid("DEF"), date:new Date().toISOString(), productId:p.id, productName:p.name, ref:p.ref, qty:q, vendeur:STATE.vendeur?.nom||""};
+    const mvt = {id:uid("DEF"), date:new Date().toISOString(), productId:p.id, productName:p.name, ref:p.ref, qty:q, taille:aDesVariantes?(STATE.mvtTaille||""):"", couleur:aDesVariantes?(STATE.mvtCouleur||""):"", vendeur:STATE.vendeur?.nom||""};
     STATE.mouvementsDefectueux = [...(STATE.mouvementsDefectueux||[]), mvt];
     lsSet("bj_mouvements_defectueux", STATE.mouvementsDefectueux);
   }
-  setState({products:STATE.products,showStkModal:null,mvtQty:"",mvtDefectueux:false});
+  setState({products:STATE.products,showStkModal:null,mvtQty:"",mvtDefectueux:false,mvtTaille:"",mvtCouleur:""});
 };
 
 function renderDefectueuxModal() {
@@ -6390,7 +6424,7 @@ function renderDefectueuxModal() {
             <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:0.5px solid #f0ebee;">
               <div>
                 <div style="font-size:13px;font-weight:500;">${m.productName}</div>
-                <div style="font-size:11px;color:#888;">${m.ref?"Réf. "+m.ref+" · ":""}${new Date(m.date).toLocaleDateString("fr-FR")} · ${m.vendeur}</div>
+                <div style="font-size:11px;color:#888;">${m.ref?"Réf. "+m.ref+" · ":""}${(m.taille||m.couleur)?[m.taille,m.couleur].filter(Boolean).join(" / ")+" · ":""}${new Date(m.date).toLocaleDateString("fr-FR")} · ${m.vendeur}</div>
               </div>
               <div style="display:flex;align-items:center;gap:10px;">
                 <span style="font-weight:600;color:#a32d2d;">-${m.qty}</span>
