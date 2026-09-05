@@ -11124,11 +11124,11 @@ function renderCaisseJour() {
             <div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="color:#888;">Retours espèces</span><span style="color:#e07c00;">−${eur(retours)}</span></div>
             <div style="display:flex;justify-content:space-between;margin-bottom:3px;font-weight:500;"><span>Théorique en caisse</span><span>${eur(totalOuv+especes-retours)}</span></div>
             <div style="border-top:0.5px solid #ddd;margin:5px 0;padding-top:5px;display:flex;justify-content:space-between;font-weight:700;font-size:13px;color:#185fa5;">
-              <span>💰 À déposer en banque</span><span>${eur(aDeposer)}</span>
+              <span>💰 À déposer en banque</span><span id="depot-fermeture">${eur(aDeposer)}</span>
             </div>
-            <div style="display:flex;justify-content:space-between;font-size:12px;margin-top:4px;padding:5px 8px;border-radius:7px;background:${Math.abs(ecart)<0.01?"#eaf3de":ecart>0?"#fff3e8":"#fcebeb"};">
+            <div id="ecart-fermeture-bloc" style="display:flex;justify-content:space-between;font-size:12px;margin-top:4px;padding:5px 8px;border-radius:7px;background:${Math.abs(ecart)<0.01?"#eaf3de":ecart>0?"#fff3e8":"#fcebeb"};">
               <span style="color:#555;">Écart caisse</span>
-              <span style="font-weight:700;color:${Math.abs(ecart)<0.01?"#3b6d11":ecart>0?"#e07c00":"#a32d2d"};">
+              <span id="ecart-fermeture" style="font-weight:700;color:${Math.abs(ecart)<0.01?"#3b6d11":ecart>0?"#e07c00":"#a32d2d"};">
                 ${Math.abs(ecart)<0.01?"✅ OK":ecart>0?"+"+eur(ecart):eur(ecart)}
               </span>
             </div>
@@ -11268,9 +11268,40 @@ window.updateOuvertureTotal = () => {
   window._ouvTimer = setTimeout(render, 400);
 };
 window.updateFermetureTotal = () => {
-  const total = Object.entries(STATE.fondFermeture||{}).reduce((s,[k,v])=>{
+  const totalFer = Object.entries(STATE.fondFermeture||{}).reduce((s,[k,v])=>{
     const val=parseFloat(k.replace("fer_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
-  const el=document.getElementById("total-fermeture");if(el)el.textContent=eur(total);
+  const el=document.getElementById("total-fermeture");if(el)el.textContent=eur(totalFer);
+
+  // Recalculer aussi "À déposer" et "Écart caisse", qui dépendent du total compté et restaient figés
+  const FOND_RESERVE = 80;
+  const now = new Date();
+  const zDate = new Date(now); zDate.setDate(now.getDate()+(STATE.zDateOffset||0)); zDate.setHours(0,0,0,0);
+  const zDateStr = zDate.getFullYear()+"-"+String(zDate.getMonth()+1).padStart(2,"0")+"-"+String(zDate.getDate()).padStart(2,"0");
+  const ventesJour = STATE.ventes.filter(v=>!v.test&&!v.annulee&&new Date(v.date).toDateString()===zDate.toDateString());
+  const payM={}; ventesJour.forEach(v=>{
+    if(v.mixed&&Array.isArray(v.pays)) v.pays.forEach(p=>{payM[p.mode]=(payM[p.mode]||0)+parseFloat(p.montant||0);});
+    else payM[v.payMode]=(payM[v.payMode]||0)+v.total;
+  });
+  const especes = payM["especes"]||0;
+  const retours = ventesJour
+    .filter(v=>v.total<=0 && v.panier.some(x=>x.retour&&!x.avoirId))
+    .reduce((s,v)=>s+v.panier.filter(x=>x.retour&&!x.avoirId).reduce((ss,i)=>ss+i.price*i.qty,0),0);
+  const totalOuvBrut = Object.entries(STATE.fondOuverture||{}).reduce((s,[k,v])=>{const val=parseFloat(k.replace("ouv_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
+  const ouvertureJour = (STATE.ouvertures||{})[zDateStr] || null;
+  const totalOuv = totalOuvBrut || ouvertureJour?.totalOuv || FOND_RESERVE;
+  const aDeposer = Math.max(0, totalFer - FOND_RESERVE);
+  const ecart = totalFer - (totalOuv + especes - retours);
+
+  const elDepot = document.getElementById("depot-fermeture"); if(elDepot) elDepot.textContent = eur(aDeposer);
+  const elEcart = document.getElementById("ecart-fermeture");
+  const elEcartBloc = document.getElementById("ecart-fermeture-bloc");
+  if(elEcart) {
+    elEcart.textContent = Math.abs(ecart)<0.01 ? "✅ OK" : ecart>0 ? "+"+eur(ecart) : eur(ecart);
+    elEcart.style.color = Math.abs(ecart)<0.01 ? "#3b6d11" : ecart>0 ? "#e07c00" : "#a32d2d";
+  }
+  if(elEcartBloc) {
+    elEcartBloc.style.background = Math.abs(ecart)<0.01 ? "#eaf3de" : ecart>0 ? "#fff3e8" : "#fcebeb";
+  }
 };
 window.ajusterFondOuvertureCible = () => {
   const dispo = {};
