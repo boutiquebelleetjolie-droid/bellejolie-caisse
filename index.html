@@ -2833,15 +2833,21 @@ function renderCaisse() {
             ? `💶 Différence < 2€ — Rembourser <strong>${eur(-total)}</strong> en espèces`
             : `⚠️ Retour supérieur aux achats — <strong>Avoir à créer : ${eur(-total)}</strong>`}
         </div>
-        ${-total>=2?`
-          <button onclick="creerAvoirSeul()" style="background:#e07c00;color:#fff;border:none;border-radius:9px;padding:14px;width:100%;font-size:15px;font-weight:500;cursor:pointer;">
+        <div style="display:flex;gap:8px;margin-top:8px;">
+          <button onclick="viderPanier()" style="flex:0 0 auto;padding:14px 12px;background:#f5f0f2;color:#a32d2d;border:1px solid #f0959599;border-radius:9px;cursor:pointer;font-size:13px;font-weight:500;" title="Vider le panier">🗑️</button>
+          <button onclick="mettreEnAttente()" style="flex:0 0 auto;padding:14px 12px;background:#f5f0f2;color:#993556;border:1px solid #e8d8de;border-radius:9px;cursor:pointer;font-size:13px;font-weight:500;" title="Mettre ce retour en attente">
+            ⏸
+          </button>
+          ${-total>=2?`
+          <button onclick="creerAvoirSeul()" style="flex:1;background:#e07c00;color:#fff;border:none;border-radius:9px;padding:14px;font-size:15px;font-weight:500;cursor:pointer;">
             🎟️ Créer le bon d'avoir (${eur(-total)})
           </button>
-        `:`
-          <button onclick="rembourserEspeces()" style="background:#3b6d11;color:#fff;border:none;border-radius:9px;padding:14px;width:100%;font-size:15px;font-weight:500;cursor:pointer;">
+          `:`
+          <button onclick="rembourserEspeces()" style="flex:1;background:#3b6d11;color:#fff;border:none;border-radius:9px;padding:14px;font-size:15px;font-weight:500;cursor:pointer;">
             💶 Rembourser ${eur(-total)} en espèces
           </button>
-        `}
+          `}
+        </div>
       `:`
         <div style="display:flex;gap:8px;">
           <button onclick="viderPanier()" ${panier.length===0?"disabled":""} style="flex:0 0 auto;padding:14px 12px;background:#f5f0f2;color:#a32d2d;border:1px solid #f0959599;border-radius:9px;cursor:pointer;font-size:13px;font-weight:500;opacity:${panier.length>0?1:0.45};" title="Vider le panier">🗑️</button>
