@@ -140,6 +140,7 @@ async function firestorePullAll() {
 const CLES_SYNC_TEMPS_REEL = {
   bj_products: "products", bj_clients: "clients", bj_ventes: "ventes", bj_avoirs: "avoirs",
   bj_ouvertures: "ouvertures", bj_caisse_jour: "caisseJour",
+  bj_ejs_service: "emailjsServiceId", bj_ejs_template: "emailjsTemplateId", bj_ejs_key: "emailjsPublicKey",
 };
 window._syncBannerTimeout = null;
 function demarrerSyncTempsReel() {
@@ -1703,7 +1704,7 @@ window.exporterDonnees = () => {
 
 window.pousserToutVersCloud = async () => {
   if(!_fbDb) { alert("⚠️ Firebase n'est pas connecté sur cet appareil."); return; }
-  const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisse_jour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux","bj_ouvertures","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
+  const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisse_jour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux","bj_ouvertures","bj_ejs_service","bj_ejs_template","bj_ejs_key","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
   let compte = 0, erreurs = 0;
   for(const k of cles) {
     try {
@@ -1740,7 +1741,7 @@ window.restaurerDepuisCloud = async () => {
   if(!confirm("🔄 Ça va remplacer TOUTES les données actuellement affichées sur cet appareil par celles sauvegardées dans le cloud.\n\nContinuer ?")) return;
   try {
     const data = await firestorePullAll();
-    const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisse_jour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux","bj_ouvertures","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
+    const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisse_jour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux","bj_ouvertures","bj_ejs_service","bj_ejs_template","bj_ejs_key","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
     let compte = 0;
     cles.forEach(k => { if(data[k]!==undefined) { localStorage.setItem(k, JSON.stringify(data[k])); compte++; } });
     alert("✅ "+compte+" éléments restaurés depuis le cloud !\n\nL'application va se recharger.");
