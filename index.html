@@ -86,7 +86,7 @@ const BOUTIQUE_CONFIG = {
   // Données "locales" propres à cette boutique (ventes, stock, Z de caisse, réservations)
   // Cette distinction sera utilisée lors de la migration vers Firebase
   DONNEES_GLOBALES: ["bj_clients","bj_avoirs","bj_promotions"],
-  DONNEES_LOCALES:  ["bj_products","bj_ventes","bj_caisseJour","bj_reservations","bj_annul_lignes","bj_attente","bj_depots_vente","bj_depots_banque"],
+  DONNEES_LOCALES:  ["bj_products","bj_ventes","bj_caisseJour","bj_reservations","bj_annul_lignes","bj_attente","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux"],
 };
 
 // ════════════════════════════════════════════════════════════════
@@ -583,6 +583,7 @@ let STATE = {
   sauvegardeEmail:ls("bj_sauvegarde_email",""),
   caisseJour:  ls("bj_caisse_jour", []),
   depotsBanque: ls("bj_depots_banque", []),
+  mouvementsDefectueux: ls("bj_mouvements_defectueux", []),
   fondOuverture: {},
   fondFermeture: {},      // Z de caisse journaliers
   transferts:      ls("bj_transferts",       []),
@@ -677,6 +678,7 @@ function setState(patch) {
   if(patch.annulLignes !== undefined) lsSet("bj_annul_lignes", STATE.annulLignes);
   if(patch.caisseJour    !== undefined) lsSet("bj_caisse_jour",   STATE.caisseJour);
   if(patch.depotsBanque  !== undefined) lsSet("bj_depots_banque", STATE.depotsBanque);
+  if(patch.mouvementsDefectueux !== undefined) lsSet("bj_mouvements_defectueux", STATE.mouvementsDefectueux);
   if(patch.reservations  !== undefined) lsSet("bj_reservations",  STATE.reservations);
   if(patch.transferts  !== undefined) lsSet("bj_transferts",   STATE.transferts);
   if(patch.memos    !== undefined) lsSet("bj_memos",    STATE.memos);
@@ -1271,6 +1273,7 @@ function renderApp() {
   ${STATE.showNewClient    ? renderNewClientModal()  : ""}
   ${STATE.showBCModal      ? renderBCModal()         : ""}
   ${STATE.showStkModal     ? renderStkModal()        : ""}
+  ${STATE.showDefectueux   ? renderDefectueuxModal() : ""}
   ${STATE.showProdModal    ? renderProdModal()       : ""}
   ${STATE.showClientModal  ? renderClientModal()     : ""}
   ${STATE.showClientDetail ? renderClientDetail()    : ""}
@@ -1657,6 +1660,7 @@ window.exporterDonnees = () => {
     reservations:STATE.reservations||[], historiquePromo:STATE.historiquePromo||[],
     depotsVente:STATE.depotsVente||[],
     depotsBanque:STATE.depotsBanque||[],
+    mouvementsDefectueux:STATE.mouvementsDefectueux||[],
     // Config EmailJS incluse pour ne pas la perdre si le navigateur efface ses données
     emailjsServiceId:STATE.emailjsServiceId||"", emailjsTemplateId:STATE.emailjsTemplateId||"", emailjsPublicKey:STATE.emailjsPublicKey||"",
     geminiApiKey:STATE.geminiApiKey||"",
@@ -1677,7 +1681,7 @@ window.exporterDonnees = () => {
 
 window.pousserToutVersCloud = async () => {
   if(!_fbDb) { alert("⚠️ Firebase n'est pas connecté sur cet appareil."); return; }
-  const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisseJour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
+  const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisseJour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
   let compte = 0, erreurs = 0;
   for(const k of cles) {
     try {
@@ -1714,7 +1718,7 @@ window.restaurerDepuisCloud = async () => {
   if(!confirm("🔄 Ça va remplacer TOUTES les données actuellement affichées sur cet appareil par celles sauvegardées dans le cloud.\n\nContinuer ?")) return;
   try {
     const data = await firestorePullAll();
-    const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisseJour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
+    const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisseJour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
     let compte = 0;
     cles.forEach(k => { if(data[k]!==undefined) { localStorage.setItem(k, JSON.stringify(data[k])); compte++; } });
     alert("✅ "+compte+" éléments restaurés depuis le cloud !\n\nL'application va se recharger.");
@@ -1809,6 +1813,7 @@ window.importerDonnees = (input) => {
       if(data.reservations) {STATE.reservations=data.reservations;lsSet("bj_reservations",data.reservations);}
       if(data.depotsVente) {STATE.depotsVente=data.depotsVente;lsSet("bj_depots_vente",data.depotsVente);}
       if(data.depotsBanque) {STATE.depotsBanque=data.depotsBanque;lsSet("bj_depots_banque",data.depotsBanque);}
+      if(data.mouvementsDefectueux) {STATE.mouvementsDefectueux=data.mouvementsDefectueux;lsSet("bj_mouvements_defectueux",data.mouvementsDefectueux);}
       if(data.historiquePromo){STATE.historiquePromo=data.historiquePromo;lsSet("bj_historique_promo",data.historiquePromo);}
       // Config EmailJS : restaurée si présente dans la sauvegarde (évite de la reperdre si le navigateur efface ses données)
       if(data.emailjsServiceId)  { STATE.emailjsServiceId=data.emailjsServiceId;   lsSet("bj_ejs_service",data.emailjsServiceId); }
@@ -2961,6 +2966,19 @@ window.creerAvoirSeul = () => {
 
   // Sauvegarder explicitement les avoirs utilisés comme paiement pour le ticket
   const avoirsPayes = STATE.panier.filter(x=>x.avoirId).map(x=>({avoirId:x.avoirId, montant:x.price}));
+
+  // Enregistrer ce mouvement dans l'historique des tickets (visible dans Historique, filtrable comme une vente)
+  const ticketAvoir = {
+    id: avoir.id, date: new Date().toISOString(),
+    boutiqueId: BOUTIQUE_CONFIG.id,
+    panier:[...STATE.panier], client:STATE.client, clientId:STATE.client?.id||null, vendeur:STATE.vendeur,
+    remise:0, remiseFid:0, remiseProg:0, remType:"", remVal:"", remiseMotif:"",
+    total:0, mixed:false, pays:[], payMode:"avoir_cree", montantDonne:0,
+    avoirCree:montant, avoirsPayes, reliquatAvoir:null, remiseReseaux:false,
+  };
+  STATE.ventes = [...STATE.ventes, ticketAvoir];
+  lsSet("bj_ventes", STATE.ventes);
+
   STATE.showTicket = {type:"avoir", avoir, panier:[...STATE.panier], avoirsPayes, total:0, vendeur:STATE.vendeur, date:new Date().toISOString(), id:avoir.id};
   STATE.panier=[]; STATE.client=null; STATE.remVal=""; STATE.remGlobalMotif=""; STATE.searchRetour=""; STATE.searchRetourBC="";
   setState({avoirs: STATE.avoirs});
@@ -2979,11 +2997,22 @@ window.rembourserEspeces = () => {
     STATE.products = STATE.products.map(p=>p.id===it.id?{...p,stock:Math.max(0,p.stock-it.qty)}:p);
   });
   lsSet("bj_products", STATE.products);
+  // Enregistrer ce mouvement dans l'historique des tickets
+  const ticketRbt = {
+    id: uid("RBT"), date: new Date().toISOString(),
+    boutiqueId: BOUTIQUE_CONFIG.id,
+    panier:[...STATE.panier], client:STATE.client, clientId:STATE.client?.id||null, vendeur:STATE.vendeur,
+    remise:0, remiseFid:0, remiseProg:0, remType:"", remVal:"", remiseMotif:"",
+    total:0, mixed:false, pays:[], payMode:"remboursement_especes", montantDonne:0,
+    avoirCree:0, montantRembourse:montant, reliquatAvoir:null, remiseReseaux:false,
+  };
+  STATE.ventes = [...STATE.ventes, ticketRbt];
+  lsSet("bj_ventes", STATE.ventes);
   // Ticket de remboursement espèces
   STATE.showTicket = {
     type:"remboursement_especes",
     montant, panier:[...STATE.panier],
-    vendeur:STATE.vendeur, date:new Date().toISOString(), id:uid("RBT"),
+    vendeur:STATE.vendeur, date:new Date().toISOString(), id:ticketRbt.id,
     client:STATE.client,
   };
   STATE.panier=[]; STATE.client=null; STATE.remVal=""; STATE.remGlobalMotif=""; STATE.searchRetour=""; STATE.searchRetourBC="";
@@ -6311,6 +6340,7 @@ ${etiqsHTML}
 
 function renderStkModal() {
   const p=STATE.showStkModal;
+  const isV1Stk = STATE.vendeur.id==="V1";
   return `
   <div class="modal-bg" onclick="if(event.target===this)setState({showStkModal:null})">
     <div class="modal" style="max-width:320px;">
@@ -6323,7 +6353,14 @@ function renderStkModal() {
         </div>
         <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Quantité</label>
         <input type="number" min="1" value="${STATE.mvtQty}" oninput="STATE.mvtQty=this.value" style="width:100%;box-sizing:border-box;margin-bottom:10px;"/>
+        ${STATE.mvtType==="sortie"?`
+        <label style="display:flex;align-items:center;gap:8px;background:#fcebeb;border:1px solid #e8a5a5;border-radius:8px;padding:10px;margin-bottom:10px;cursor:pointer;">
+          <input type="checkbox" ${STATE.mvtDefectueux?"checked":""} onchange="STATE.mvtDefectueux=this.checked;render()" style="width:16px;height:16px;"/>
+          <span style="font-size:13px;color:#a32d2d;">🔧 Article défectueux (retiré du stock, pas une vente)</span>
+        </label>
+        `:""}
         <button onclick="saveMvt()" class="btn-primary">Valider</button>
+        ${isV1Stk?`<button onclick="setState({showStkModal:null});STATE.showDefectueux=true;render()" class="btn-ghost" style="width:100%;margin-top:8px;">🔧 Voir l'historique des défectueux</button>`:""}
       </div>
     </div>
   </div>`;
@@ -6332,7 +6369,47 @@ function renderStkModal() {
 window.saveMvt = () => {
   const q=parseInt(STATE.mvtQty)||0, p=STATE.showStkModal;
   STATE.products=STATE.products.map(x=>x.id===p.id?{...x,stock:Math.max(0,x.stock+(STATE.mvtType==="entree"?q:-q))}:x);
-  setState({products:STATE.products,showStkModal:null,mvtQty:""});
+  if(STATE.mvtType==="sortie" && STATE.mvtDefectueux && q>0) {
+    const mvt = {id:uid("DEF"), date:new Date().toISOString(), productId:p.id, productName:p.name, ref:p.ref, qty:q, vendeur:STATE.vendeur?.nom||""};
+    STATE.mouvementsDefectueux = [...(STATE.mouvementsDefectueux||[]), mvt];
+    lsSet("bj_mouvements_defectueux", STATE.mouvementsDefectueux);
+  }
+  setState({products:STATE.products,showStkModal:null,mvtQty:"",mvtDefectueux:false});
+};
+
+function renderDefectueuxModal() {
+  const liste = [...(STATE.mouvementsDefectueux||[])].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)setState({showDefectueux:false})">
+    <div class="modal" style="max-width:480px;">
+      <div class="modal-header"><span style="font-weight:500;">🔧 Historique des articles défectueux</span><button onclick="setState({showDefectueux:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button></div>
+      <div class="modal-body">
+        ${liste.length===0?`<div style="text-align:center;color:#aaa;padding:20px 0;">Aucun retrait pour défaut enregistré.</div>`:`
+        <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:10px;">
+          ${liste.map(m=>`
+            <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:0.5px solid #f0ebee;">
+              <div>
+                <div style="font-size:13px;font-weight:500;">${m.productName}</div>
+                <div style="font-size:11px;color:#888;">${m.ref?"Réf. "+m.ref+" · ":""}${new Date(m.date).toLocaleDateString("fr-FR")} · ${m.vendeur}</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;">
+                <span style="font-weight:600;color:#a32d2d;">-${m.qty}</span>
+                ${STATE.vendeur.id==="V1"?`<button onclick="supprimerMvtDefectueux('${m.id}')" title="Supprimer cette entrée" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:14px;">🗑️</button>`:""}
+              </div>
+            </div>
+          `).join("")}
+        </div>
+        <div style="margin-top:10px;font-size:12px;color:#888;text-align:right;">Total retiré : ${liste.reduce((s,m)=>s+m.qty,0)} article${liste.reduce((s,m)=>s+m.qty,0)>1?"s":""}</div>
+        `}
+      </div>
+    </div>
+  </div>`;
+}
+
+window.supprimerMvtDefectueux = (id) => {
+  if(!confirm("Supprimer cette entrée de l'historique des défectueux ?\n\n(Cela ne remet pas l'article en stock, ça supprime juste la trace.)")) return;
+  STATE.mouvementsDefectueux = (STATE.mouvementsDefectueux||[]).filter(m=>m.id!==id);
+  setState({mouvementsDefectueux:STATE.mouvementsDefectueux});
 };
 
 // ─── CRM ────────────────────────────────────────────────────────
@@ -6918,7 +6995,7 @@ function renderClientDetail() {
 function renderHistorique() {
   if(!STATE.histoFilters) STATE.histoFilters = {dateDebut:'',dateFin:'',vendeur:'',categorie:'',payMode:'',search:'',montant:''};
   const f = STATE.histoFilters;
-  const mL={cb:"CB",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Cadeau",mixte:"Mixte"};
+  const mL={cb:"CB",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Cadeau",mixte:"Mixte",avoir_cree:"🎟️ Avoir émis",remboursement_especes:"💶 Remb. espèces"};
 
   // Filtrer les ventes
   let vf = (STATE.ventes||[]).filter(v=>!v.test);
@@ -7005,8 +7082,8 @@ function renderHistorique() {
       if(annulee) html += '<div style="font-size:10px;color:#a32d2d;">✕ Annulée</div>';
       if(hasRetour) html += '<div style="font-size:10px;color:#e07c00;">↩ Retour</div>';
       html += '</div>';
-      html += '<button onclick="STATE.showTicket={...STATE.ventes.find(x=>x.id===\''+v.id+'\'),type:\'vente\'};render()" style="background:none;border:1px solid #ddd;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px;color:#993556;flex-shrink:0;">🧾</button>';
-      if(STATE.vendeur.id==="V1"&&!annulee) html += '<button onclick="event.stopPropagation();ouvrirCorrectionPaiement(\''+v.id+'\')" title="Corriger le paiement" style="background:none;border:1px solid #ddd;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px;color:#854f0b;flex-shrink:0;">✏️</button>';
+      html += '<button onclick="const vv=STATE.ventes.find(x=>x.id===\''+v.id+'\');STATE.showTicket=vv.payMode===\'avoir_cree\'?{...vv,type:\'avoir\',avoir:(STATE.avoirs||[]).find(a=>a.id===vv.id)}:vv.payMode===\'remboursement_especes\'?{...vv,type:\'remboursement_especes\',montant:vv.montantRembourse}:{...vv,type:\'vente\'};render()" style="background:none;border:1px solid #ddd;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px;color:#993556;flex-shrink:0;">🧾</button>';
+      if(STATE.vendeur.id==="V1"&&!annulee&&v.payMode!=="avoir_cree"&&v.payMode!=="remboursement_especes") html += '<button onclick="event.stopPropagation();ouvrirCorrectionPaiement(\''+v.id+'\')" title="Corriger le paiement" style="background:none;border:1px solid #ddd;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:12px;color:#854f0b;flex-shrink:0;">✏️</button>';
       html += '</div></div>';
     });
     if(vf.length>100) html += '<div style="padding:10px;text-align:center;font-size:12px;color:#aaa;">'+vf.length+' ventes — affichage limité aux 100 dernières</div>';
@@ -14772,6 +14849,23 @@ if(!localStorage.getItem("bj_clean_v1")) {
   ["bj_ventes","bj_avoirs","bj_annul_lignes","bj_caisse_jour","bj_attente","bj_inventaires","bj_clients"].forEach(k=>localStorage.removeItem(k));
   localStorage.setItem("bj_clean_v1","1");
 }
+
+// Purge automatique des tickets annulés (complète ET comptable) de plus de 7 jours
+// Attention : ceci retire aussi définitivement les annulations "comptables" de l'historique
+// d'achat client (fidélité) après ce délai — décision volontaire, pas un oubli.
+(function() {
+  const SEPT_JOURS = 7*24*60*60*1000;
+  const avant = STATE.ventes.length;
+  STATE.ventes = STATE.ventes.filter(v => {
+    if(!v.annulee) return true;
+    const dateRef = v.dateAnnulation || v.date;
+    return (Date.now() - new Date(dateRef).getTime()) < SEPT_JOURS;
+  });
+  if(STATE.ventes.length !== avant) {
+    lsSet("bj_ventes", STATE.ventes);
+    console.log("Purge tickets annulés (>7j) :", avant-STATE.ventes.length, "supprimé(s)");
+  }
+})();
 
 render();
 
