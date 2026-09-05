@@ -40,11 +40,11 @@
   }
   @media print{
     #app-header,#nav-bar,#pay-modal-bg,#new-client-modal,.btn-primary.no-print,.btn-ghost{display:none!important;}
-    #ticket-print-area{visibility:visible!important;position:fixed;top:0;left:0;width:280px;}
+    #ticket-print-area{visibility:visible!important;position:absolute;top:0;left:0;width:280px;}
     body *{visibility:hidden;}
     #ticket-print-area,#ticket-print-area *{visibility:visible;}
     #etiquette-print-area,#etiquette-print-area *{visibility:visible;}
-    #etiquette-print-area{position:fixed;top:20px;left:20px;}
+    #etiquette-print-area{position:absolute;top:20px;left:20px;}
   }
 </style>
 <!-- Firebase : sauvegarde cloud automatique en complément du stockage local -->
@@ -3487,7 +3487,7 @@ function renderTicketModal() {
             <div style="border-top:1px dashed #ccc;margin:6px 0;"></div>
             <div style="text-align:center;font-size:10px;color:#888;">Belle&Jolie — Mode & Élégance</div>
           </div>
-          <style>@media print{body *{visibility:hidden !important}#ticket-print-area,#ticket-print-area *{visibility:visible !important}#ticket-print-area{position:fixed;top:0;left:0;width:280px;background:#fff;}}</style>
+          <style>@media print{body *{visibility:hidden !important}#ticket-print-area,#ticket-print-area *{visibility:visible !important}#ticket-print-area{position:absolute;top:0;left:0;width:280px;background:#fff;}}</style>
           <button onclick="window.print();setState({showTicket:null})" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le reçu</button>
           <button onclick="setState({showTicket:null})" class="btn-ghost" style="width:100%;padding:10px;">Fermer</button>
         </div>
@@ -3533,7 +3533,7 @@ function renderTicketModal() {
             <div style="border-top:1px dashed #ccc;margin:6px 0;"></div>
             <div style="text-align:center;font-size:10px;color:#888;">Avoir valable 3 mois à compter de la date d'émission.<br>Belle&Jolie — Mode & Élégance</div>
           </div>
-          <style>@media print{body *{visibility:hidden !important}#ticket-print-area,#ticket-print-area *,#ticket-print-area svg,#ticket-print-area svg *{visibility:visible !important}#ticket-print-area{position:fixed;top:0;left:0;width:280px;background:#fff;}}</style>
+          <style>@media print{body *{visibility:hidden !important}#ticket-print-area,#ticket-print-area *,#ticket-print-area svg,#ticket-print-area svg *{visibility:visible !important}#ticket-print-area{position:absolute;top:0;left:0;width:280px;background:#fff;}}</style>
           <button onclick="window.print();setState({showTicket:null})" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le bon d'avoir</button>
           `:`
           <div style="background:#eaf3de;border-radius:8px;padding:10px;margin-bottom:14px;font-size:13px;color:#3b6d11;text-align:center;">
@@ -3582,7 +3582,7 @@ function renderTicketModal() {
             <div style="border-top:1px dashed #ccc;margin:6px 0;"></div>
             <div style="text-align:center;font-size:10px;color:#888;">Valable jusqu'au ${v.avoir.expiration?new Date(v.avoir.expiration).toLocaleDateString("fr-FR"):"—"}<br>Sur présentation de ce bon.<br>Belle&Jolie — Mode & Élégance</div>
           </div>
-          <style>@media print{body *{visibility:hidden}#ticket-print-area,#ticket-print-area *,#ticket-print-area svg,#ticket-print-area svg *{visibility:visible!important}#ticket-print-area{position:fixed;top:0;left:0;width:280px;font-size:12px;}}</style>
+          <style>@media print{body *{visibility:hidden}#ticket-print-area,#ticket-print-area *,#ticket-print-area svg,#ticket-print-area svg *{visibility:visible!important}#ticket-print-area{position:absolute;top:0;left:0;width:280px;font-size:12px;}}</style>
           <button onclick="window.print();setState({showTicket:null})" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le bon d'avoir</button>
           <button onclick="ouvrirEnvoiTicket()" style="width:100%;padding:10px;background:#e6f1fb;color:#185fa5;border:1px solid #b3d0f0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:8px;">
             📧 Envoyer le bon par Email
@@ -3745,7 +3745,7 @@ function renderTicketModal() {
       </div>
     </div>
   </div>
-  <style>@media print{body *{visibility:hidden}#ticket-print-area,#ticket-print-area *,#ticket-print-area svg,#ticket-print-area svg *{visibility:visible!important}#ticket-print-area{position:fixed;top:0;left:0;width:280px;font-size:12px;line-height:1.7;}}</style>`;
+  <style>@media print{body *{visibility:hidden}#ticket-print-area,#ticket-print-area *,#ticket-print-area svg,#ticket-print-area svg *{visibility:visible!important}#ticket-print-area{position:absolute;top:0;left:0;width:280px;font-size:12px;line-height:1.7;}}</style>`;
 }
 
 // ─── FONCTIONS CAISSE ───────────────────────────────────────────
@@ -9535,7 +9535,11 @@ window.ouvrirEnvoiTicket = () => {
 // ── Helpers message ticket ───────────────────────────────────────
 function buildMsgSMS(v) {
   const mL={cb:"CB",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Cadeau",mixte:"Mixte"};
-  const articles=(v?.panier||[]).filter(x=>!x.retour).map(i=>`${i.qty}x ${i.name} = ${eur(i.price*i.qty)}`).join("\n");
+  const articles=(v?.panier||[]).filter(x=>!x.retour).map(i=>{
+    const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
+    const puNet = Math.max(0,i.price-remArt);
+    return `${i.qty}x ${i.name} = ${eur(puNet*i.qty)}`;
+  }).join("\n");
   const date=v?new Date(v.date).toLocaleDateString("fr-FR"):"";
   return `Belle&Jolie — Ticket du ${date}\n${articles}\nTotal : ${eur(v?.total||0)} — ${mL[v?.payMode]||""}\nMerci ! 🌸`;
 }
@@ -9547,7 +9551,11 @@ function buildMsgEmail(v) {
     const prenom=v?.avoir?.client?.prenom||"";
     const code=v?.avoir?.code||"";
     const expDate=v?.avoir?.expiration?new Date(v.avoir.expiration).toLocaleDateString("fr-FR"):"";
-    const achetes=(v?.panier||[]).filter(x=>!x.retour&&!x.avoirId).map(i=>"  "+i.qty+"x "+i.name+" : "+eur(i.price*i.qty)).join("\n");
+    const achetes=(v?.panier||[]).filter(x=>!x.retour&&!x.avoirId).map(i=>{
+      const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
+      const puNet = Math.max(0,i.price-remArt);
+      return "  "+i.qty+"x "+i.name+" : "+eur(puNet*i.qty)+(remArt>0?" (remise article : -"+eur(remArt*i.qty)+")":"");
+    }).join("\n");
     const retours=(v?.panier||[]).filter(x=>x.retour&&!x.avoirId).map(i=>"  ↩ "+i.qty+"x "+i.name+" : -"+eur(i.price*i.qty)).join("\n");
     // Utiliser avoirsPayes (champ dédié) ou fallback sur le panier
     const avoirsPayesLst = v?.avoirsPayes||[];
@@ -9568,7 +9576,11 @@ function buildMsgEmail(v) {
       +"Merci de votre confiance !\n"
       +"⚠️ Ne pas répondre — Contact : boutiquebelleetjolie@gmail.com";
   }
-  const articles=(v?.panier||[]).filter(x=>!x.retour&&!x.avoirId).map(i=>`${i.qty}x ${i.name} = ${eur(i.price*i.qty)}`).join("\n");
+  const articles=(v?.panier||[]).filter(x=>!x.retour&&!x.avoirId).map(i=>{
+    const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
+    const puNet = Math.max(0,i.price-remArt);
+    return `${i.qty}x ${i.name} = ${eur(puNet*i.qty)}`+(remArt>0?` (remise article : -${eur(remArt*i.qty)})`:"");
+  }).join("\n");
   const prenom=v?.client?.prenom||"";
   let paiement=mLfull[v?.payMode]||v?.payMode||"";
   if(v?.mixed&&v?.pays) paiement=v.pays.map(p=>`${mLfull[p.mode]||p.mode} : ${eur(parseFloat(p.montant||0))}`).join(" + ");
@@ -9586,9 +9598,12 @@ function buildTicketEmailHTML(v) {
   const avoirsLignes = avoirsPayes.length>0 ? avoirsPayes : (v?.panier||[]).filter(x=>x.avoirId).map(x=>({montant:x.price}));
 
   // Lignes articles
-  const lignesHtml = (v?.panier||[]).filter(x=>!x.retour&&!x.avoirId).map(i=>
-    '<tr><td style="padding:6px 0;border-bottom:1px solid #f5f0f2;font-size:13px;color:#333;">'+i.qty+'× '+i.name+'</td><td style="padding:6px 0;border-bottom:1px solid #f5f0f2;font-size:13px;color:#333;text-align:right;font-weight:500;">'+eur(i.price*i.qty)+'</td></tr>'
-  ).join("");
+  const lignesHtml = (v?.panier||[]).filter(x=>!x.retour&&!x.avoirId).map(i=>{
+    const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
+    const puNet = Math.max(0,i.price-remArt);
+    return '<tr><td style="padding:6px 0;'+(remArt>0?'':'border-bottom:1px solid #f5f0f2;')+'font-size:13px;color:#333;">'+i.qty+'× '+i.name+'</td><td style="padding:6px 0;'+(remArt>0?'':'border-bottom:1px solid #f5f0f2;')+'font-size:13px;color:#333;text-align:right;font-weight:500;">'+eur(puNet*i.qty)+'</td></tr>'
+      +(remArt>0?'<tr><td colspan="2" style="padding:0 0 6px;border-bottom:1px solid #f5f0f2;font-size:11px;color:#3b6d11;">Remise article : -'+eur(remArt*i.qty)+'</td></tr>':"");
+  }).join("");
   const retoursHtml = (v?.panier||[]).filter(x=>x.retour&&!x.avoirId).map(i=>
     '<tr><td style="padding:6px 0;border-bottom:1px solid #f5f0f2;font-size:13px;color:#e07c00;">↩ '+i.qty+'× '+i.name.replace(" (↩)","")+'</td><td style="padding:6px 0;border-bottom:1px solid #f5f0f2;font-size:13px;color:#e07c00;text-align:right;">-'+eur(i.price*i.qty)+'</td></tr>'
   ).join("");
