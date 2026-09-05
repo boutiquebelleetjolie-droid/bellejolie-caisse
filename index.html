@@ -510,6 +510,24 @@ const eur = v => Number(v||0).toFixed(2).replace(".",",") + " €";
 const uid = p => p + Date.now().toString(36).toUpperCase();
 const genBC = () => "376000" + String(Math.floor(Math.random()*9999999)).padStart(7,"0");
 
+// Ajuste le stock d'un produit : le total ET, si le produit a des tailles/couleurs configurées
+// et qu'on connaît la variante précise, le stock de cette variante (stockVariantes) en parallèle.
+// delta positif = entrée/retour, négatif = vente/sortie.
+function ajusterStock(products, productId, delta, taille, couleur) {
+  return products.map(p => {
+    if(p.id !== productId) return p;
+    const nouveauStock = Math.max(0, (p.stock||0) + delta);
+    const aDesVariantes = (p.tailles||[]).length>0 || (p.couleurs||[]).length>0;
+    if(!aDesVariantes || (!taille && !couleur)) {
+      return {...p, stock: nouveauStock};
+    }
+    const key = (taille||'_')+'_'+(couleur||'_');
+    const sv = {...(p.stockVariantes||{})};
+    sv[key] = Math.max(0, (parseInt(sv[key])||0) + delta);
+    return {...p, stock: nouveauStock, stockVariantes: sv};
+  });
+}
+
 // Normalise une chaîne pour la recherche : minuscules + accents retirés (é/è/ê -> e, etc.)
 // À utiliser partout où on compare une saisie utilisateur à des données (client, produit, référence, marque...)
 function normStr(s) {
@@ -2927,7 +2945,7 @@ window.creerAvoirSeul = () => {
   // Remettre les articles retournés en stock ET marquer les retours sur les ventes sources
   STATE.panier.filter(x=>x.retour&&!x.avoirId).forEach(it=>{
     const origId = it.id.replace("R_","");
-    STATE.products = STATE.products.map(p=>p.id===origId?{...p,stock:p.stock+it.qty}:p);
+    STATE.products = ajusterStock(STATE.products, origId, it.qty, it.taille, it.couleur);
     // Marquer l'article retourné sur la vente source (retourVenteId ou recherche)
     const sourceVenteId = it.retourVenteId;
     if(sourceVenteId) {
@@ -2941,7 +2959,7 @@ window.creerAvoirSeul = () => {
   });
   // Décrémenter les articles achetés (non-retours)
   STATE.panier.filter(x=>!x.retour).forEach(it=>{
-    STATE.products = STATE.products.map(p=>p.id===it.id?{...p,stock:Math.max(0,p.stock-it.qty)}:p);
+    STATE.products = ajusterStock(STATE.products, it.prodIdOriginal||it.id, -it.qty, it.taille, it.couleur);
   });
   lsSet("bj_products", STATE.products);
 
@@ -2990,11 +3008,11 @@ window.rembourserEspeces = () => {
   // Remettre en stock les retours
   STATE.panier.filter(x=>x.retour&&!x.avoirId).forEach(it=>{
     const origId = it.id.replace("R_","");
-    STATE.products = STATE.products.map(p=>p.id===origId?{...p,stock:p.stock+it.qty}:p);
+    STATE.products = ajusterStock(STATE.products, origId, it.qty, it.taille, it.couleur);
   });
   // Décrémenter les articles achetés
   STATE.panier.filter(x=>!x.retour).forEach(it=>{
-    STATE.products = STATE.products.map(p=>p.id===it.id?{...p,stock:Math.max(0,p.stock-it.qty)}:p);
+    STATE.products = ajusterStock(STATE.products, it.prodIdOriginal||it.id, -it.qty, it.taille, it.couleur);
   });
   lsSet("bj_products", STATE.products);
   // Enregistrer ce mouvement dans l'historique des tickets
@@ -4286,7 +4304,7 @@ window.validerPaiement = () => {
     // Retour article physique → remettre en stock
     if(!it.avoirId) {
       const origId = it.id.replace("R_","");
-      STATE.products = STATE.products.map(p=>p.id===origId?{...p,stock:p.stock+it.qty}:p);
+      STATE.products = ajusterStock(STATE.products, origId, it.qty, it.taille, it.couleur);
       // Marquer l'article retourné sur la vente source si connue
       if(it.retourVenteId) {
         STATE.ventes = STATE.ventes.map(v => {
@@ -4398,7 +4416,8 @@ window.validerPaiement = () => {
   STATE.panier.filter(x=>!x.retour).forEach(it=>{
     if(it.resaId) return; // Stock déjà déduit à la réservation
     const pid = it.prodIdOriginal || it.id;
-    STATE.products=STATE.products.map(p=>p.id===pid?{...p,stock:Math.max(0,p.stock-it.qty),reserveQty:Math.max(0,(p.reserveQty||0)-(it.qty||0))}:p);
+    STATE.products = ajusterStock(STATE.products, pid, -it.qty, it.taille, it.couleur);
+    STATE.products = STATE.products.map(p=>p.id===pid?{...p,reserveQty:Math.max(0,(p.reserveQty||0)-(it.qty||0))}:p);
   });
   lsSet("bj_products", STATE.products);
 
@@ -6359,18 +6378,36 @@ function renderStkModal() {
           <span style="font-size:13px;color:#a32d2d;">🔧 Article défectueux (retiré du stock, pas une vente)</span>
         </label>
         `:""}
-        ${STATE.mvtType==="sortie"?`
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+        ${((p.tailles||[]).filter(Boolean).length>0 || (p.couleurs||[]).filter(Boolean).length>0) ? `
+        <div style="display:grid;grid-template-columns:${(p.tailles||[]).filter(Boolean).length>0 && (p.couleurs||[]).filter(Boolean).length>0?"1fr 1fr":"1fr"};gap:8px;margin-bottom:6px;">
+          ${(p.tailles||[]).filter(Boolean).length>0?`
           <div>
             <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Taille</label>
-            <input type="text" value="${STATE.mvtTaille||''}" oninput="STATE.mvtTaille=this.value" placeholder="ex: 38, M..." style="width:100%;box-sizing:border-box;"/>
-          </div>
+            <select onchange="STATE.mvtTaille=this.value;render()" style="width:100%;">
+              <option value="">—</option>
+              ${(p.tailles||[]).filter(Boolean).map(t=>`<option value="${t}" ${STATE.mvtTaille===t?"selected":""}>${t}</option>`).join("")}
+            </select>
+          </div>`:""}
+          ${(p.couleurs||[]).filter(Boolean).length>0?`
           <div>
             <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Couleur</label>
-            <input type="text" value="${STATE.mvtCouleur||''}" oninput="STATE.mvtCouleur=this.value" placeholder="ex: bleu..." style="width:100%;box-sizing:border-box;"/>
-          </div>
+            <select onchange="STATE.mvtCouleur=this.value;render()" style="width:100%;">
+              <option value="">—</option>
+              ${(p.couleurs||[]).filter(Boolean).map(c=>`<option value="${c}" ${STATE.mvtCouleur===c?"selected":""}>${c}</option>`).join("")}
+            </select>
+          </div>`:""}
         </div>
-        `:""}
+        ${(()=>{
+          const key = (STATE.mvtTaille||'_')+'_'+(STATE.mvtCouleur||'_');
+          const svQty = parseInt((p.stockVariantes||{})[key]);
+          return `<div style="font-size:11px;color:#888;margin-bottom:10px;">Stock de cette variante : ${isNaN(svQty)?"non renseigné":svQty}</div>`;
+        })()}
+        `:`
+        <div style="font-size:11px;color:#e07c00;background:#fff8e1;border-radius:6px;padding:8px 10px;margin-bottom:10px;">
+          ⚠️ Aucune taille/couleur configurée pour cet article — le stock sera ajusté sur le total uniquement.
+          Configure les tailles/couleurs dans la fiche article (✏️) pour un suivi précis par variante.
+        </div>
+        `}
         <button onclick="saveMvt()" class="btn-primary">Valider</button>
         ${isV1Stk?`<button onclick="setState({showStkModal:null});STATE.showDefectueux=true;render()" class="btn-ghost" style="width:100%;margin-top:8px;">🔧 Voir l'historique des défectueux</button>`:""}
       </div>
@@ -6380,7 +6417,8 @@ function renderStkModal() {
 
 window.saveMvt = () => {
   const q=parseInt(STATE.mvtQty)||0, p=STATE.showStkModal;
-  STATE.products=STATE.products.map(x=>x.id===p.id?{...x,stock:Math.max(0,x.stock+(STATE.mvtType==="entree"?q:-q))}:x);
+  const delta = STATE.mvtType==="entree"?q:-q;
+  STATE.products = ajusterStock(STATE.products, p.id, delta, STATE.mvtTaille, STATE.mvtCouleur);
   if(STATE.mvtType==="sortie" && STATE.mvtDefectueux && q>0) {
     const mvt = {id:uid("DEF"), date:new Date().toISOString(), productId:p.id, productName:p.name, ref:p.ref, qty:q, taille:STATE.mvtTaille||"", couleur:STATE.mvtCouleur||"", vendeur:STATE.vendeur?.nom||""};
     STATE.mouvementsDefectueux = [...(STATE.mouvementsDefectueux||[]), mvt];
@@ -8369,7 +8407,7 @@ window.annulerVente = (venteId, complet) => {
 
     // 1. Remettre les articles en stock
     v.panier.filter(x=>!x.retour&&!x.avoirId).forEach(it=>{
-      STATE.products = STATE.products.map(p=>p.id===it.id?{...p,stock:p.stock+it.qty}:p);
+      STATE.products = ajusterStock(STATE.products, it.prodIdOriginal||it.id, it.qty, it.taille, it.couleur);
     });
     lsSet("bj_products", STATE.products);
 
