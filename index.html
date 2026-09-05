@@ -2910,6 +2910,21 @@ window.setRemiseArtVal = (id, val) => {
   STATE.panier = STATE.panier.map(x => x.id===id ? {...x, remise:val} : x);
   render();
 };
+// Calcule le prix unitaire réellement payé pour une ligne d'achat donnée, en tenant compte de la
+// remise article ET de la part proportionnelle d'une remise globale/fidélité/quantité sur toute la vente.
+function calculerPrixPayeReel(venteOrigine, ligneOrigine) {
+  const remArticle = ligneOrigine.remiseType==="pct" ? ligneOrigine.price*(parseFloat(ligneOrigine.remise||0)/100)
+                    : ligneOrigine.remiseType==="eur" ? parseFloat(ligneOrigine.remise||0)/ligneOrigine.qty : 0;
+  const puApresRemiseArticle = Math.max(0, ligneOrigine.price - remArticle);
+  const sousTotalVente = (venteOrigine.panier||[]).filter(x=>!x.retour&&!x.avoirId).reduce((s,i)=>{
+    const r = i.remiseType==="pct" ? i.price*(parseFloat(i.remise||0)/100) : i.remiseType==="eur" ? parseFloat(i.remise||0)/i.qty : 0;
+    return s+Math.max(0,i.price-r)*i.qty;
+  },0);
+  const totalRemiseGlobaleVente = (parseFloat(venteOrigine.remise)||0) + (parseFloat(venteOrigine.remiseFid)||0) + (parseFloat(venteOrigine.remiseProg)||0);
+  const tauxGlobal = sousTotalVente>0 ? totalRemiseGlobaleVente/sousTotalVente : 0;
+  return Math.max(0, +(puApresRemiseArticle*(1-tauxGlobal)).toFixed(2));
+}
+
 window.addRetour = (pid, taille, couleur) => {
   const p = STATE.products.find(x=>x.id===pid);
   if(!p) return;
@@ -2919,19 +2934,28 @@ window.addRetour = (pid, taille, couleur) => {
   if(ex) { STATE.panier = STATE.panier.map(x=>x.id===retourId?{...x,qty:x.qty+1}:x); render(); STATE.searchRetour=""; STATE.searchRetourBC=""; return; }
 
   // Chercher si la cliente sélectionnée a bien acheté cet article (même variante), pour reprendre le prix réellement payé (remise éventuelle incluse)
-  let ligneOrigine = null, venteOrigineId = null;
+  let ligneOrigine = null, venteOrigineId = null, venteOrigine = null;
   if(STATE.client) {
     const ventesClient = (STATE.ventes||[])
       .filter(v=>!v.annulee && v.client?.id===STATE.client.id)
       .sort((a,b)=>new Date(b.date)-new Date(a.date)); // la plus récente d'abord
     for(const v of ventesClient) {
       const art = (v.panier||[]).find(x=>!x.retour && !x.avoirId && (x.prodIdOriginal||x.id)===pid && (x.taille||"")===(taille||"") && (x.couleur||"")===(couleur||""));
-      if(art) { ligneOrigine = art; venteOrigineId = v.id; break; }
+      if(art) { ligneOrigine = art; venteOrigineId = v.id; venteOrigine = v; break; }
     }
   }
 
+  // Calculer le prix unitaire réellement payé, en incluant la part proportionnelle d'une éventuelle
+  // remise globale/fidélité/quantité appliquée sur toute la vente d'origine (pas seulement la remise article)
+  let prixPayeReel = null;
+  if(ligneOrigine && venteOrigine) {
+    prixPayeReel = calculerPrixPayeReel(venteOrigine, ligneOrigine);
+  }
+
   if(ligneOrigine) {
-    STATE.panier = [...STATE.panier, {...ligneOrigine, id:retourId, qty:1, retour:true, retourVenteId:venteOrigineId, prodIdOriginal:pid, taille:taille||"", couleur:couleur||""}];
+    const remiseEquivalente = prixPayeReel!=null ? +(ligneOrigine.price - prixPayeReel).toFixed(2) : (ligneOrigine.remiseType==="pct"?ligneOrigine.price*(parseFloat(ligneOrigine.remise||0)/100):ligneOrigine.remiseType==="eur"?parseFloat(ligneOrigine.remise||0)/ligneOrigine.qty:0);
+    STATE.panier = [...STATE.panier, {...ligneOrigine, id:retourId, qty:1, retour:true, retourVenteId:venteOrigineId, prodIdOriginal:pid, taille:taille||"", couleur:couleur||"",
+      remise: remiseEquivalente>0.001 ? String(remiseEquivalente) : "", remiseType: remiseEquivalente>0.001 ? "eur" : ""}];
   } else {
     const label = [taille, couleur].filter(Boolean).join(" / ");
     STATE.panier = [...STATE.panier, {...p, id:retourId, qty:1, retour:true, remise:"", remiseType:"", prodIdOriginal:pid, taille:taille||"", couleur:couleur||"", name:label?`${p.name} (${label})`:p.name}];
@@ -8453,11 +8477,15 @@ window.validerRetourHistorique = (venteId, articlesIds) => {
   articlesIds.forEach(artId => {
     const art = (v.panier||[]).find(x=>x.id===artId);
     if(!art) return;
+    const prixPayeReel = calculerPrixPayeReel(v, art);
+    const remiseEquivalente = +((art.price - prixPayeReel)*(art.qty||1)).toFixed(2);
     STATE.panier = [...STATE.panier, {
       ...art,
       id: "R_"+art.id,
       retour: true,
       retourVenteId: venteId,
+      remise: remiseEquivalente>0.001 ? String(remiseEquivalente) : "",
+      remiseType: remiseEquivalente>0.001 ? "eur" : "",
     }];
   });
   STATE.showRetourHistorique = false;
