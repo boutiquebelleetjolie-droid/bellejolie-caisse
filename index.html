@@ -142,6 +142,7 @@ const CLES_SYNC_TEMPS_REEL = {
   bj_ouvertures: "ouvertures", bj_caisse_jour: "caisseJour",
   bj_ejs_service: "emailjsServiceId", bj_ejs_template: "emailjsTemplateId", bj_ejs_key: "emailjsPublicKey",
 };
+const CLES_SYNC_PROTEGEES = new Set(["emailjsServiceId","emailjsTemplateId","emailjsPublicKey"]); // ne jamais écraser par une valeur vide venue d'un autre appareil
 window._syncBannerTimeout = null;
 function demarrerSyncTempsReel() {
   if(!_fbDb) return;
@@ -151,6 +152,7 @@ function demarrerSyncTempsReel() {
       const data = doc.data();
       if(!data || data.device === DEVICE_ID) return; // c'est notre propre écriture, on ignore
       if(doc.metadata.hasPendingWrites) return; // écriture locale pas encore confirmée par le serveur, on ignore
+      if(CLES_SYNC_PROTEGEES.has(stateKey) && !data.value && STATE[stateKey]) return; // ne pas écraser un réglage configuré par du vide venu d'ailleurs
       // Appliquer la mise à jour venue d'un autre appareil
       try {
         localStorage.setItem(storageKey, JSON.stringify(data.value));
