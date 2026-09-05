@@ -10095,7 +10095,7 @@ function renderVarianteModal() {
           ${(!vm.taille&&(p.tailles||[]).length>0)||(!vm.couleur&&(p.couleurs||[]).length>0)?"disabled":""}
           class="btn-primary"
           style="opacity:${(!vm.taille&&(p.tailles||[]).length>0)||(!vm.couleur&&(p.couleurs||[]).length>0)?0.4:1}">
-          Ajouter au panier
+          ${vm.mode==="resa"?"Ajouter à la réservation":"Ajouter au panier"}
         </button>
       </div>
     </div>
@@ -10125,6 +10125,11 @@ function renderResaBoutonCaisse(clientId) {
 window.confirmerVariante = () => {
   const vm = STATE.showVarianteModal;
   if(!vm) return;
+  if(vm.mode==="resa") {
+    STATE.showVarianteModal = null;
+    ajouterArticleResa(vm.prodId, vm.taille||null, vm.couleur||null);
+    return;
+  }
   const p = STATE.products.find(x=>x.id===vm.prodId);
   if(!p) return;
   // Clé unique : prodId + taille + couleur
@@ -14205,7 +14210,7 @@ function renderModalReservation() {
           </div>`:""}
           ${produits.length>0?`<div style="border:1px solid #e8e0e4;border-radius:8px;max-height:150px;overflow-y:auto;margin-bottom:8px;">
             ${produits.slice(0,6).map(p=>`
-              <div onclick="ajouterArticleResa('${p.id}')"
+              <div onclick="ajouterArticleOuVarianteResa('${p.id}')"
                 style="padding:8px 12px;cursor:pointer;border-bottom:0.5px solid #f0ebee;font-size:13px;display:flex;justify-content:space-between;">
                 <span><strong>${p.name}</strong> · ${eur(p.price)}</span>
                 <span style="color:#888;">Stock: ${p.stock}</span>
@@ -14292,6 +14297,19 @@ window.resaBcKeyDown = (e) => {
   }
 };
 
+window.ajouterArticleOuVarianteResa = (prodId) => {
+  const p = STATE.products.find(x=>x.id===prodId);
+  if(!p) return;
+  const taillesDispo = (p.tailles||[]).filter(Boolean);
+  const couleursDispo = (p.couleurs||[]).filter(Boolean);
+  if(taillesDispo.length>0 || couleursDispo.length>0) {
+    STATE.showVarianteModal = {prodId, taille:"", couleur:"", mode:"resa"};
+    render();
+    return;
+  }
+  ajouterArticleResa(prodId);
+};
+
 window.ajouterArticleResa = (prodId, taille, couleur) => {
   const p = STATE.products.find(x=>x.id===prodId);
   if(!p) return;
@@ -14336,7 +14354,8 @@ window.validerReservation = async () => {
 
   // Déduire du stock
   articles.forEach(a => {
-    STATE.products = STATE.products.map(p=>p.id===a.id?{...p,stock:Math.max(0,p.stock-(a.qty||1)),reserveQty:(p.reserveQty||0)+(a.qty||1)}:p);
+    STATE.products = ajusterStock(STATE.products, a.id, -(a.qty||1), a.taille, a.couleur);
+    STATE.products = STATE.products.map(p=>p.id===a.id?{...p,reserveQty:(p.reserveQty||0)+(a.qty||1)}:p);
   });
   lsSet("bj_products", STATE.products);
 
@@ -14403,7 +14422,8 @@ window.annulerReservation = (resaId) => {
   if(!confirm(`Annuler la réservation de ${resa.clientNom} ?\nLes articles seront remis en stock.`)) return;
   // Remettre en stock
   resa.articles.forEach(a => {
-    STATE.products = STATE.products.map(p=>p.id===a.id?{...p,stock:p.stock+(a.qty||1),reserveQty:Math.max(0,(p.reserveQty||0)-(a.qty||1))}:p);
+    STATE.products = ajusterStock(STATE.products, a.id, (a.qty||1), a.taille, a.couleur);
+    STATE.products = STATE.products.map(p=>p.id===a.id?{...p,reserveQty:Math.max(0,(p.reserveQty||0)-(a.qty||1))}:p);
   });
   lsSet("bj_products", STATE.products);
   STATE.reservations = STATE.reservations.map(r=>r.id===resaId?{...r,statut:"annulee"}:r);
