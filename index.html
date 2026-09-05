@@ -5402,6 +5402,7 @@ function renderStock() {
   if(STATE.vendeur.role!=="apprenti") html += '<button onclick="openProdModal(null)" class="btn-primary" style="width:auto;padding:8px 16px;">+ Nouvel article</button>';
   if(isV1) html += '<button onclick="STATE.stockTab=\'reception\';render()" class="btn-ghost" style="white-space:nowrap;">📦 Réception facture</button>';
   if(isV1) html += '<button onclick="ouvrirApercuExtractionMarque()" class="btn-ghost" style="white-space:nowrap;">🔧 Extraire les marques</button>';
+  if(isV1) html += '<button onclick="STATE.showDefectueux=true;render()" class="btn-ghost" style="white-space:nowrap;color:#a32d2d;border-color:#f0959599;">🔧 Défectueux</button>';
   const dateEtiq = STATE.dateEtiq || dateLocaleStr();
   const articlesJour = STATE.products.filter(p => (p.dateAjout||"").slice(0,10)===dateEtiq);
   html += '<div style="display:flex;align-items:center;gap:6px;background:#fff8e1;border:1px solid #fac775;border-radius:8px;padding:6px 10px;">';
@@ -5759,7 +5760,7 @@ window.openProdModal = id => {
   STATE.showProdModal=true; render();
 };
 window.openBCModal  = id => { STATE.showBCModal=STATE.products.find(p=>p.id===id); STATE.etiquetteTailleVal=''; STATE.etiquetteCouleurVal=''; render(); };
-window.openStkModal = id => { STATE.showStkModal=STATE.products.find(p=>p.id===id); STATE.mvtType="entree"; STATE.mvtQty=""; STATE.mvtTaille=""; STATE.mvtCouleur=""; STATE.mvtDefectueux=false; render(); };
+window.openStkModal = id => { STATE.showStkModal=STATE.products.find(p=>p.id===id); STATE.mvtType="entree"; STATE.mvtQty="1"; STATE.mvtTaille=""; STATE.mvtCouleur=""; STATE.mvtDefectueux=false; render(); };
 window.deleteProd   = id => { if(confirm("Supprimer cet article ?"))setState({products:STATE.products.filter(p=>p.id!==id)}); };
 
 function renderProdModal() {
@@ -6417,18 +6418,25 @@ function renderStkModal() {
 
 window.saveMvt = () => {
   const q=parseInt(STATE.mvtQty)||0, p=STATE.showStkModal;
+  if(q<=0) { alert("⚠️ Indique une quantité (au moins 1) avant de valider."); return; }
   const delta = STATE.mvtType==="entree"?q:-q;
   STATE.products = ajusterStock(STATE.products, p.id, delta, STATE.mvtTaille, STATE.mvtCouleur);
+  let msgDefectueux = "";
   if(STATE.mvtType==="sortie" && STATE.mvtDefectueux && q>0) {
-    const mvt = {id:uid("DEF"), date:new Date().toISOString(), productId:p.id, productName:p.name, ref:p.ref, qty:q, taille:STATE.mvtTaille||"", couleur:STATE.mvtCouleur||"", vendeur:STATE.vendeur?.nom||""};
+    const coutUnitaire = parseFloat(p.prixAchat)||0;
+    const mvt = {id:uid("DEF"), date:new Date().toISOString(), productId:p.id, productName:p.name, ref:p.ref, qty:q, coutUnitaire, taille:STATE.mvtTaille||"", couleur:STATE.mvtCouleur||"", vendeur:STATE.vendeur?.nom||""};
     STATE.mouvementsDefectueux = [...(STATE.mouvementsDefectueux||[]), mvt];
     lsSet("bj_mouvements_defectueux", STATE.mouvementsDefectueux);
+    msgDefectueux = coutUnitaire>0 ? `\n\n📉 Perte enregistrée : ${eur(coutUnitaire*q)} (prix d'achat) — visible dans l'historique des défectueux.` : `\n\n(Astuce : renseigne le prix d'achat de cet article pour que la perte en € soit calculée automatiquement.)`;
   }
+  const nouveauStock = STATE.products.find(x=>x.id===p.id)?.stock;
   setState({products:STATE.products,showStkModal:null,mvtQty:"",mvtDefectueux:false,mvtTaille:"",mvtCouleur:""});
+  alert(`✅ ${STATE.mvtType==="entree"?"Entrée":"Sortie"} de ${q} enregistrée. Nouveau stock total : ${nouveauStock} unités.${msgDefectueux}`);
 };
 
 function renderDefectueuxModal() {
   const liste = [...(STATE.mouvementsDefectueux||[])].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const totalPerte = liste.reduce((s,m)=>s+(parseFloat(m.coutUnitaire)||0)*m.qty,0);
   return `
   <div class="modal-bg" onclick="if(event.target===this)setState({showDefectueux:false})">
     <div class="modal" style="max-width:480px;">
@@ -6443,13 +6451,19 @@ function renderDefectueuxModal() {
                 <div style="font-size:11px;color:#888;">${m.ref?"Réf. "+m.ref+" · ":""}${(m.taille||m.couleur)?[m.taille,m.couleur].filter(Boolean).join(" / ")+" · ":""}${new Date(m.date).toLocaleDateString("fr-FR")} · ${m.vendeur}</div>
               </div>
               <div style="display:flex;align-items:center;gap:10px;">
-                <span style="font-weight:600;color:#a32d2d;">-${m.qty}</span>
+                <div style="text-align:right;">
+                  <div style="font-weight:600;color:#a32d2d;">-${m.qty}</div>
+                  ${m.coutUnitaire>0?`<div style="font-size:10px;color:#e07c00;">-${eur(m.coutUnitaire*m.qty)}</div>`:""}
+                </div>
                 ${STATE.vendeur.id==="V1"?`<button onclick="supprimerMvtDefectueux('${m.id}')" title="Supprimer cette entrée" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:14px;">🗑️</button>`:""}
               </div>
             </div>
           `).join("")}
         </div>
-        <div style="margin-top:10px;font-size:12px;color:#888;text-align:right;">Total retiré : ${liste.reduce((s,m)=>s+m.qty,0)} article${liste.reduce((s,m)=>s+m.qty,0)>1?"s":""}</div>
+        <div style="margin-top:10px;background:#fcebeb;border-radius:8px;padding:10px 14px;display:flex;justify-content:space-between;font-size:13px;">
+          <span style="color:#888;">Total retiré : ${liste.reduce((s,m)=>s+m.qty,0)} article${liste.reduce((s,m)=>s+m.qty,0)>1?"s":""}</span>
+          <span style="font-weight:700;color:#a32d2d;">Perte : ${eur(totalPerte)}</span>
+        </div>
         `}
       </div>
     </div>
