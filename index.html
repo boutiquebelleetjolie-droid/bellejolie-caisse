@@ -86,7 +86,7 @@ const BOUTIQUE_CONFIG = {
   // Données "locales" propres à cette boutique (ventes, stock, Z de caisse, réservations)
   // Cette distinction sera utilisée lors de la migration vers Firebase
   DONNEES_GLOBALES: ["bj_clients","bj_avoirs","bj_promotions"],
-  DONNEES_LOCALES:  ["bj_products","bj_ventes","bj_caisseJour","bj_reservations","bj_annul_lignes","bj_attente","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux"],
+  DONNEES_LOCALES:  ["bj_products","bj_ventes","bj_caisseJour","bj_reservations","bj_annul_lignes","bj_attente","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux","bj_ouvertures"],
 };
 
 // ════════════════════════════════════════════════════════════════
@@ -139,6 +139,7 @@ async function firestorePullAll() {
 // Ignore ses propres écritures (via DEVICE_ID) pour éviter toute boucle.
 const CLES_SYNC_TEMPS_REEL = {
   bj_products: "products", bj_clients: "clients", bj_ventes: "ventes", bj_avoirs: "avoirs",
+  bj_ouvertures: "ouvertures",
 };
 window._syncBannerTimeout = null;
 function demarrerSyncTempsReel() {
@@ -602,6 +603,7 @@ let STATE = {
   caisseJour:  ls("bj_caisse_jour", []),
   depotsBanque: ls("bj_depots_banque", []),
   mouvementsDefectueux: ls("bj_mouvements_defectueux", []),
+  ouvertures: ls("bj_ouvertures", {}),
   fondOuverture: {},
   fondFermeture: {},      // Z de caisse journaliers
   transferts:      ls("bj_transferts",       []),
@@ -697,6 +699,7 @@ function setState(patch) {
   if(patch.caisseJour    !== undefined) lsSet("bj_caisse_jour",   STATE.caisseJour);
   if(patch.depotsBanque  !== undefined) lsSet("bj_depots_banque", STATE.depotsBanque);
   if(patch.mouvementsDefectueux !== undefined) lsSet("bj_mouvements_defectueux", STATE.mouvementsDefectueux);
+  if(patch.ouvertures !== undefined) lsSet("bj_ouvertures", STATE.ouvertures);
   if(patch.reservations  !== undefined) lsSet("bj_reservations",  STATE.reservations);
   if(patch.transferts  !== undefined) lsSet("bj_transferts",   STATE.transferts);
   if(patch.memos    !== undefined) lsSet("bj_memos",    STATE.memos);
@@ -1679,6 +1682,7 @@ window.exporterDonnees = () => {
     depotsVente:STATE.depotsVente||[],
     depotsBanque:STATE.depotsBanque||[],
     mouvementsDefectueux:STATE.mouvementsDefectueux||[],
+    ouvertures:STATE.ouvertures||{},
     // Config EmailJS incluse pour ne pas la perdre si le navigateur efface ses données
     emailjsServiceId:STATE.emailjsServiceId||"", emailjsTemplateId:STATE.emailjsTemplateId||"", emailjsPublicKey:STATE.emailjsPublicKey||"",
     geminiApiKey:STATE.geminiApiKey||"",
@@ -1699,7 +1703,7 @@ window.exporterDonnees = () => {
 
 window.pousserToutVersCloud = async () => {
   if(!_fbDb) { alert("⚠️ Firebase n'est pas connecté sur cet appareil."); return; }
-  const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisseJour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
+  const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisseJour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux","bj_ouvertures","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
   let compte = 0, erreurs = 0;
   for(const k of cles) {
     try {
@@ -1736,7 +1740,7 @@ window.restaurerDepuisCloud = async () => {
   if(!confirm("🔄 Ça va remplacer TOUTES les données actuellement affichées sur cet appareil par celles sauvegardées dans le cloud.\n\nContinuer ?")) return;
   try {
     const data = await firestorePullAll();
-    const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisseJour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
+    const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisseJour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux","bj_ouvertures","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
     let compte = 0;
     cles.forEach(k => { if(data[k]!==undefined) { localStorage.setItem(k, JSON.stringify(data[k])); compte++; } });
     alert("✅ "+compte+" éléments restaurés depuis le cloud !\n\nL'application va se recharger.");
@@ -1832,6 +1836,7 @@ window.importerDonnees = (input) => {
       if(data.depotsVente) {STATE.depotsVente=data.depotsVente;lsSet("bj_depots_vente",data.depotsVente);}
       if(data.depotsBanque) {STATE.depotsBanque=data.depotsBanque;lsSet("bj_depots_banque",data.depotsBanque);}
       if(data.mouvementsDefectueux) {STATE.mouvementsDefectueux=data.mouvementsDefectueux;lsSet("bj_mouvements_defectueux",data.mouvementsDefectueux);}
+      if(data.ouvertures) {STATE.ouvertures=data.ouvertures;lsSet("bj_ouvertures",data.ouvertures);}
       if(data.historiquePromo){STATE.historiquePromo=data.historiquePromo;lsSet("bj_historique_promo",data.historiquePromo);}
       // Config EmailJS : restaurée si présente dans la sauvegarde (évite de la reperdre si le navigateur efface ses données)
       if(data.emailjsServiceId)  { STATE.emailjsServiceId=data.emailjsServiceId;   lsSet("bj_ejs_service",data.emailjsServiceId); }
@@ -2304,7 +2309,7 @@ function renderCaisse() {
   const hierStr  = dateLocaleStr(hier);
 
   // Ouverture validée ce matin ?
-  const ouvertureToday = ls("bj_ouverture_"+todayStr, null);
+  const ouvertureToday = (STATE.ouvertures||{})[todayStr] || null;
   // Clôture faite hier ?
   const cloturHier = (STATE.caisseJour||[]).find(z=>z.date===hierStr);
   // Clôture faite aujourd'hui (si on veut vérifier aussi)
@@ -10801,8 +10806,8 @@ function renderCaisseJour() {
   const zDateLabel = STATE.zDateOffset===0?"Aujourd'hui":STATE.zDateOffset===-1?"Hier":zDate.toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"});
   const isToday = STATE.zDateOffset===0;
   const isDimanche = zDate.getDay()===0; // 0 = dimanche
-  // Ouverture du jour : sauvegardée sous bj_ouverture_YYYY-MM-DD
-  const ouvertureJour = ls("bj_ouverture_"+zDateStr, null);
+  // Ouverture du jour : stockée dans STATE.ouvertures[zDateStr] (bj_ouvertures), synchronisée entre appareils
+  const ouvertureJour = (STATE.ouvertures||{})[zDateStr] || null;
   const caisseOuverte = !!ouvertureJour?.valide;
 
   // Ventes du jour sélectionné
@@ -10921,7 +10926,7 @@ function renderCaisseJour() {
             <button onclick='imprimerZ(${JSON.stringify(zDejàFait).replace(/'/g,"&apos;")})' style="background:#fff;border:1px solid #3b6d11;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;color:#3b6d11;font-weight:500;white-space:nowrap;">🖨️ Réimprimer le ticket Z</button>
           </div>`
         : isDimanche&&!caisseOuverte?
-          `<div style="background:#fff8e1;border-radius:8px;padding:8px 14px;font-size:13px;color:#c07020;font-weight:500;">🔴 Fermé le dimanche — <button onclick="if(confirm('Ouvrir exceptionnellement ce dimanche ?')){lsSet('bj_ouverture_${zDateStr}',{heure:new Date().toISOString(),totalOuv:0,ecart:0,valide:true});render();}" style="background:none;border:none;color:#993556;cursor:pointer;text-decoration:underline;font-size:13px;">Ouverture exceptionnelle</button></div>`
+          `<div style="background:#fff8e1;border-radius:8px;padding:8px 14px;font-size:13px;color:#c07020;font-weight:500;">🔴 Fermé le dimanche — <button onclick="if(confirm('Ouvrir exceptionnellement ce dimanche ?')){STATE.ouvertures={...(STATE.ouvertures||{}),'${zDateStr}':{heure:new Date().toISOString(),totalOuv:0,ecart:0,valide:true}};setState({ouvertures:STATE.ouvertures});}" style="background:none;border:none;color:#993556;cursor:pointer;text-decoration:underline;font-size:13px;">Ouverture exceptionnelle</button></div>`
         : !caisseOuverte&&isToday?
           `<div style="background:#fff0f3;border-radius:8px;padding:8px 14px;font-size:13px;color:#993556;font-weight:500;">⚠️ Caisse non ouverte ce matin — validez l'ouverture avant de clôturer</div>`
         : `<button onclick="cloturerCaisse('${zDateStr}')" style="background:${isToday?'#993556':'#c07020'};color:#fff;border:none;border-radius:9px;padding:9px 18px;cursor:pointer;font-weight:500;">
@@ -11121,8 +11126,8 @@ function renderCaisseJour() {
 }
 
 function renderBoutonOuverture() {
-  const dateKey = "bj_ouverture_"+dateLocaleStr();
-  const dejàValidé = ls(dateKey, null);
+  const dateKey = dateLocaleStr();
+  const dejàValidé = (STATE.ouvertures||{})[dateKey] || null;
   if(dejàValidé) {
     const h = new Date(dejàValidé.heure).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
     return '<div style="margin-top:8px;background:#eaf3de;border-radius:7px;padding:8px;text-align:center;font-size:12px;color:#3b6d11;font-weight:500;">✅ Ouverture validée à '+h+'</div>';
@@ -11143,9 +11148,10 @@ window.validerOuvertureCaisse = () => {
   const msg = `✅ Ouverture de caisse validée — ${dateStr}
 💵 Fond compté : ${eur(totalOuv)}
 ✅ Fond conforme (${eur(FOND_RESERVE)})`;
-  // Sauvegarder l'heure d'ouverture
-  const key = "bj_ouverture_"+dateLocaleStr();
-  lsSet(key, {heure:new Date().toISOString(), totalOuv, ecart, valide:true});
+  // Sauvegarder l'heure d'ouverture (partagée entre appareils)
+  const key = dateLocaleStr();
+  STATE.ouvertures = {...(STATE.ouvertures||{}), [key]: {heure:new Date().toISOString(), totalOuv, ecart, valide:true}};
+  setState({ouvertures: STATE.ouvertures});
   const el = document.getElementById("ouverture-confirm");
   if(el){
     el.style.display="block";
@@ -11235,7 +11241,7 @@ window.cloturerCaisse = (targetDateStr) => {
   const especes=payM["especes"]||0;
   const FOND_RESERVE=80;
   const totalOuvBrut=Object.entries(STATE.fondOuverture||{}).reduce((s,[k,v])=>{const val=parseFloat(k.replace("ouv_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
-  const ouvertureJourCloture = ls("bj_ouverture_"+dateStr, null);
+  const ouvertureJourCloture = (STATE.ouvertures||{})[dateStr] || null;
   const totalOuv = totalOuvBrut || ouvertureJourCloture?.totalOuv || FOND_RESERVE;
   const totalFer=Object.entries(STATE.fondFermeture||{}).reduce((s,[k,v])=>{const val=parseFloat(k.replace("fer_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
   const aDeposer=Math.max(0,totalFer-FOND_RESERVE);
@@ -14940,6 +14946,22 @@ lsSet("bj_vendeurs", VENDEURS.map(v=>({code:v.code})));
     lsSet("bj_avoirs", STATE.avoirs);
     console.log("Migration avoirs : avoirs utilisés corrigés");
   }
+})();
+
+// Migration unique : regrouper les anciennes clés bj_ouverture_YYYY-MM-DD (non synchronisées entre
+// appareils) dans un seul objet bj_ouvertures (vraiment synchronisé), sans perdre l'historique.
+(function() {
+  let changed = false;
+  const fusion = {...(STATE.ouvertures||{})};
+  Object.keys(localStorage).forEach(k => {
+    const m = k.match(/^bj_ouverture_(\d{4}-\d{2}-\d{2})$/);
+    if(!m) return;
+    const dateStr = m[1];
+    if(!fusion[dateStr]) {
+      try { fusion[dateStr] = JSON.parse(localStorage.getItem(k)); changed = true; } catch{}
+    }
+  });
+  if(changed) { STATE.ouvertures = fusion; lsSet("bj_ouvertures", STATE.ouvertures); }
 })();
 
 // Nettoyage unique des données de test (ouverture boutique 01/09)
