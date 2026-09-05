@@ -1658,12 +1658,27 @@ function renderVendeurSettings() {
   </div>`;
 }
 
-window.sauvegarderEmailJS = () => {
+window.sauvegarderEmailJS = async () => {
   lsSet('bj_ejs_service',  STATE.emailjsServiceId||"");
   lsSet('bj_ejs_template', STATE.emailjsTemplateId||"");
   lsSet('bj_ejs_key',      STATE.emailjsPublicKey||"");
-  alert("✅ Configuration EmailJS sauvegardée !");
   render();
+  if(!_fbDb) {
+    alert("⚠️ Configuration enregistrée SEULEMENT sur cet appareil — Firebase n'est pas connecté ici, elle ne se propagera pas automatiquement aux autres appareils.");
+    return;
+  }
+  try {
+    const maintenant = new Date().toISOString();
+    await Promise.all([
+      _fbDb.collection("bellejolie").doc("bj_ejs_service").set({ value: STATE.emailjsServiceId||"", maj: maintenant, device: DEVICE_ID }),
+      _fbDb.collection("bellejolie").doc("bj_ejs_template").set({ value: STATE.emailjsTemplateId||"", maj: maintenant, device: DEVICE_ID }),
+      _fbDb.collection("bellejolie").doc("bj_ejs_key").set({ value: STATE.emailjsPublicKey||"", maj: maintenant, device: DEVICE_ID }),
+    ]);
+    alert("✅ Configuration EmailJS enregistrée et confirmée dans le cloud !\n\nElle va se propager automatiquement aux autres appareils.");
+  } catch(err) {
+    console.error("Erreur push EmailJS vers Firebase:", err);
+    alert("⚠️ Enregistré sur cet appareil, MAIS l'envoi vers le cloud a échoué :\n"+(err?.message||err)+"\n\nLa configuration ne se propagera pas aux autres appareils tant que ce n'est pas résolu. Vérifie ta connexion internet et réessaie.");
+  }
 };
 
 window.sauvegarderGeminiKey = () => {
