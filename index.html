@@ -4154,9 +4154,19 @@ function renderPayModal() {
         <button onclick="setState({showPay:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
       </div>
       <div class="modal-body">
-        <div style="background:#f5f0f2;border-radius:10px;padding:12px 16px;margin-bottom:14px;display:flex;justify-content:space-between;font-size:17px;font-weight:500;">
-          <span>${total<0?"Avoir à remettre":"Total à encaisser"}</span>
-          <span style="color:${total<0?"#e07c00":"#993556"};">${total<0?"🎟️ "+eur(-total):eur(total)}</span>
+        <div style="background:#f5f0f2;border-radius:10px;padding:12px 16px;margin-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;font-size:17px;font-weight:500;">
+            <span>${total<0?"Avoir à remettre":"Total à encaisser"}</span>
+            <span style="color:${total<0?"#e07c00":"#993556"};">${total<0?"🎟️ "+eur(-total):eur(total)}</span>
+          </div>
+          ${(()=>{
+            const {remGlobal, fidPctFinal, remiseFidMontant, remiseProgMontant, remiseProgPct, remiseProgPalier} = calcPanier();
+            const lignes = [];
+            if(remGlobal>0) lignes.push(`<div style="display:flex;justify-content:space-between;color:#3b6d11;"><span>Remise globale (${STATE.remType==="pct"?STATE.remVal+"%":"fixe"})</span><span>-${eur(remGlobal)}</span></div>`);
+            if(fidPctFinal>0) lignes.push(`<div style="display:flex;justify-content:space-between;color:#3b6d11;"><span>Fidélité -${fidPctFinal}%</span><span>-${eur(remiseFidMontant)}</span></div>`);
+            if(remiseProgMontant>0) lignes.push(`<div style="display:flex;justify-content:space-between;color:#993556;"><span>🎉 Offre quantité (${remiseProgPalier?.qty}+ art. -${remiseProgPct}%)</span><span>-${eur(remiseProgMontant)}</span></div>`);
+            return lignes.length ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #e8e0e4;font-size:12px;display:flex;flex-direction:column;gap:4px;">${lignes.join("")}</div>` : "";
+          })()}
         </div>
         <div style="display:flex;gap:8px;margin-bottom:14px;">
           <div onclick="STATE.payMixed=false;render();" style="flex:1;padding:10px;border-radius:10px;cursor:pointer;text-align:center;border:2px solid ${!mixed?"#993556":"#ddd"};background:${!mixed?"#fbeaf0":"#fff"};font-weight:${!mixed?500:400};color:${!mixed?"#993556":"#555"};font-size:13px;">
