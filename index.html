@@ -2782,7 +2782,7 @@ function renderCaisse() {
             ${STATE.products.filter(p=>normStr(p.name+p.ref).includes(normStr(STATE.searchRetour))).slice(0,6).map(p=>`
               <div style="padding:7px 10px;border-bottom:0.5px solid #e8e0e4;font-size:13px;display:flex;justify-content:space-between;align-items:center;">
                 <div><div style="font-weight:500;">${p.name}</div><div style="font-size:11px;color:#888;">${p.ref} — ${eur(p.price)}</div></div>
-                <button onclick="addRetour('${p.id}')" style="background:#fff3e8;border:1px solid #e07c00;border-radius:6px;padding:4px 8px;font-size:11px;color:#e07c00;cursor:pointer;">↩ Retour</button>
+                <button onclick="addRetourOuVariante('${p.id}')" style="background:#fff3e8;border:1px solid #e07c00;border-radius:6px;padding:4px 8px;font-size:11px;color:#e07c00;cursor:pointer;">↩ Retour</button>
               </div>
             `).join("")||'<div style="padding:8px 10px;font-size:12px;color:#aaa;">Aucun article</div>'}
           </div>
@@ -2904,36 +2904,67 @@ window.setRemiseArtVal = (id, val) => {
   STATE.panier = STATE.panier.map(x => x.id===id ? {...x, remise:val} : x);
   render();
 };
-window.addRetour = (pid) => {
+window.addRetour = (pid, taille, couleur) => {
   const p = STATE.products.find(x=>x.id===pid);
   if(!p) return;
-  const retourId = "R_"+pid;
+  const varSuffix = (taille||couleur) ? "_"+(taille||"")+"_"+(couleur||"") : "";
+  const retourId = "R_"+pid+varSuffix;
   const ex = STATE.panier.find(x=>x.id===retourId);
   if(ex) { STATE.panier = STATE.panier.map(x=>x.id===retourId?{...x,qty:x.qty+1}:x); render(); STATE.searchRetour=""; STATE.searchRetourBC=""; return; }
 
-  // Chercher si la cliente sélectionnée a bien acheté cet article, pour reprendre le prix réellement payé (remise éventuelle incluse)
+  // Chercher si la cliente sélectionnée a bien acheté cet article (même variante), pour reprendre le prix réellement payé (remise éventuelle incluse)
   let ligneOrigine = null, venteOrigineId = null;
   if(STATE.client) {
     const ventesClient = (STATE.ventes||[])
       .filter(v=>!v.annulee && v.client?.id===STATE.client.id)
       .sort((a,b)=>new Date(b.date)-new Date(a.date)); // la plus récente d'abord
     for(const v of ventesClient) {
-      const art = (v.panier||[]).find(x=>!x.retour && !x.avoirId && x.id===pid);
+      const art = (v.panier||[]).find(x=>!x.retour && !x.avoirId && (x.prodIdOriginal||x.id)===pid && (x.taille||"")===(taille||"") && (x.couleur||"")===(couleur||""));
       if(art) { ligneOrigine = art; venteOrigineId = v.id; break; }
     }
   }
 
   if(ligneOrigine) {
-    STATE.panier = [...STATE.panier, {...ligneOrigine, id:retourId, qty:1, retour:true, retourVenteId:venteOrigineId}];
+    STATE.panier = [...STATE.panier, {...ligneOrigine, id:retourId, qty:1, retour:true, retourVenteId:venteOrigineId, prodIdOriginal:pid, taille:taille||"", couleur:couleur||""}];
   } else {
-    STATE.panier = [...STATE.panier, {...p, id:retourId, qty:1, retour:true, remise:"", remiseType:""}];
+    const label = [taille, couleur].filter(Boolean).join(" / ");
+    STATE.panier = [...STATE.panier, {...p, id:retourId, qty:1, retour:true, remise:"", remiseType:"", prodIdOriginal:pid, taille:taille||"", couleur:couleur||"", name:label?`${p.name} (${label})`:p.name}];
   }
   STATE.searchRetour=""; STATE.searchRetourBC=""; STATE.searchRetourBC="";
   render();
 };
+
+// Si l'article a des tailles/couleurs configurées, ouvre le sélecteur de variante avant d'ajouter le retour
+window.addRetourOuVariante = (pid) => {
+  const p = STATE.products.find(x=>x.id===pid);
+  if(!p) return;
+  const taillesDispo = (p.tailles||[]).filter(Boolean);
+  const couleursDispo = (p.couleurs||[]).filter(Boolean);
+  if(taillesDispo.length>0 || couleursDispo.length>0) {
+    STATE.showVarianteModal = {prodId:pid, taille:"", couleur:"", mode:"retour"};
+    render();
+    return;
+  }
+  addRetour(pid);
+};
+
 window.retourBcKeyDown = e => {
   if(e.key!=="Enter") return;
   const q = STATE.searchRetourBC.trim();
+  // Chercher d'abord dans les codes-barres de variantes
+  for(const prod of STATE.products) {
+    const bv = prod.barcodeVariantes||{};
+    for(const [varKey, bc] of Object.entries(bv)) {
+      if(bc === q) {
+        const parts = varKey.split('_');
+        const taille = parts[0]==='_'?'':parts[0];
+        const couleur = parts.slice(1).join('_').replace(/^_/,'');
+        addRetour(prod.id, taille||null, couleur||null);
+        STATE.searchRetourBC=""; render();
+        return;
+      }
+    }
+  }
   const p = STATE.products.find(x=>x.barcode===q||x.ref===q||x.ref.toLowerCase()===("ref-"+q).toLowerCase());
   if(p) {
     addRetour(p.id);
@@ -2967,7 +2998,7 @@ window.creerAvoirSeul = () => {
 
   // Remettre les articles retournés en stock ET marquer les retours sur les ventes sources
   STATE.panier.filter(x=>x.retour&&!x.avoirId).forEach(it=>{
-    const origId = it.id.replace("R_","");
+    const origId = it.prodIdOriginal || it.id.replace("R_","");
     STATE.products = ajusterStock(STATE.products, origId, it.qty, it.taille, it.couleur);
     // Marquer l'article retourné sur la vente source (retourVenteId ou recherche)
     const sourceVenteId = it.retourVenteId;
@@ -3030,7 +3061,7 @@ window.rembourserEspeces = () => {
   const montant = parseFloat((-total).toFixed(2));
   // Remettre en stock les retours
   STATE.panier.filter(x=>x.retour&&!x.avoirId).forEach(it=>{
-    const origId = it.id.replace("R_","");
+    const origId = it.prodIdOriginal || it.id.replace("R_","");
     STATE.products = ajusterStock(STATE.products, origId, it.qty, it.taille, it.couleur);
   });
   // Décrémenter les articles achetés
@@ -4336,7 +4367,7 @@ window.validerPaiement = () => {
   STATE.panier.filter(x=>x.retour).forEach(it=>{
     // Retour article physique → remettre en stock
     if(!it.avoirId) {
-      const origId = it.id.replace("R_","");
+      const origId = it.prodIdOriginal || it.id.replace("R_","");
       STATE.products = ajusterStock(STATE.products, origId, it.qty, it.taille, it.couleur);
       // Marquer l'article retourné sur la vente source si connue
       if(it.retourVenteId) {
@@ -10142,7 +10173,7 @@ function renderVarianteModal() {
           ${(!vm.taille&&(p.tailles||[]).length>0)||(!vm.couleur&&(p.couleurs||[]).length>0)?"disabled":""}
           class="btn-primary"
           style="opacity:${(!vm.taille&&(p.tailles||[]).length>0)||(!vm.couleur&&(p.couleurs||[]).length>0)?0.4:1}">
-          ${vm.mode==="resa"?"Ajouter à la réservation":"Ajouter au panier"}
+          ${vm.mode==="resa"?"Ajouter à la réservation":vm.mode==="retour"?"↩ Retourner cet article":"Ajouter au panier"}
         </button>
       </div>
     </div>
@@ -10175,6 +10206,11 @@ window.confirmerVariante = () => {
   if(vm.mode==="resa") {
     STATE.showVarianteModal = null;
     ajouterArticleResa(vm.prodId, vm.taille||null, vm.couleur||null);
+    return;
+  }
+  if(vm.mode==="retour") {
+    STATE.showVarianteModal = null;
+    addRetour(vm.prodId, vm.taille||null, vm.couleur||null);
     return;
   }
   const p = STATE.products.find(x=>x.id===vm.prodId);
@@ -12864,7 +12900,7 @@ function renderStatsRetours() {
   (STATE.ventes||[]).filter(v=>!v.test&&!v.annulee&&new Date(v.date)>=debut).forEach(v=>{
     (v.panier||[]).filter(x=>x.retour&&!x.avoirId).forEach(it=>{
       lignesRetour.push({
-        articleId: it.id.replace("R_",""),
+        articleId: it.prodIdOriginal || it.id.replace("R_",""),
         nom: it.name.replace(" (↩)",""),
         prix: it.price,
         qty: it.qty||1,
