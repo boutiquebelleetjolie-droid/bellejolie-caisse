@@ -139,7 +139,7 @@ async function firestorePullAll() {
 // Ignore ses propres écritures (via DEVICE_ID) pour éviter toute boucle.
 const CLES_SYNC_TEMPS_REEL = {
   bj_products: "products", bj_clients: "clients", bj_ventes: "ventes", bj_avoirs: "avoirs",
-  bj_ouvertures: "ouvertures", bj_caisse_jour: "caisseJour",
+  bj_ouvertures: "ouvertures", bj_caisse_jour: "caisseJour", bj_attente: "ticketsAttente",
   bj_ejs_service: "emailjsServiceId", bj_ejs_template: "emailjsTemplateId", bj_ejs_key: "emailjsPublicKey",
 };
 const CLES_SYNC_PROTEGEES = new Set(["emailjsServiceId","emailjsTemplateId","emailjsPublicKey"]); // ne jamais écraser par une valeur vide venue d'un autre appareil
@@ -2387,9 +2387,9 @@ function renderCaisse() {
       </div>
 
       <!-- Panier -->
-      <div class="card" style="flex:1;min-height:0;overflow-y:auto;">
+      <div class="card" style="${panier.length===0?"":"flex:1;min-height:0;"}overflow-y:auto;">
         <div style="font-weight:500;font-size:14px;margin-bottom:10px;">🛒 Panier — ${panier.length} article${panier.length!==1?"s":""}</div>
-        ${panier.length===0?`<div style="text-align:center;color:#aaa;padding:44px 0;font-size:13px;">Panier vide — scannez ou recherchez un article</div>`:`
+        ${panier.length===0?`<div style="text-align:center;color:#aaa;padding:16px 0;font-size:13px;">Panier vide — scannez ou recherchez un article</div>`:`
         <table style="font-size:13px;width:100%;">
           <thead><tr style="border-bottom:0.5px solid #e8e0e4;">
             <th style="text-align:left;padding:6px 4px;font-weight:500;color:#888;font-size:12px;">Article</th>
