@@ -3756,10 +3756,10 @@ function renderTicketModal() {
           ${v.client?`<div style="text-align:center;font-size:12px;font-weight:500;">${v.client.prenom} ${v.client.nom}</div>`:""}
           <div style="border-top:1px dashed #ccc;margin:6px 0;"></div>
           ${v.panier.filter(x=>!x.retour).map(i=>{
-            const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
-            const puNet = Math.max(0,i.price-remArt);
-            return `<div style="display:flex;justify-content:space-between;"><span>${i.qty}× ${i.name.slice(0,18)}</span><span>${eur(puNet*i.qty)}</span></div>
-            ${remArt>0?`<div style="font-size:10px;color:#2a6e1a;padding-left:8px;">Remise article: -${eur(remArt*i.qty)}</div>`:""}`;
+            const prixPaye = calculerPrixPayeReel(v, i);
+            const remiseUnit = +(i.price-prixPaye).toFixed(2);
+            return `<div style="display:flex;justify-content:space-between;"><span>${i.qty}× ${i.name.slice(0,18)}</span><span>${eur(prixPaye*i.qty)}</span></div>
+            ${remiseUnit>0.001?`<div style="font-size:10px;color:#2a6e1a;padding-left:8px;">Prix normal ${eur(i.price*i.qty)} — Remise -${eur(remiseUnit*i.qty)}</div>`:""}`;
           }).join("")}
           ${retours.length>0?`
             <div style="border-top:1px dashed #ccc;margin:4px 0;"></div>
@@ -3768,12 +3768,18 @@ function renderTicketModal() {
               const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
               const puNet = Math.max(0,i.price-remArt);
               return `<div style="display:flex;justify-content:space-between;color:#e07c00;"><span>↩ ${i.qty}× ${i.name.slice(0,18)}</span><span>-${eur(puNet*i.qty)}</span></div>
-              ${remArt>0?`<div style="font-size:10px;color:#2a6e1a;padding-left:8px;">Remise reprise : -${eur(remArt*i.qty)}</div>`:""}`;
+              ${remArt>0?`<div style="font-size:10px;color:#2a6e1a;padding-left:8px;">Prix normal ${eur(i.price*i.qty)} — Remise reprise -${eur(remArt*i.qty)}</div>`:""}`;
             }).join("")}
           `:""}
           <div style="border-top:1px dashed #ccc;margin:6px 0;"></div>
           ${v.remise>0?`<div style="display:flex;justify-content:space-between;color:#2a6e1a;font-size:11px;"><span>Remise globale</span><span>-${eur(v.remise)}</span></div>`:""}
           ${v.remiseFid>0?`<div style="display:flex;justify-content:space-between;color:#2a6e1a;font-size:11px;"><span>Fidélité -20%</span><span>-${eur(v.remiseFid)}</span></div>`:""}
+          ${(()=>{
+            const grossAchats = v.panier.filter(x=>!x.retour).reduce((s,i)=>s+i.price*i.qty,0);
+            const netAchats = v.panier.filter(x=>!x.retour).reduce((s,i)=>s+calculerPrixPayeReel(v,i)*i.qty,0);
+            const totalRemises = +(grossAchats-netAchats).toFixed(2);
+            return totalRemises>0.001?`<div style="display:flex;justify-content:space-between;font-weight:700;color:#2a6e1a;font-size:12px;"><span>Total remises</span><span>-${eur(totalRemises)}</span></div>`:"";
+          })()}
           <div style="display:flex;justify-content:space-between;font-weight:700;font-size:15px;margin-top:4px;"><span>TOTAL</span><span>${eur(v.total)}</span></div>
           ${(()=>{
             if(!v.client) return "";
@@ -9729,13 +9735,16 @@ window.ouvrirEnvoiTicket = () => {
 // ── Helpers message ticket ───────────────────────────────────────
 function buildMsgSMS(v) {
   const mL={cb:"CB",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Cadeau",mixte:"Mixte"};
-  const articles=(v?.panier||[]).filter(x=>!x.retour).map(i=>{
-    const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
-    const puNet = Math.max(0,i.price-remArt);
-    return `${i.qty}x ${i.name} = ${eur(puNet*i.qty)}`;
+  const panierAchats = (v?.panier||[]).filter(x=>!x.retour);
+  const articles=panierAchats.map(i=>{
+    const prixPaye = calculerPrixPayeReel(v, i);
+    return `${i.qty}x ${i.name} = ${eur(prixPaye*i.qty)}`;
   }).join("\n");
+  const grossAchats = panierAchats.reduce((s,i)=>s+i.price*i.qty,0);
+  const netAchats = panierAchats.reduce((s,i)=>s+calculerPrixPayeReel(v,i)*i.qty,0);
+  const totalRemises = +(grossAchats-netAchats).toFixed(2);
   const date=v?new Date(v.date).toLocaleDateString("fr-FR"):"";
-  return `Belle&Jolie — Ticket du ${date}\n${articles}\nTotal : ${eur(v?.total||0)} — ${mL[v?.payMode]||""}\nMerci ! 🌸`;
+  return `Belle&Jolie — Ticket du ${date}\n${articles}${totalRemises>0.001?`\nTotal remises : -${eur(totalRemises)}`:""}\nTotal : ${eur(v?.total||0)} — ${mL[v?.payMode]||""}\nMerci ! 🌸`;
 }
 function buildMsgEmail(v) {
   // Version TEXTE BRUT — utilisée pour la copie presse-papier et SMS
@@ -9774,17 +9783,21 @@ function buildMsgEmail(v) {
       +"Merci de votre confiance !\n"
       +"⚠️ Ne pas répondre — Contact : boutiquebelleetjolie@gmail.com";
   }
-  const articles=(v?.panier||[]).filter(x=>!x.retour&&!x.avoirId).map(i=>{
-    const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
-    const puNet = Math.max(0,i.price-remArt);
-    return `${i.qty}x ${i.name} = ${eur(puNet*i.qty)}`+(remArt>0?` (remise article : -${eur(remArt*i.qty)})`:"");
+  const panierAchats = (v?.panier||[]).filter(x=>!x.retour&&!x.avoirId);
+  const articles=panierAchats.map(i=>{
+    const prixPaye = calculerPrixPayeReel(v, i);
+    const remiseUnit = +(i.price-prixPaye).toFixed(2);
+    return `${i.qty}x ${i.name} = ${eur(prixPaye*i.qty)}`+(remiseUnit>0.001?` (prix normal ${eur(i.price*i.qty)} — remise -${eur(remiseUnit*i.qty)})`:"");
   }).join("\n");
+  const grossAchats = panierAchats.reduce((s,i)=>s+i.price*i.qty,0);
+  const netAchats = panierAchats.reduce((s,i)=>s+calculerPrixPayeReel(v,i)*i.qty,0);
+  const totalRemisesTxt = +(grossAchats-netAchats).toFixed(2);
   const prenom=v?.client?.prenom||"";
   let paiement=mLfull[v?.payMode]||v?.payMode||"";
   if(v?.mixed&&v?.pays) paiement=v.pays.map(p=>`${mLfull[p.mode]||p.mode} : ${eur(parseFloat(p.montant||0))}`).join(" + ");
   const avoirUtilise=(v?.panier||[]).find(x=>x.avoirId);
   const avoirDetail=avoirUtilise?`\n💳 Bon d'avoir utilisé : ${eur(avoirUtilise.price)}`:"";
-  return `Bonjour ${prenom||"Madame"},\n\nVotre ticket Belle&Jolie du ${date} :\n\n${articles}${avoirDetail}\n\nTotal : ${eur(v?.total||0)}\nRèglement : ${paiement}\n\nMerci de votre confiance !\nBelle&Jolie — Mode & Élégance\nArticle échangeable sous 30 jours sur présentation du ticket de caisse ou d'un compte fidélité. Non porté, non lavé, sans odeur, étiquette intacte et dans le même état qu'à l'achat. Aucun remboursement.\n\n⚠️ Ne pas répondre. Contact : boutiquebelleetjolie@gmail.com`;
+  return `Bonjour ${prenom||"Madame"},\n\nVotre ticket Belle&Jolie du ${date} :\n\n${articles}${v?.remiseFid>0?`\nRemise fidélité -20% : -${eur(v.remiseFid)}`:""}${v?.remise>0?`\nRemise globale : -${eur(v.remise)}`:""}${totalRemisesTxt>0.001?`\nTotal remises : -${eur(totalRemisesTxt)}`:""}${avoirDetail}\n\nTotal : ${eur(v?.total||0)}\nRèglement : ${paiement}\n\nMerci de votre confiance !\nBelle&Jolie — Mode & Élégance\nArticle échangeable sous 30 jours sur présentation du ticket de caisse ou d'un compte fidélité. Non porté, non lavé, sans odeur, étiquette intacte et dans le même état qu'à l'achat. Aucun remboursement.\n\n⚠️ Ne pas répondre. Contact : boutiquebelleetjolie@gmail.com`;
 }
 
 function buildTicketEmailHTML(v) {
@@ -9797,10 +9810,10 @@ function buildTicketEmailHTML(v) {
 
   // Lignes articles
   const lignesHtml = (v?.panier||[]).filter(x=>!x.retour&&!x.avoirId).map(i=>{
-    const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
-    const puNet = Math.max(0,i.price-remArt);
-    return '<tr><td style="padding:6px 0;'+(remArt>0?'':'border-bottom:1px solid #f5f0f2;')+'font-size:13px;color:#333;">'+i.qty+'× '+i.name+'</td><td style="padding:6px 0;'+(remArt>0?'':'border-bottom:1px solid #f5f0f2;')+'font-size:13px;color:#333;text-align:right;font-weight:500;">'+eur(puNet*i.qty)+'</td></tr>'
-      +(remArt>0?'<tr><td colspan="2" style="padding:0 0 6px;border-bottom:1px solid #f5f0f2;font-size:11px;color:#3b6d11;">Remise article : -'+eur(remArt*i.qty)+'</td></tr>':"");
+    const prixPaye = calculerPrixPayeReel(v, i);
+    const remiseUnit = +(i.price-prixPaye).toFixed(2);
+    return '<tr><td style="padding:6px 0;'+(remiseUnit>0.001?'':'border-bottom:1px solid #f5f0f2;')+'font-size:13px;color:#333;">'+i.qty+'× '+i.name+'</td><td style="padding:6px 0;'+(remiseUnit>0.001?'':'border-bottom:1px solid #f5f0f2;')+'font-size:13px;color:#333;text-align:right;font-weight:500;">'+eur(prixPaye*i.qty)+'</td></tr>'
+      +(remiseUnit>0.001?'<tr><td colspan="2" style="padding:0 0 6px;border-bottom:1px solid #f5f0f2;font-size:11px;color:#3b6d11;">Prix normal '+eur(i.price*i.qty)+' — Remise -'+eur(remiseUnit*i.qty)+'</td></tr>':"");
   }).join("");
   const retoursHtml = (v?.panier||[]).filter(x=>x.retour&&!x.avoirId).map(i=>{
     const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
@@ -9854,6 +9867,12 @@ function buildTicketEmailHTML(v) {
       ${avoirHtml}
       ${v?.remiseFid>0?'<tr><td style="font-size:13px;color:#3b6d11;padding:6px 0;">🎉 Remise fidélité -20%</td><td style="font-size:13px;color:#3b6d11;text-align:right;padding:6px 0;">-'+eur(v.remiseFid)+'</td></tr>':""}
       ${v?.remise>0?'<tr><td style="font-size:13px;color:#185fa5;padding:6px 0;">🏷️ Remise</td><td style="font-size:13px;color:#185fa5;text-align:right;padding:6px 0;">-'+eur(v.remise)+'</td></tr>':""}
+      ${(()=>{
+        const grossAchats = (v?.panier||[]).filter(x=>!x.retour&&!x.avoirId).reduce((s,i)=>s+i.price*i.qty,0);
+        const netAchats = (v?.panier||[]).filter(x=>!x.retour&&!x.avoirId).reduce((s,i)=>s+calculerPrixPayeReel(v,i)*i.qty,0);
+        const totalRemises = +(grossAchats-netAchats).toFixed(2);
+        return totalRemises>0.001?'<tr><td style="font-size:13px;font-weight:600;color:#2a6e1a;padding:6px 0;">🏷️ Total remises</td><td style="font-size:13px;font-weight:600;color:#2a6e1a;text-align:right;padding:6px 0;">-'+eur(totalRemises)+'</td></tr>':"";
+      })()}
     </table>
     <table width="100%" cellpadding="0" cellspacing="0" style="background:#fbeaf0;border-radius:8px;padding:12px;margin-bottom:16px;">
       <tr><td style="font-size:16px;font-weight:700;color:#993556;padding:8px 12px;">Total</td><td style="font-size:20px;font-weight:700;color:#993556;text-align:right;padding:8px 12px;">${eur(v?.total||0)}</td></tr>
@@ -9976,9 +9995,9 @@ function buildMsgEmailHTML(v) {
   // Ticket vente normale
   const prenom  = v?.client?.prenom || "";
   const lignes  = (v?.panier||[]).filter(x=>!x.retour&&!x.avoirId).map(i=>{
-    const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
-    const puNet = Math.max(0,i.price-remArt);
-    return "  "+i.qty+"x "+i.name+" : "+eur(puNet*i.qty)+(remArt>0?" (remise : -"+eur(remArt*i.qty)+")":"");
+    const prixPaye = calculerPrixPayeReel(v, i);
+    const remiseUnit = +(i.price-prixPaye).toFixed(2);
+    return "  "+i.qty+"x "+i.name+" : "+eur(prixPaye*i.qty)+(remiseUnit>0.001?" (prix normal "+eur(i.price*i.qty)+" — remise -"+eur(remiseUnit*i.qty)+")":"");
   }).join("\n");
   const retours = (v?.panier||[]).filter(x=>x.retour&&!x.avoirId).map(i=>{
     const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
@@ -10003,6 +10022,14 @@ function buildMsgEmailHTML(v) {
     +"Votre ticket du "+date+" :\n\n"
     +lignes+"\n"
     +(retours?"\nArticles retournés :\n"+retours+"\n":"")
+    +(v?.remiseFid>0?"\nRemise fidélité -20% : -"+eur(v.remiseFid)+"\n":"")
+    +(v?.remise>0?"\nRemise globale : -"+eur(v.remise)+"\n":"")
+    +(()=>{
+      const grossAchats = (v?.panier||[]).filter(x=>!x.retour&&!x.avoirId).reduce((s,i)=>s+i.price*i.qty,0);
+      const netAchats = (v?.panier||[]).filter(x=>!x.retour&&!x.avoirId).reduce((s,i)=>s+calculerPrixPayeReel(v,i)*i.qty,0);
+      const totalRemises = +(grossAchats-netAchats).toFixed(2);
+      return totalRemises>0.001?"\nTotal remises : -"+eur(totalRemises)+"\n":"";
+    })()
     +(paiementAvoir?"\nMode de paiement :\n"+paiementAvoir+"\n":"")
     +reliquatTxt
     +"\n"+sep+"\n"
