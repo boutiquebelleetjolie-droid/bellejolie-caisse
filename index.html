@@ -1474,10 +1474,10 @@ window.viderPanier = () => {
     };
     STATE.panierVides = [...(STATE.panierVides||[]), log];
     lsSet("bj_panier_vides", STATE.panierVides);
-    STATE.panier=[];
+    STATE.panier=[]; STATE.remVal=""; STATE.remType="eur"; STATE.remGlobalMotif="";
     render();
   } else {
-    if(confirm("Vider le panier ?")) { STATE.panier=[]; render(); }
+    if(confirm("Vider le panier ?")) { STATE.panier=[]; STATE.remVal=""; STATE.remType="eur"; STATE.remGlobalMotif=""; render(); }
   }
 };
 
