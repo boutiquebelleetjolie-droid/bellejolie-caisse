@@ -5715,14 +5715,37 @@ function renderStock() {
     const vueMb = vueMg===null?"#f5f0f2":vueMg>=50?"#eaf3de":vueMg>=30?"#fff3e8":"#fcebeb";
     const vueMc = vueMg===null?"#aaa":vueMg>=50?"#3b6d11":vueMg>=30?"#854f0b":"#a32d2d";
 
+    // Marge finale globale : même logique que par article (PV réellement encaissé, remises article + globales/braderie incluses)
+    let caReelGlobalHT = 0, coutGlobal = 0, qtyVendueGlobale = 0;
+    vueProd.forEach(p=>{
+      const pa = p.prixAchat||0;
+      if(!(pa>0)) return; // sans prix d'achat, impossible de calculer une marge réelle pour cet article
+      const ventesConcernees = (STATE.ventes||[]).filter(v=>!v.annulee && (v.panier||[]).some(i=>(i.prodIdOriginal||i.id)===p.id && !i.retour));
+      ventesConcernees.forEach(v=>{
+        const lignesBrutes = (v.panier||[]).filter(i=>!i.retour && !i.avoirId);
+        const sommeAffichee = lignesBrutes.reduce((s,i)=>s+i.price*(i.qty||1),0);
+        const ratioNet = sommeAffichee>0 ? Math.min(1, v.total/sommeAffichee) : 1;
+        (v.panier||[]).filter(i=>(i.prodIdOriginal||i.id)===p.id && !i.retour).forEach(i=>{
+          const qty = i.qty||1;
+          caReelGlobalHT += (i.price*qty*ratioNet)/1.20;
+          coutGlobal += pa*qty;
+          qtyVendueGlobale += qty;
+        });
+      });
+    });
+    const vueMgFinal = (caReelGlobalHT>0) ? Math.round((caReelGlobalHT-coutGlobal)/caReelGlobalHT*100) : null;
+    const vueMbFinal = vueMgFinal===null?"#f5f0f2":vueMgFinal>=50?"#eaf3de":vueMgFinal>=30?"#fff3e8":"#fcebeb";
+    const vueMcFinal = vueMgFinal===null?"#aaa":vueMgFinal>=50?"#3b6d11":vueMgFinal>=30?"#854f0b":"#a32d2d";
+
     if(STATE.recapVue==='reserve'&&alertesReserve>0) {
       html += '<div style="background:#fcebeb;border-radius:8px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#a32d2d;font-weight:500;">⚠️ '+alertesReserve+' article(s) en réserve depuis plus de 5 mois — pensez à les remettre en vente !</div>';
     }
 
-    html += '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;text-align:center;margin-bottom:10px;">';
+    html += '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;text-align:center;margin-bottom:10px;">';
     html += '<div style="background:#f5f0f2;border-radius:10px;padding:12px 8px;"><div style="font-size:20px;font-weight:700;color:#993556;">'+vueProd.length+'</div><div style="font-size:11px;color:#888;">Références</div></div>';
     html += '<div style="background:#f5f0f2;border-radius:10px;padding:12px 8px;"><div style="font-size:20px;font-weight:700;color:#185fa5;">'+vueQt+'</div><div style="font-size:11px;color:#888;">Unités</div></div>';
-    html += '<div style="background:'+vueMb+';border-radius:10px;padding:12px 8px;"><div style="font-size:20px;font-weight:700;color:'+vueMc+';">'+(vueMg!==null?vueMg+'%':'—')+'</div><div style="font-size:11px;color:#888;">Marge</div></div>';
+    html += '<div style="background:'+vueMb+';border-radius:10px;padding:12px 8px;"><div style="font-size:20px;font-weight:700;color:'+vueMc+';">'+(vueMg!==null?vueMg+'%':'—')+'</div><div style="font-size:11px;color:#888;">Marge normale</div></div>';
+    html += '<div style="background:'+vueMbFinal+';border-radius:10px;padding:12px 8px;"><div style="font-size:20px;font-weight:700;color:'+vueMcFinal+';">'+(vueMgFinal!==null?vueMgFinal+'%':'—')+'</div><div style="font-size:11px;color:#888;">Marge finale'+(vueMgFinal!==null&&vueMg!==null&&vueMgFinal<vueMg?' <span style="color:#a32d2d;">▼</span>':'')+'</div>'+(qtyVendueGlobale>0?'<div style="font-size:9px;color:#aaa;">'+qtyVendueGlobale+' vendus (remises incl.)</div>':'')+'</div>';
     html += '</div>';
     html += '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:10px;text-align:center;margin-bottom:10px;">';
     html += '<div style="background:#eaf3de;border-radius:10px;padding:12px 8px;"><div style="font-size:14px;font-weight:700;color:#3b6d11;">'+eur(vueVV)+'</div><div style="font-size:11px;color:#888;">Valeur PV TTC</div></div>';
