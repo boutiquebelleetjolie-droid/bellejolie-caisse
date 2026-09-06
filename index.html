@@ -3137,6 +3137,13 @@ window.appliquerRemiseReseaux = () => {
   if(STATE.remVal==="5"&&STATE.remType==="eur") {
     setState({remVal:"",remType:"eur"});
     STATE._remiseReseauxEnCours = false;
+    // Annuler la marque "remise accordée" si elle vient d'être posée pour cette vente en cours (pas encore finalisée)
+    if(STATE.client && STATE._remiseReseauxAccordeeEnCours) {
+      STATE.clients = STATE.clients.map(c=>c.id===STATE.client.id ? {...c, remiseReseauxAccordee:false, dateRemiseReseaux:null} : c);
+      STATE.client = {...STATE.client, remiseReseauxAccordee:false, dateRemiseReseaux:null};
+      lsSet("bj_clients", STATE.clients);
+      STATE._remiseReseauxAccordeeEnCours = false;
+    }
   } else {
     if(STATE.client?.remiseReseauxAccordee) {
       alert("⚠️ Cette cliente a déjà bénéficié de la remise réseaux sociaux (-5€) précédemment. Elle ne peut être accordée qu'une seule fois par cliente.");
@@ -3146,6 +3153,7 @@ window.appliquerRemiseReseaux = () => {
     if(sousTotal < 20) { alert("⚠️ Cette remise de -5€ n'est accordée qu'à partir de 20€ d'achat (panier actuel : "+eur(sousTotal)+")."); return; }
     setState({remVal:"5",remType:"eur"});
     STATE._remiseReseauxEnCours = true; // sera taggé dans la vente
+    STATE._remiseReseauxAccordeeEnCours = true; // pour pouvoir annuler si la remise est désactivée avant validation
     // Marquer la cliente comme suivant les réseaux et remise accordée
     if(STATE.client) {
       const dateNow = new Date().toISOString();
@@ -11943,8 +11951,9 @@ window.verifierBonAnniversaireClient = (client) => {
   // Bon valable si on est dans la fenêtre anniversaire (jour J à J+21)
   if(now >= dateAnniv && now <= dateFin) {
     const code = "ANNIV"+anneeAnniv+client.id.slice(-6).toUpperCase();
-    let bon = (STATE.avoirs||[]).find(a=>a.code===code&&!a.utilise&&a.solde>0);
-    // Créer le bon à la volée si manquant (ajout anniversaire le jour même)
+    // Chercher TOUT bon avec ce code cette année, utilisé ou non — ne jamais en recréer un si un existe déjà
+    let bon = (STATE.avoirs||[]).find(a=>a.code===code);
+    // Créer le bon à la volée si jamais généré auparavant (ajout anniversaire le jour même)
     if(!bon) {
       bon = {
         id:uid("AV"), code,
@@ -11958,9 +11967,8 @@ window.verifierBonAnniversaireClient = (client) => {
       };
       STATE.avoirs=[...(STATE.avoirs||[]),bon];
       lsSet("bj_avoirs",STATE.avoirs);
-      // Marquer comme créé
-      lsSet(`bj_bon_anniv_${client.id}_${anneeAnniv}`, true);
     }
+    if(bon.utilise || bon.solde<=0) return null; // déjà utilisé cette année, pas de nouveau bon avant l'an prochain
     return bon;
   }
   return null;
