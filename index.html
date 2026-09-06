@@ -2755,6 +2755,7 @@ function renderCaisse() {
           <div style="display:flex;gap:6px;margin-bottom:6px;">
             <input id="client-search" value="${STATE.searchClient||''}" oninput="clientSearchInput(this.value)" placeholder="Rechercher client..." style="flex:1;" autocomplete="off" autocorrect="off" autocapitalize="off"/>
             <button onclick="openNewClientModal()" class="btn-ghost" style="white-space:nowrap;">+ Nouveau</button>
+          </div>
            <div id="client-results" style="border:0.5px solid #e8e0e4;border-radius:8px;overflow:hidden;display:${STATE.searchClient?'block':'none'};">
              ${(STATE.clients.filter(c=>normStr(c.prenom+" "+c.nom+" "+c.tel).includes(normStr(STATE.searchClient||''))).slice(0,5).map(c=>`
                <div onclick="selectClient('${c.id}')" style="padding:8px 10px;border-bottom:0.5px solid #e8e0e4;cursor:pointer;font-size:13px;">
@@ -2764,8 +2765,6 @@ function renderCaisse() {
            </div>
 
         `}
-      </div>
-
       </div>
 
       <!-- Retour produit -->
