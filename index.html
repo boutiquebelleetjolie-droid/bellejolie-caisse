@@ -739,7 +739,15 @@ function render() {
   const activeId = document.activeElement ? document.activeElement.id : null;
   const activeSel = document.activeElement && document.activeElement.selectionStart !== undefined ? document.activeElement.selectionStart : null;
 
-  root.innerHTML = renderApp();
+  let html;
+  try {
+    html = renderApp();
+  } catch(err) {
+    console.error("Erreur de rendu:", err);
+    alert("⚠️ Une erreur est survenue et empêche l'affichage :\n\n"+(err?.message||err)+"\n\nMerci de faire une capture d'écran de ce message et de la transmettre pour la corriger. L'écran précédent reste affiché.");
+    return;
+  }
+  root.innerHTML = html;
   bindApp();
 
   // Restaurer le scroll ET le focus
