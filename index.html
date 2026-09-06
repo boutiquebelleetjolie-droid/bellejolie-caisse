@@ -2761,12 +2761,12 @@ function renderCaisse() {
       </div>
 
       <!-- Retour produit -->
+      ${STATE._retourOuvert ? `
       <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;${STATE._retourOuvert?'margin-bottom:8px;':''}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
           <span style="font-weight:500;font-size:13px;">↩️ Retour produit</span>
-          <button onclick="STATE._retourOuvert=!STATE._retourOuvert;render()" style="background:#f5f0f2;border:1px solid #e0d8dc;border-radius:6px;padding:3px 10px;font-size:11px;color:#555;cursor:pointer;">${STATE._retourOuvert?"▲ Réduire":"▼ Ouvrir"}</button>
+          <button onclick="STATE._retourOuvert=false;render()" style="background:#f5f0f2;border:1px solid #e0d8dc;border-radius:6px;padding:3px 10px;font-size:11px;color:#555;cursor:pointer;">▲ Réduire</button>
         </div>
-        ${STATE._retourOuvert?`
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px;">
           <div>
             <label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">🔍 Code-barres (Entrée)</label>
@@ -2787,8 +2787,12 @@ function renderCaisse() {
             `).join("")||'<div style="padding:8px 10px;font-size:12px;color:#aaa;">Aucun article</div>'}
           </div>
         `:""}
-        `:""}
       </div>
+      `:`
+      <button onclick="STATE._retourOuvert=true;render()" style="width:100%;text-align:left;background:#f9f6f8;border:0.5px solid #e8e0e4;border-radius:8px;padding:7px 12px;cursor:pointer;font-size:13px;font-weight:500;color:#333;display:flex;justify-content:space-between;align-items:center;">
+        <span>↩️ Retour produit</span><span style="font-size:11px;color:#888;">▼ Ouvrir</span>
+      </button>
+      `}
 
       <!-- Remise globale -->
       <div class="card">
@@ -3715,7 +3719,7 @@ function renderTicketModal() {
         ${v.mixed?`
           <div style="background:#e6f1fb;border-radius:10px;padding:10px 14px;margin-bottom:14px;font-size:13px;color:#185fa5;">
             <div style="font-weight:500;margin-bottom:4px;">Paiement mixte :</div>
-            ${v.pays.map(p=>`<div>${mL[p.mode]||p.mode} : ${eur(parseFloat(p.montant||0))}</div>`).join("")}
+            ${(v.pays||[]).map(p=>`<div>${mL[p.mode]||p.mode} : ${eur(parseFloat(p.montant||0))}</div>`).join("")}
           </div>
         `:""}
         <div id="ticket-print-area" style="font-family:monospace;font-size:12px;line-height:1.8;color:#111;background:#fff;padding:8px;border:1px solid #eee;border-radius:8px;margin-bottom:14px;">
@@ -3791,7 +3795,7 @@ function renderTicketModal() {
             const avoirLigne = ligneAvoir || (v.avoirsPayes?.length?{price:v.avoirsPayes[0].montant, code:v.avoirsPayes[0].code}:null);
             const codeAvoir = ligneAvoir ? (STATE.avoirs||[]).find(a=>a.id===ligneAvoir.avoirId)?.code : avoirLigne?.code;
             if(avoirLigne) return `<div style="font-size:11px;color:#185fa5;font-weight:500;margin-top:2px;">💳 Bon d'avoir : ${eur(avoirLigne.price)}${codeAvoir?" (code "+codeAvoir+")":""}</div>`;
-            if(v.mixed) return `<div style="font-size:11px;color:#555;margin-top:2px;">${v.pays.map(p=>mL[p.mode]+": "+eur(parseFloat(p.montant||0))).join(" + ")}</div>`;
+            if(v.mixed) return `<div style="font-size:11px;color:#555;margin-top:2px;">${(v.pays||[]).map(p=>mL[p.mode]+": "+eur(parseFloat(p.montant||0))).join(" + ")}</div>`;
             return `<div style="font-size:11px;color:#555;margin-top:2px;">Règlement : ${mL[v.payMode]||v.payMode}</div>`;
           })()}
           <div style="border-top:1px dashed #ccc;margin:6px 0;"></div>
