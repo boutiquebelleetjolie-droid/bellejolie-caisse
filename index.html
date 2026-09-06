@@ -75,6 +75,10 @@ const BOUTIQUE_FB = "https://www.facebook.com/share/19JRJPEMJZ/";
 const BOUTIQUE_IG = "https://www.instagram.com/boutiquebellejolie?igsh=MW9zcWE1NDU4dDdwZQ==";
 const BOUTIQUE_TT = "https://www.tiktok.com/@bellejolie28";
 
+// Date de réouverture de la boutique : les statistiques "sans vente depuis..." ne remontent jamais
+// avant cette date (la fermeture précédente ne doit pas compter comme une période sans vente).
+const DATE_REOUVERTURE = new Date("2026-09-01T00:00:00");
+
 const BOUTIQUE_CONFIG = {
   id:       "boutique_1",          // Identifiant unique — NE PAS CHANGER après mise en prod
   nom:      "Belle & Jolie",
@@ -10459,7 +10463,7 @@ function getArticlesEnRuptureLongue() {
   // Articles avec stock=0 depuis plus de 2 mois
   // On détecte la rupture via la dernière vente + date de dernière diminution de stock
   const now = new Date();
-  const deuxMoisAvant = new Date(now); deuxMoisAvant.setMonth(now.getMonth()-2);
+  const deuxMoisAvant = new Date(Math.max(new Date(now).setMonth(now.getMonth()-2), DATE_REOUVERTURE));
 
   return STATE.products.filter(p => {
     if(categorieExclue(p.category)) return false;
@@ -10470,9 +10474,9 @@ function getArticlesEnRuptureLongue() {
       .filter(v => !v.test && !v.annulee && (v.panier||[]).some(i => (i.prodIdOriginal||i.id)===p.id && !i.retour))
       .sort((a,b) => new Date(b.date)-new Date(a.date))[0];
 
-    // Si pas de vente, utiliser la date d'ajout
+    // Si pas de vente, utiliser la date d'ajout (jamais avant la réouverture de la boutique)
     const dateRef = derniereVente ? new Date(derniereVente.date)
-                  : (p.dateAjout ? new Date(p.dateAjout) : null);
+                  : (p.dateAjout ? new Date(Math.max(new Date(p.dateAjout), DATE_REOUVERTURE)) : null);
 
     if(!dateRef) return false;
     return dateRef < deuxMoisAvant;
@@ -10480,7 +10484,7 @@ function getArticlesEnRuptureLongue() {
     const derniereVente = (STATE.ventes||[])
       .filter(v => !v.test && !v.annulee && (v.panier||[]).some(i => (i.prodIdOriginal||i.id)===p.id && !i.retour))
       .sort((a,b) => new Date(b.date)-new Date(a.date))[0];
-    const dateRef = derniereVente ? new Date(derniereVente.date) : new Date(p.dateAjout||now);
+    const dateRef = derniereVente ? new Date(derniereVente.date) : new Date(Math.max(new Date(p.dateAjout||now), DATE_REOUVERTURE));
     const joursEcart = Math.floor((now-dateRef)/86400000);
     return {...p, derniereVente: derniereVente?dateRef:null, joursEcart};
   }).sort((a,b) => b.joursEcart-a.joursEcart);
@@ -10488,7 +10492,7 @@ function getArticlesEnRuptureLongue() {
 
 function getArticlesAReassortir() {
   const now = new Date();
-  const deuxMoisAvant = new Date(now); deuxMoisAvant.setMonth(now.getMonth()-2);
+  const deuxMoisAvant = new Date(Math.max(new Date(now).setMonth(now.getMonth()-2), DATE_REOUVERTURE));
 
   return STATE.products.filter(p => {
     if(categorieExclue(p.category)) return false;
@@ -10504,9 +10508,10 @@ function getArticlesAReassortir() {
       .filter(v => !v.test && !v.annulee && new Date(v.date) >= deuxMoisAvant)
       .reduce((s,v) => s + (v.panier||[]).filter(i=>(i.prodIdOriginal||i.id)===p.id&&!i.retour).reduce((ss,i)=>ss+(i.qty||1),0), 0);
 
-    // Catégorie 1 : jamais vendu depuis + 2 mois en stock
+    // Catégorie 1 : jamais vendu depuis + 2 mois en stock (jamais avant la réouverture de la boutique)
     if(!derniereVente) {
-      const joursStock = Math.floor((now - new Date(p.dateAjout||now))/86400000);
+      const dateAjoutEffective = new Date(Math.max(new Date(p.dateAjout||now), DATE_REOUVERTURE));
+      const joursStock = Math.floor((now - dateAjoutEffective)/86400000);
       return joursStock >= 60;
     }
 
@@ -10523,7 +10528,7 @@ function getArticlesAReassortir() {
       .filter(v => !v.test && !v.annulee && (v.panier||[]).some(i => (i.prodIdOriginal||i.id)===p.id&&!i.retour))
       .sort((a,b) => new Date(b.date)-new Date(a.date));
     const derniereVente = ventesArt[0];
-    const dateDV = derniereVente ? new Date(derniereVente.date) : (p.dateAjout ? new Date(p.dateAjout) : now);
+    const dateDV = derniereVente ? new Date(derniereVente.date) : new Date(Math.max(new Date(p.dateAjout||now), DATE_REOUVERTURE));
     const joursEcart = Math.floor((now - dateDV)/86400000);
 
     const qte2m = (STATE.ventes||[])
@@ -10531,7 +10536,7 @@ function getArticlesAReassortir() {
       .reduce((s,v) => s + (v.panier||[]).filter(i=>(i.prodIdOriginal||i.id)===p.id&&!i.retour).reduce((ss,i)=>ss+(i.qty||1),0), 0);
 
     const qte6m = (STATE.ventes||[])
-      .filter(v => { const d=new Date(now); d.setMonth(d.getMonth()-6); return !v.test&&!v.annulee&&new Date(v.date)>=d; })
+      .filter(v => { const d=new Date(Math.max(new Date(now).setMonth(now.getMonth()-6), DATE_REOUVERTURE)); return !v.test&&!v.annulee&&new Date(v.date)>=d; })
       .reduce((s,v) => s + (v.panier||[]).filter(i=>(i.prodIdOriginal||i.id)===p.id&&!i.retour).reduce((ss,i)=>ss+(i.qty||1),0), 0);
 
     const jamaisVendu = !derniereVente;
@@ -10539,7 +10544,7 @@ function getArticlesAReassortir() {
     const peuVendu2m  = !sansVente2m && !jamaisVendu && qte2m >= 1 && qte2m <= 4;
 
     // Urgence : jamais vendu ou + 4 mois sans vente = haute
-    const urgence = (jamaisVendu && Math.floor((now-new Date(p.dateAjout||now))/86400000)>=120)
+    const urgence = (jamaisVendu && Math.floor((now-new Date(Math.max(new Date(p.dateAjout||now), DATE_REOUVERTURE)))/86400000)>=120)
       || (sansVente2m && joursEcart>=120) ? "haute" : "moyenne";
 
     return {
