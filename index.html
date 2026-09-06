@@ -7147,7 +7147,7 @@ function renderClientDetail() {
               <span style="color:#888;font-size:11px;">${v.vendeur?.nom||"—"}</span>
               <span style="font-weight:500;flex:1;text-align:right;${v.annulee?"text-decoration:line-through;color:#aaa":""}">${eur(v.total)}</span>
               <span class="tag" style="background:#e6f1fb;color:#185fa5;font-size:10px;">${mL[v.payMode]||v.payMode}</span>
-              <button onclick="event.stopPropagation();STATE.showClientDetail=null;STATE.showCarteCadeau=null;STATE.showTicket={...v,type:'vente'};render()"
+              <button onclick="event.stopPropagation();const vv=STATE.ventes.find(x=>x.id==='${v.id}');STATE.showClientDetail=null;STATE.showCarteCadeau=null;STATE.showTicket=vv.payMode==='avoir_cree'?{...vv,type:'avoir',avoir:(STATE.avoirs||[]).find(a=>a.id===vv.id)}:vv.payMode==='remboursement_especes'?{...vv,type:'remboursement_especes',montant:vv.montantRembourse}:{...vv,type:'vente'};render()"
                 style="background:none;border:1px solid #ddd;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:12px;color:#993556;" title="Voir ticket">🧾</button>
               ${!v.annulee&&((new Date()-new Date(v.date))/(1000*60*60*24))<30?`<button onclick="event.stopPropagation();ouvrirRetourDepuisHistorique('${v.id}')"
                 style="background:none;border:1px solid #e07c00;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:12px;color:#e07c00;" title="Faire un retour">↩</button>`:""}
