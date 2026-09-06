@@ -3594,7 +3594,12 @@ function renderTicketModal() {
             ${v.client?`<div style="text-align:center;font-size:12px;font-weight:500;">${v.client.prenom} ${v.client.nom}</div>`:""}
             <div style="border-top:1px dashed #ccc;margin:6px 0;"></div>
             <div style="font-size:11px;color:#666;margin-bottom:4px;">Article(s) retourné(s) :</div>
-            ${v.panier.filter(x=>x.retour&&!x.avoirId).map(i=>`<div style="display:flex;justify-content:space-between;font-size:12px;"><span>↩ ${i.qty}× ${i.name.slice(0,20)}</span><span>-${eur(i.price*i.qty)}</span></div>`).join("")}
+            ${v.panier.filter(x=>x.retour&&!x.avoirId).map(i=>{
+              const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
+              const puNet = Math.max(0,i.price-remArt);
+              return `<div style="display:flex;justify-content:space-between;font-size:12px;"><span>↩ ${i.qty}× ${i.name.slice(0,20)}</span><span>-${eur(puNet*i.qty)}</span></div>
+              ${remArt>0?`<div style="font-size:10px;color:#2a6e1a;padding-left:8px;">Remise reprise : -${eur(remArt*i.qty)}</div>`:""}`;
+            }).join("")}
             <div style="border-top:1px dashed #ccc;margin:6px 0;"></div>
             <div style="display:flex;justify-content:space-between;font-weight:700;font-size:15px;"><span>REMBOURSÉ</span><span style="color:#3b6d11;">${eur(v.montant)}</span></div>
             <div style="font-size:11px;color:#555;margin-top:2px;">Règlement : Espèces</div>
@@ -3679,12 +3684,22 @@ function renderTicketModal() {
             <div style="border-top:1px dashed #ccc;margin:6px 0;"></div>
             ${v.panier.filter(x=>!x.retour).length>0?`
             <div style="font-size:11px;color:#666;font-weight:500;margin-bottom:2px;">Articles achetés :</div>
-            ${v.panier.filter(x=>!x.retour).map(i=>`<div style="display:flex;justify-content:space-between;font-size:11px;"><span>${i.qty}× ${i.name.slice(0,20)}</span><span>${eur(i.price*i.qty)}</span></div>`).join("")}
+            ${v.panier.filter(x=>!x.retour).map(i=>{
+              const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
+              const puNet = Math.max(0,i.price-remArt);
+              return `<div style="display:flex;justify-content:space-between;font-size:11px;"><span>${i.qty}× ${i.name.slice(0,20)}</span><span>${eur(puNet*i.qty)}</span></div>
+              ${remArt>0?`<div style="font-size:10px;color:#2a6e1a;padding-left:8px;">Remise : -${eur(remArt*i.qty)}</div>`:""}`;
+            }).join("")}
             <div style="border-top:1px dashed #ccc;margin:4px 0;"></div>
             `:""}
             ${v.panier.filter(x=>x.retour&&!x.avoirId).length>0?`
             <div style="font-size:11px;color:#666;font-weight:500;margin-bottom:2px;">Articles retournés :</div>
-            ${v.panier.filter(x=>x.retour&&!x.avoirId).map(i=>`<div style="display:flex;justify-content:space-between;font-size:11px;color:#e07c00;"><span>↩ ${i.qty}× ${i.name.slice(0,20)}</span><span>-${eur(i.price*i.qty)}</span></div>`).join("")}
+            ${v.panier.filter(x=>x.retour&&!x.avoirId).map(i=>{
+              const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
+              const puNet = Math.max(0,i.price-remArt);
+              return `<div style="display:flex;justify-content:space-between;font-size:11px;color:#e07c00;"><span>↩ ${i.qty}× ${i.name.slice(0,20)}</span><span>-${eur(puNet*i.qty)}</span></div>
+              ${remArt>0?`<div style="font-size:10px;color:#2a6e1a;padding-left:8px;">Remise reprise : -${eur(remArt*i.qty)}</div>`:""}`;
+            }).join("")}
             <div style="border-top:1px dashed #ccc;margin:4px 0;"></div>
             `:""}
             ${v.panier.filter(x=>x.avoirId).length>0?`
@@ -3752,7 +3767,8 @@ function renderTicketModal() {
             ${retours.map(i=>{
               const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
               const puNet = Math.max(0,i.price-remArt);
-              return `<div style="display:flex;justify-content:space-between;color:#e07c00;"><span>↩ ${i.qty}× ${i.name.slice(0,18)}</span><span>-${eur(puNet*i.qty)}</span></div>`;
+              return `<div style="display:flex;justify-content:space-between;color:#e07c00;"><span>↩ ${i.qty}× ${i.name.slice(0,18)}</span><span>-${eur(puNet*i.qty)}</span></div>
+              ${remArt>0?`<div style="font-size:10px;color:#2a6e1a;padding-left:8px;">Remise reprise : -${eur(remArt*i.qty)}</div>`:""}`;
             }).join("")}
           `:""}
           <div style="border-top:1px dashed #ccc;margin:6px 0;"></div>
@@ -9633,7 +9649,11 @@ function renderEnvoiTicketModal() {
   STATE.envoiDest = dest;
   STATE.envoiDestTicketId = v?.id;
   const mL={cb:"CB",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Cadeau",mixte:"Mixte"};
-  const articles = (v?.panier||[]).filter(x=>!x.retour).map(i=>`${i.qty}x ${i.name} = ${eur(i.price*i.qty)}`).join("\n");
+  const articles = (v?.panier||[]).filter(x=>!x.retour).map(i=>{
+    const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
+    const puNet = Math.max(0,i.price-remArt);
+    return `${i.qty}x ${i.name} = ${eur(puNet*i.qty)}`;
+  }).join("\n");
   const date = v?new Date(v.date).toLocaleDateString("fr-FR"):"";
   const ejsOk = !!(STATE.emailjsServiceId&&STATE.emailjsTemplateId&&STATE.emailjsPublicKey);
 
@@ -9730,7 +9750,11 @@ function buildMsgEmail(v) {
       const puNet = Math.max(0,i.price-remArt);
       return "  "+i.qty+"x "+i.name+" : "+eur(puNet*i.qty)+(remArt>0?" (remise article : -"+eur(remArt*i.qty)+")":"");
     }).join("\n");
-    const retours=(v?.panier||[]).filter(x=>x.retour&&!x.avoirId).map(i=>"  ↩ "+i.qty+"x "+i.name+" : -"+eur(i.price*i.qty)).join("\n");
+    const retours=(v?.panier||[]).filter(x=>x.retour&&!x.avoirId).map(i=>{
+      const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
+      const puNet = Math.max(0,i.price-remArt);
+      return "  ↩ "+i.qty+"x "+i.name+" : -"+eur(puNet*i.qty)+(remArt>0?" (remise reprise : -"+eur(remArt*i.qty)+")":"");
+    }).join("\n");
     // Utiliser avoirsPayes (champ dédié) ou fallback sur le panier
     const avoirsPayesLst = v?.avoirsPayes||[];
     const avoirsUtilises = avoirsPayesLst.length>0
@@ -9778,9 +9802,12 @@ function buildTicketEmailHTML(v) {
     return '<tr><td style="padding:6px 0;'+(remArt>0?'':'border-bottom:1px solid #f5f0f2;')+'font-size:13px;color:#333;">'+i.qty+'× '+i.name+'</td><td style="padding:6px 0;'+(remArt>0?'':'border-bottom:1px solid #f5f0f2;')+'font-size:13px;color:#333;text-align:right;font-weight:500;">'+eur(puNet*i.qty)+'</td></tr>'
       +(remArt>0?'<tr><td colspan="2" style="padding:0 0 6px;border-bottom:1px solid #f5f0f2;font-size:11px;color:#3b6d11;">Remise article : -'+eur(remArt*i.qty)+'</td></tr>':"");
   }).join("");
-  const retoursHtml = (v?.panier||[]).filter(x=>x.retour&&!x.avoirId).map(i=>
-    '<tr><td style="padding:6px 0;border-bottom:1px solid #f5f0f2;font-size:13px;color:#e07c00;">↩ '+i.qty+'× '+i.name.replace(" (↩)","")+'</td><td style="padding:6px 0;border-bottom:1px solid #f5f0f2;font-size:13px;color:#e07c00;text-align:right;">-'+eur(i.price*i.qty)+'</td></tr>'
-  ).join("");
+  const retoursHtml = (v?.panier||[]).filter(x=>x.retour&&!x.avoirId).map(i=>{
+    const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
+    const puNet = Math.max(0,i.price-remArt);
+    return '<tr><td style="padding:6px 0;'+(remArt>0?'':'border-bottom:1px solid #f5f0f2;')+'font-size:13px;color:#e07c00;">↩ '+i.qty+'× '+i.name.replace(" (↩)","")+'</td><td style="padding:6px 0;'+(remArt>0?'':'border-bottom:1px solid #f5f0f2;')+'font-size:13px;color:#e07c00;text-align:right;">-'+eur(puNet*i.qty)+'</td></tr>'
+      +(remArt>0?'<tr><td colspan="2" style="padding:0 0 6px;border-bottom:1px solid #f5f0f2;font-size:11px;color:#3b6d11;">Remise reprise : -'+eur(remArt*i.qty)+'</td></tr>':"");
+  }).join("");
   let paiement = mL[v?.payMode]||v?.payMode||"";
   if(v?.mixed&&v?.pays) paiement = v.pays.map(p=>(mL[p.mode]||p.mode)+' : '+eur(parseFloat(p.montant||0))).join(" + ");
   const avoirHtml = avoirsLignes.length>0 ? avoirsLignes.map(x=>'<tr><td style="font-size:13px;color:#993556;padding:4px 0;">💳 Bon avoir utilisé</td><td style="font-size:13px;color:#993556;text-align:right;padding:4px 0;">-'+eur(x.montant)+'</td></tr>').join("") : "";
@@ -9922,8 +9949,16 @@ function buildMsgEmailHTML(v) {
     const prenom  = v?.avoir?.client?.prenom || "";
     const code    = v?.avoir?.code || "";
     const expDate = v?.avoir?.expiration ? new Date(v.avoir.expiration).toLocaleDateString("fr-FR") : "";
-    const achetes = (v?.panier||[]).filter(x=>!x.retour&&!x.avoirId).map(i=>"  "+i.qty+"x "+i.name+" : "+eur(i.price*i.qty)).join("\n");
-    const retours = (v?.panier||[]).filter(x=>x.retour&&!x.avoirId).map(i=>"  ↩ "+i.qty+"x "+i.name+" : -"+eur(i.price*i.qty)).join("\n");
+    const achetes = (v?.panier||[]).filter(x=>!x.retour&&!x.avoirId).map(i=>{
+      const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
+      const puNet = Math.max(0,i.price-remArt);
+      return "  "+i.qty+"x "+i.name+" : "+eur(puNet*i.qty)+(remArt>0?" (remise : -"+eur(remArt*i.qty)+")":"");
+    }).join("\n");
+    const retours = (v?.panier||[]).filter(x=>x.retour&&!x.avoirId).map(i=>{
+      const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
+      const puNet = Math.max(0,i.price-remArt);
+      return "  ↩ "+i.qty+"x "+i.name+" : -"+eur(puNet*i.qty)+(remArt>0?" (remise reprise : -"+eur(remArt*i.qty)+")":"");
+    }).join("\n");
     return "Bonjour"+(prenom?" "+prenom:"")+",\n\n"
       +"Belle&Jolie — Mode & Élégance\n"+sep+"\n\n"
       +"Votre bon d'avoir du "+date+" :\n\n"
@@ -9940,8 +9975,16 @@ function buildMsgEmailHTML(v) {
 
   // Ticket vente normale
   const prenom  = v?.client?.prenom || "";
-  const lignes  = (v?.panier||[]).filter(x=>!x.retour&&!x.avoirId).map(i=>"  "+i.qty+"x "+i.name+" : "+eur(i.price*i.qty)).join("\n");
-  const retours = (v?.panier||[]).filter(x=>x.retour&&!x.avoirId).map(i=>"  ↩ "+i.qty+"x "+i.name+" : -"+eur(i.price*i.qty)).join("\n");
+  const lignes  = (v?.panier||[]).filter(x=>!x.retour&&!x.avoirId).map(i=>{
+    const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
+    const puNet = Math.max(0,i.price-remArt);
+    return "  "+i.qty+"x "+i.name+" : "+eur(puNet*i.qty)+(remArt>0?" (remise : -"+eur(remArt*i.qty)+")":"");
+  }).join("\n");
+  const retours = (v?.panier||[]).filter(x=>x.retour&&!x.avoirId).map(i=>{
+    const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
+    const puNet = Math.max(0,i.price-remArt);
+    return "  ↩ "+i.qty+"x "+i.name+" : -"+eur(puNet*i.qty)+(remArt>0?" (remise reprise : -"+eur(remArt*i.qty)+")":"");
+  }).join("\n");
   let paiement  = mL[v?.payMode]||v?.payMode||"";
   if(v?.mixed&&v?.pays) paiement = v.pays.map(p=>(mL[p.mode]||p.mode)+" : "+eur(parseFloat(p.montant||0))).join(" + ");
   let reliquatTxt = "";
