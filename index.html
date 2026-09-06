@@ -3570,6 +3570,21 @@ window.imprimerTicketCadeau = () => {
   setTimeout(()=>{ win.print(); setTimeout(()=>win.close(),500); }, 300);
 };
 
+// Libellé lisible du type d'un avoir, pour indiquer sur le ticket d'où vient la remise
+function labelTypeAvoir(typeAvoir, source) {
+  if(typeAvoir==="bienvenue") return "🎁 Bon de bienvenue";
+  if(typeAvoir==="anniversaire") return "🎂 Bon anniversaire";
+  if(typeAvoir==="fidelite400") return "🎀 Bon fidélité -15%/400€";
+  if(typeAvoir==="cadeau_reliquat" || source==="cheque_cadeau" || source==="vente_cheque_cadeau") return "💳 Reliquat chèque cadeau";
+  return "🎟️ Bon d'avoir";
+}
+// Libellé de la remise globale appliquée (réseaux sociaux, motif saisi par la vendeuse, ou générique)
+function labelRemiseGlobale(v) {
+  if(v?.remiseReseaux) return "📱 -5€ Réseaux sociaux";
+  if(v?.remiseMotif) return "🏷️ Remise (" + v.remiseMotif + ")";
+  return "🏷️ Remise globale";
+}
+
 function renderTicketModal() {
   const v = STATE.showTicket;
   const mL = {cb:"Carte bleue",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Carte cadeau",mixte:"Paiement mixte"};
@@ -3772,7 +3787,7 @@ function renderTicketModal() {
             }).join("")}
           `:""}
           <div style="border-top:1px dashed #ccc;margin:6px 0;"></div>
-          ${v.remise>0?`<div style="display:flex;justify-content:space-between;color:#2a6e1a;font-size:11px;"><span>Remise globale</span><span>-${eur(v.remise)}</span></div>`:""}
+          ${v.remise>0?`<div style="display:flex;justify-content:space-between;color:#2a6e1a;font-size:11px;"><span>${labelRemiseGlobale(v)}</span><span>-${eur(v.remise)}</span></div>`:""}
           ${v.remiseFid>0?`<div style="display:flex;justify-content:space-between;color:#2a6e1a;font-size:11px;"><span>Fidélité -20%</span><span>-${eur(v.remiseFid)}</span></div>`:""}
           ${(()=>{
             const grossAchats = v.panier.filter(x=>!x.retour).reduce((s,i)=>s+i.price*i.qty,0);
@@ -3823,8 +3838,9 @@ function renderTicketModal() {
           ${(()=>{
             const ligneAvoir = v.panier.find(x=>x.avoirId);
             const avoirLigne = ligneAvoir || (v.avoirsPayes?.length?{price:v.avoirsPayes[0].montant, code:v.avoirsPayes[0].code}:null);
-            const codeAvoir = ligneAvoir ? (STATE.avoirs||[]).find(a=>a.id===ligneAvoir.avoirId)?.code : avoirLigne?.code;
-            if(avoirLigne) return `<div style="font-size:11px;color:#185fa5;font-weight:500;margin-top:2px;">💳 Bon d'avoir : ${eur(avoirLigne.price)}${codeAvoir?" (code "+codeAvoir+")":""}</div>`;
+            const avoirRef = ligneAvoir ? (STATE.avoirs||[]).find(a=>a.id===ligneAvoir.avoirId) : null;
+            const codeAvoir = avoirRef?.code || avoirLigne?.code;
+            if(avoirLigne) return `<div style="font-size:11px;color:#185fa5;font-weight:500;margin-top:2px;">${labelTypeAvoir(avoirRef?.typeAvoir, avoirRef?.source)} : ${eur(avoirLigne.price)}${codeAvoir?" (code "+codeAvoir+")":""}</div>`;
             if(v.mixed) return `<div style="font-size:11px;color:#555;margin-top:2px;">${(v.pays||[]).map(p=>mL[p.mode]+": "+eur(parseFloat(p.montant||0))).join(" + ")}</div>`;
             return `<div style="font-size:11px;color:#555;margin-top:2px;">Règlement : ${mL[v.payMode]||v.payMode}</div>`;
           })()}
@@ -9767,8 +9783,14 @@ function buildMsgEmail(v) {
     // Utiliser avoirsPayes (champ dédié) ou fallback sur le panier
     const avoirsPayesLst = v?.avoirsPayes||[];
     const avoirsUtilises = avoirsPayesLst.length>0
-      ? avoirsPayesLst.map(x=>"  💳 Bon d'avoir utilisé : "+eur(x.montant)).join("\n")
-      : (v?.panier||[]).filter(x=>x.avoirId).map(i=>"  💳 Bon d'avoir utilisé : "+eur(i.price)).join("\n");
+      ? avoirsPayesLst.map(x=>{
+          const avoirRef = x.avoirId ? (STATE.avoirs||[]).find(a=>a.id===x.avoirId) : null;
+          return "  "+labelTypeAvoir(avoirRef?.typeAvoir, avoirRef?.source)+" utilisé : "+eur(x.montant);
+        }).join("\n")
+      : (v?.panier||[]).filter(x=>x.avoirId).map(i=>{
+          const avoirRef = (STATE.avoirs||[]).find(a=>a.id===i.avoirId);
+          return "  "+labelTypeAvoir(avoirRef?.typeAvoir, avoirRef?.source)+" utilisé : "+eur(i.price);
+        }).join("\n");
     return "Bonjour"+(prenom?" "+prenom:"")+",\n\n"
       +"Belle&Jolie — Mode & Élégance\n─────────────────────────────\n\n"
       +"Votre bon d'avoir du "+date+" :\n\n"
@@ -9796,8 +9818,9 @@ function buildMsgEmail(v) {
   let paiement=mLfull[v?.payMode]||v?.payMode||"";
   if(v?.mixed&&v?.pays) paiement=v.pays.map(p=>`${mLfull[p.mode]||p.mode} : ${eur(parseFloat(p.montant||0))}`).join(" + ");
   const avoirUtilise=(v?.panier||[]).find(x=>x.avoirId);
-  const avoirDetail=avoirUtilise?`\n💳 Bon d'avoir utilisé : ${eur(avoirUtilise.price)}`:"";
-  return `Bonjour ${prenom||"Madame"},\n\nVotre ticket Belle&Jolie du ${date} :\n\n${articles}${v?.remiseFid>0?`\nRemise fidélité -20% : -${eur(v.remiseFid)}`:""}${v?.remise>0?`\nRemise globale : -${eur(v.remise)}`:""}${totalRemisesTxt>0.001?`\nTotal remises : -${eur(totalRemisesTxt)}`:""}${avoirDetail}\n\nTotal : ${eur(v?.total||0)}\nRèglement : ${paiement}\n\nMerci de votre confiance !\nBelle&Jolie — Mode & Élégance\nArticle échangeable sous 30 jours sur présentation du ticket de caisse ou d'un compte fidélité. Non porté, non lavé, sans odeur, étiquette intacte et dans le même état qu'à l'achat. Aucun remboursement.\n\n⚠️ Ne pas répondre. Contact : boutiquebelleetjolie@gmail.com`;
+  const avoirRefTxt = avoirUtilise ? (STATE.avoirs||[]).find(a=>a.id===avoirUtilise.avoirId) : null;
+  const avoirDetail=avoirUtilise?`\n${labelTypeAvoir(avoirRefTxt?.typeAvoir, avoirRefTxt?.source)} utilisé : ${eur(avoirUtilise.price)}`:"";
+  return `Bonjour ${prenom||"Madame"},\n\nVotre ticket Belle&Jolie du ${date} :\n\n${articles}${v?.remiseFid>0?`\nRemise fidélité -20% : -${eur(v.remiseFid)}`:""}${v?.remise>0?`\n${labelRemiseGlobale(v)} : -${eur(v.remise)}`:""}${totalRemisesTxt>0.001?`\nTotal remises : -${eur(totalRemisesTxt)}`:""}${avoirDetail}\n\nTotal : ${eur(v?.total||0)}\nRèglement : ${paiement}\n\nMerci de votre confiance !\nBelle&Jolie — Mode & Élégance\nArticle échangeable sous 30 jours sur présentation du ticket de caisse ou d'un compte fidélité. Non porté, non lavé, sans odeur, étiquette intacte et dans le même état qu'à l'achat. Aucun remboursement.\n\n⚠️ Ne pas répondre. Contact : boutiquebelleetjolie@gmail.com`;
 }
 
 function buildTicketEmailHTML(v) {
@@ -9806,7 +9829,7 @@ function buildTicketEmailHTML(v) {
   const prenom = v?.client?.prenom || v?.avoir?.client?.prenom || "Madame";
 
   const avoirsPayes = (v?.avoirsPayes||[]);
-  const avoirsLignes = avoirsPayes.length>0 ? avoirsPayes : (v?.panier||[]).filter(x=>x.avoirId).map(x=>({montant:x.price}));
+  const avoirsLignes = avoirsPayes.length>0 ? avoirsPayes : (v?.panier||[]).filter(x=>x.avoirId).map(x=>({montant:x.price, avoirId:x.avoirId}));
 
   // Lignes articles
   const lignesHtml = (v?.panier||[]).filter(x=>!x.retour&&!x.avoirId).map(i=>{
@@ -9823,7 +9846,10 @@ function buildTicketEmailHTML(v) {
   }).join("");
   let paiement = mL[v?.payMode]||v?.payMode||"";
   if(v?.mixed&&v?.pays) paiement = v.pays.map(p=>(mL[p.mode]||p.mode)+' : '+eur(parseFloat(p.montant||0))).join(" + ");
-  const avoirHtml = avoirsLignes.length>0 ? avoirsLignes.map(x=>'<tr><td style="font-size:13px;color:#993556;padding:4px 0;">💳 Bon avoir utilisé</td><td style="font-size:13px;color:#993556;text-align:right;padding:4px 0;">-'+eur(x.montant)+'</td></tr>').join("") : "";
+  const avoirHtml = avoirsLignes.length>0 ? avoirsLignes.map(x=>{
+    const avoirRef = x.avoirId ? (STATE.avoirs||[]).find(a=>a.id===x.avoirId) : null;
+    return '<tr><td style="font-size:13px;color:#993556;padding:4px 0;">'+labelTypeAvoir(avoirRef?.typeAvoir, avoirRef?.source)+'</td><td style="font-size:13px;color:#993556;text-align:right;padding:4px 0;">-'+eur(x.montant)+'</td></tr>';
+  }).join("") : "";
 
   // Reliquat
   let reliquatHtml = "";
@@ -9866,7 +9892,7 @@ function buildTicketEmailHTML(v) {
       ${retoursHtml}
       ${avoirHtml}
       ${v?.remiseFid>0?'<tr><td style="font-size:13px;color:#3b6d11;padding:6px 0;">🎉 Remise fidélité -20%</td><td style="font-size:13px;color:#3b6d11;text-align:right;padding:6px 0;">-'+eur(v.remiseFid)+'</td></tr>':""}
-      ${v?.remise>0?'<tr><td style="font-size:13px;color:#185fa5;padding:6px 0;">🏷️ Remise</td><td style="font-size:13px;color:#185fa5;text-align:right;padding:6px 0;">-'+eur(v.remise)+'</td></tr>':""}
+      ${v?.remise>0?'<tr><td style="font-size:13px;color:#185fa5;padding:6px 0;">'+labelRemiseGlobale(v)+'</td><td style="font-size:13px;color:#185fa5;text-align:right;padding:6px 0;">-'+eur(v.remise)+'</td></tr>':""}
       ${(()=>{
         const grossAchats = (v?.panier||[]).filter(x=>!x.retour&&!x.avoirId).reduce((s,i)=>s+i.price*i.qty,0);
         const netAchats = (v?.panier||[]).filter(x=>!x.retour&&!x.avoirId).reduce((s,i)=>s+calculerPrixPayeReel(v,i)*i.qty,0);
@@ -9959,9 +9985,12 @@ function buildMsgEmailHTML(v) {
   const avoirsPayes = (v?.avoirsPayes||[]);
   const avoirsLignes = avoirsPayes.length > 0
     ? avoirsPayes
-    : (v?.panier||[]).filter(x=>x.avoirId).map(x=>({montant:x.price}));
+    : (v?.panier||[]).filter(x=>x.avoirId).map(x=>({montant:x.price, avoirId:x.avoirId}));
   const paiementAvoir = avoirsLignes.length > 0
-    ? avoirsLignes.map(x=>"  💳 Bon d'avoir utilisé : "+eur(x.montant)).join("\n")
+    ? avoirsLignes.map(x=>{
+        const avoirRef = x.avoirId ? (STATE.avoirs||[]).find(a=>a.id===x.avoirId) : null;
+        return "  "+labelTypeAvoir(avoirRef?.typeAvoir, avoirRef?.source)+" utilisé : "+eur(x.montant);
+      }).join("\n")
     : "";
 
   if(v?.type==="avoir") {
@@ -10023,7 +10052,7 @@ function buildMsgEmailHTML(v) {
     +lignes+"\n"
     +(retours?"\nArticles retournés :\n"+retours+"\n":"")
     +(v?.remiseFid>0?"\nRemise fidélité -20% : -"+eur(v.remiseFid)+"\n":"")
-    +(v?.remise>0?"\nRemise globale : -"+eur(v.remise)+"\n":"")
+    +(v?.remise>0?"\n"+labelRemiseGlobale(v)+" : -"+eur(v.remise)+"\n":"")
     +(()=>{
       const grossAchats = (v?.panier||[]).filter(x=>!x.retour&&!x.avoirId).reduce((s,i)=>s+i.price*i.qty,0);
       const netAchats = (v?.panier||[]).filter(x=>!x.retour&&!x.avoirId).reduce((s,i)=>s+calculerPrixPayeReel(v,i)*i.qty,0);
@@ -14134,7 +14163,7 @@ function buildTicketHTML(v) {
         `).join("")}
       </div>
       <div class="sep"></div>
-      ${v.remise>0?`<div class="line"><span>Remise globale</span><span>-${eur(v.remise)}</span></div>`:""}
+      ${v.remise>0?`<div class="line"><span>${labelRemiseGlobale(v)}</span><span>-${eur(v.remise)}</span></div>`:""}
       ${v.remiseFid>0?`<div class="line fid"><span>❤️ Fidélité -20%</span><span>-${eur(v.remiseFid)}</span></div>`:""}
       <div class="total-line"><span>TOTAL</span><span>${eur(v.total)}</span></div>
       <div class="paiement">Règlement : ${mL[v.payMode]||v.payMode||"—"}</div>
