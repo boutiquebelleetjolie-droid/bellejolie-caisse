@@ -11111,11 +11111,11 @@ function renderCaisseJour() {
     const sommePays = v.pays.reduce((s,p)=>s+parseFloat(p.montant||0),0);
     return Math.abs(sommePays - v.total) >= 0.01;
   });
-  // Retours espèces = uniquement les ventes où le total net est négatif ou nul (vrai remboursement en espèces),
-  // pas les échanges (retour + nouvel achat dans le même ticket, déjà capté par le mode de paiement normal),
-  // et pas les retours compensés par un bon d'avoir (aucune sortie d'espèces réelle du tiroir)
+  // Retours espèces = uniquement les vrais remboursements en espèces (payMode dédié 'remboursement_especes').
+  // Un échange (retour + nouvel achat, même remis à 0€ par une remise) ou un retour compensé par un bon
+  // d'avoir ne fait sortir aucune espèce du tiroir : ça ne doit jamais être compté ici.
   const retours = ventesJour
-    .filter(v=>v.total<=0 && v.payMode!=="avoir_cree" && v.panier.some(x=>x.retour&&!x.avoirId))
+    .filter(v=>v.payMode==="remboursement_especes")
     .reduce((s,v)=>s+v.panier.filter(x=>x.retour&&!x.avoirId).reduce((ss,i)=>ss+i.price*i.qty,0),0);
   const annulJour = (STATE.annulLignes||[]).filter(a=>new Date(a.date).toDateString()===zDate.toDateString());
   const totalAnnul = annulJour.reduce((s,a)=>s+a.prix*a.qty,0);
@@ -11446,7 +11446,7 @@ window.updateFermetureTotal = () => {
   });
   const especes = payM["especes"]||0;
   const retours = ventesJour
-    .filter(v=>v.total<=0 && v.payMode!=="avoir_cree" && v.panier.some(x=>x.retour&&!x.avoirId))
+    .filter(v=>v.payMode==="remboursement_especes")
     .reduce((s,v)=>s+v.panier.filter(x=>x.retour&&!x.avoirId).reduce((ss,i)=>ss+i.price*i.qty,0),0);
   const totalOuvBrut = Object.entries(STATE.fondOuverture||{}).reduce((s,[k,v])=>{const val=parseFloat(k.replace("ouv_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
   const ouvertureJour = (STATE.ouvertures||{})[zDateStr] || null;
