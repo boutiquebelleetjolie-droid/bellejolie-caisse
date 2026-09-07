@@ -7425,11 +7425,14 @@ function renderStats() {
   const prodMapAll = {};
   STATE.products.forEach(p=>{ prodMapAll[p.id]=p; });
   const catMap = {};
+  let caGrandeTaille = 0;
   vf.forEach(v=>v.panier.filter(x=>!x.retour).forEach(i=>{
     const pid = i.prodIdOriginal || i.id;
     const p = prodMapAll[pid];
     const cat = p?.category || "Autre";
-    catMap[cat] = (catMap[cat]||0) + i.price*(i.qty||1);
+    const montantLigne = i.price*(i.qty||1);
+    catMap[cat] = (catMap[cat]||0) + montantLigne;
+    if(p?.grandeTaille) caGrandeTaille += montantLigne;
   }));
   const catTriees = Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
 
@@ -7600,6 +7603,18 @@ function renderStats() {
             </div>
           </div>`;
         }).join("")}
+        ${caGrandeTaille>0?`
+          <div style="border-top:0.5px dashed #e8e0e4;margin:10px 0 8px;"></div>
+          <div style="margin-bottom:0;">
+            <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:3px;">
+              <span>📏 Grande taille <span style="color:#aaa;font-size:10px;">(toutes catégories confondues)</span></span>
+              <span style="font-weight:500;">${eur(caGrandeTaille)} · ${(ca>0?(caGrandeTaille/ca*100):0).toFixed(1)}%</span>
+            </div>
+            <div style="background:#e8e0e4;border-radius:4px;height:5px;overflow:hidden;">
+              <div style="height:100%;width:${Math.min(100,ca>0?(caGrandeTaille/ca*100):0)}%;background:#185fa5;border-radius:4px;"></div>
+            </div>
+          </div>
+        `:""}
       </div>
       <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;">
         <div style="font-weight:500;font-size:13px;margin-bottom:4px;">🔄 Dépôt-vente</div>
