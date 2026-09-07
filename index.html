@@ -2701,7 +2701,7 @@ function renderCaisse() {
           ${(()=>{
             const now30 = new Date();
             const ventes30 = (STATE.ventes||[]).filter(v=>
-              v.client?.id===STATE.client.id && !v.test && !v.annulee &&
+              v.client?.id===STATE.client.id && !v.test && (!v.annulee||v.typeAnnulation==="comptable") &&
               (now30 - new Date(v.date)) < 30*24*60*60*1000
             ).slice(-10).reverse();
             if(!ventes30.length) return "";
