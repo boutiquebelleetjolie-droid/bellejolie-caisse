@@ -3596,6 +3596,16 @@ function labelRemiseGlobale(v) {
   return "🏷️ Remise globale";
 }
 
+// Depuis une stat (top ventes, articles à réassortir...), aller voir l'article précis dans le Stock
+window.voirArticleStock = (productId) => {
+  const p = STATE.products.find(x=>x.id===productId);
+  if(!p) { alert("Article introuvable (peut-être supprimé du catalogue depuis)."); return; }
+  STATE.searchProd = p.ref || p.name;
+  STATE.invSearch = p.ref || p.name;
+  STATE.tab = "stock";
+  render();
+};
+
 function renderTicketModal() {
   const v = STATE.showTicket;
   const mL = {cb:"Carte bleue",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Carte cadeau",mixte:"Paiement mixte"};
@@ -4707,8 +4717,8 @@ function renderReassortBloc() {
     let rowsR = "";
     ruptures.forEach(r=>{
       const mois = Math.floor(r.joursEcart/30);
-      rowsR += `<tr style="border-bottom:0.5px solid #f0ebee;">
-        <td style="padding:5px 8px;font-weight:500;color:#a32d2d;">${r.name}</td>
+      rowsR += `<tr onclick="voirArticleStock('${r.id}')" style="border-bottom:0.5px solid #f0ebee;cursor:pointer;" title="Voir dans le Stock">
+        <td style="padding:5px 8px;font-weight:500;color:#a32d2d;text-decoration:underline;text-decoration-style:dotted;">${r.name}</td>
         <td style="padding:5px 8px;color:#888;font-size:11px;">${r.category||"—"}</td>
         <td style="padding:5px 8px;text-align:center;"><span style="background:#fcebeb;color:#a32d2d;padding:1px 7px;border-radius:7px;font-size:11px;font-weight:700;">0 stock</span></td>
         <td style="padding:5px 8px;"><span style="background:#fcebeb;color:#a32d2d;padding:1px 7px;border-radius:7px;font-size:11px;">${mois} mois</span></td>
@@ -4728,8 +4738,8 @@ function renderReassortBloc() {
     const bg  = a.urgence==="haute"?"#fcebeb":"#fff3e8";
     const col = a.urgence==="haute"?"#a32d2d":"#e07c00";
     const stk = a.stock<3?`<span style="color:#a32d2d;font-weight:700;">${a.stock}</span>`:a.stock;
-    rows += `<tr style="border-bottom:0.5px solid #f0ebee;">
-      <td style="padding:6px 8px;font-weight:500;">${a.name}</td>
+    rows += `<tr onclick="voirArticleStock('${a.id}')" style="border-bottom:0.5px solid #f0ebee;cursor:pointer;" title="Voir dans le Stock">
+      <td style="padding:6px 8px;font-weight:500;text-decoration:underline;text-decoration-style:dotted;">${a.name}</td>
       <td style="padding:6px 8px;color:#888;">${a.category||"—"}</td>
       <td style="padding:6px 8px;text-align:center;">${stk}</td>
       <td style="padding:6px 8px;">${a.derniereVente?a.derniereVente.toLocaleDateString("fr-FR"):"—"}</td>
@@ -7414,7 +7424,7 @@ function renderStats() {
 
   // ── Top articles ──────────────────────────────────────────────
   const am={};
-  vf.forEach(v=>v.panier.filter(x=>!x.retour&&!estArticleSac(x)).forEach(i=>{if(!am[i.id])am[i.id]={name:i.name,qty:0,ca:0};am[i.id].qty+=i.qty;am[i.id].ca+=calculerPrixPayeReel(v,i)*i.qty;}));
+  vf.forEach(v=>v.panier.filter(x=>!x.retour&&!estArticleSac(x)).forEach(i=>{const pid=i.prodIdOriginal||i.id;if(!am[pid])am[pid]={id:pid,name:i.name,qty:0,ca:0};am[pid].qty+=i.qty;am[pid].ca+=calculerPrixPayeReel(v,i)*i.qty;}));
   const top=Object.values(am).sort((a,b)=>b.qty-a.qty).slice(0,5);
   const payM={};
   vf.forEach(v=>{payM[v.payMode]=(payM[v.payMode]||0)+v.total;});
@@ -7580,10 +7590,10 @@ function renderStats() {
       <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;">
         <div style="font-weight:500;font-size:13px;margin-bottom:12px;">Top 5 articles</div>
         ${top.length===0?`<div style="color:#aaa;font-size:13px;">Aucune vente</div>`:top.map((a,i)=>`
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:0.5px solid #e8e0e4;font-size:13px;">
+          <div onclick="voirArticleStock('${a.id}')" style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:0.5px solid #e8e0e4;font-size:13px;cursor:pointer;" title="Voir dans le Stock">
             <div style="display:flex;gap:8px;align-items:center;">
               <span style="width:20px;height:20px;border-radius:50%;background:#fbeaf0;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:500;color:#993556;">${i+1}</span>
-              <span>${a.name}</span>
+              <span style="text-decoration:underline;text-decoration-style:dotted;color:#993556;">${a.name}</span>
             </div>
             <div style="text-align:right;"><div style="font-weight:500;">${a.qty} vte${a.qty>1?"s":""}</div><div style="font-size:11px;color:#888;">${eur(a.ca)}</div></div>
           </div>
@@ -7761,7 +7771,7 @@ function renderStats() {
     ${(()=>{
       const allV=STATE.ventes.filter(v=>!v.test&&!v.annulee);
       const amA={};
-      allV.forEach(v=>v.panier.filter(x=>!x.retour&&!estArticleSac(x)).forEach(i=>{if(!amA[i.id])amA[i.id]={name:i.name,qty:0,ca:0};amA[i.id].qty+=i.qty;amA[i.id].ca+=calculerPrixPayeReel(v,i)*i.qty;}));
+      allV.forEach(v=>v.panier.filter(x=>!x.retour&&!estArticleSac(x)).forEach(i=>{const pid=i.prodIdOriginal||i.id;if(!amA[pid])amA[pid]={id:pid,name:i.name,qty:0,ca:0};amA[pid].qty+=i.qty;amA[pid].ca+=calculerPrixPayeReel(v,i)*i.qty;}));
       const topQ=Object.values(amA).sort((a,b)=>b.qty-a.qty).slice(0,10);
       const topC=Object.values(amA).sort((a,b)=>b.ca-a.ca).slice(0,10);
       const maxQ=Math.max(...topQ.map(x=>x.qty),1);
@@ -7769,11 +7779,11 @@ function renderStats() {
       return `<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
         <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;">
           <div style="font-weight:500;font-size:13px;margin-bottom:12px;">🏆 Top 10 — Quantités</div>
-          ${topQ.map((a,i)=>`<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px;"><span style="font-weight:500;">${i+1}. ${a.name}</span><span style="font-weight:600;color:#993556;">${a.qty} u.</span></div><div style="background:#f0ebee;border-radius:4px;height:7px;overflow:hidden;"><div style="height:100%;width:${(a.qty/maxQ*100).toFixed(0)}%;background:#993556;border-radius:4px;"></div></div></div>`).join("")}
+          ${topQ.map((a,i)=>`<div onclick="voirArticleStock('${a.id}')" style="margin-bottom:8px;cursor:pointer;" title="Voir dans le Stock"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px;"><span style="font-weight:500;text-decoration:underline;text-decoration-style:dotted;color:#993556;">${i+1}. ${a.name}</span><span style="font-weight:600;color:#993556;">${a.qty} u.</span></div><div style="background:#f0ebee;border-radius:4px;height:7px;overflow:hidden;"><div style="height:100%;width:${(a.qty/maxQ*100).toFixed(0)}%;background:#993556;border-radius:4px;"></div></div></div>`).join("")}
         </div>
         <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;">
           <div style="font-weight:500;font-size:13px;margin-bottom:12px;">💰 Top 10 — CA</div>
-          ${topC.map((a,i)=>`<div style="margin-bottom:8px;"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px;"><span style="font-weight:500;">${i+1}. ${a.name}</span><span style="font-weight:600;color:#5566aa;">${eur(a.ca)}</span></div><div style="background:#f0ebee;border-radius:4px;height:7px;overflow:hidden;"><div style="height:100%;width:${(a.ca/maxC*100).toFixed(0)}%;background:#5566aa;border-radius:4px;"></div></div></div>`).join("")}
+          ${topC.map((a,i)=>`<div onclick="voirArticleStock('${a.id}')" style="margin-bottom:8px;cursor:pointer;" title="Voir dans le Stock"><div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:2px;"><span style="font-weight:500;text-decoration:underline;text-decoration-style:dotted;color:#5566aa;">${i+1}. ${a.name}</span><span style="font-weight:600;color:#5566aa;">${eur(a.ca)}</span></div><div style="background:#f0ebee;border-radius:4px;height:7px;overflow:hidden;"><div style="height:100%;width:${(a.ca/maxC*100).toFixed(0)}%;background:#5566aa;border-radius:4px;"></div></div></div>`).join("")}
         </div>
       </div>`;
     })()}
@@ -10633,8 +10643,8 @@ function renderReassort() {
         <table style="font-size:13px;width:100%;"><thead><tr style="border-bottom:0.5px solid #e8e0e4;">
           ${["Article","Catégorie","Dernière vente","En rupture depuis"].map(h=>`<th style="text-align:left;padding:6px 8px;font-size:11px;font-weight:500;color:#888;">${h}</th>`).join("")}
         </tr></thead><tbody>
-          ${ruptures.map(a=>`<tr style="border-bottom:0.5px solid #f0ebee;">
-            <td style="padding:8px;font-weight:500;color:#a32d2d;">${a.name}</td>
+          ${ruptures.map(a=>`<tr onclick="voirArticleStock('${a.id}')" style="border-bottom:0.5px solid #f0ebee;cursor:pointer;" title="Voir dans le Stock">
+            <td style="padding:8px;font-weight:500;color:#a32d2d;text-decoration:underline;text-decoration-style:dotted;">${a.name}</td>
             <td style="padding:8px;color:#888;">${a.category||"—"}</td>
             <td style="padding:8px;">${a.derniereVente?a.derniereVente.toLocaleDateString("fr-FR"):"Jamais vendu"}</td>
             <td style="padding:8px;"><span style="background:#fcebeb;color:#a32d2d;padding:2px 8px;border-radius:8px;font-size:11px;font-weight:600;">${Math.floor(a.joursEcart/30)} mois</span></td>
@@ -10648,8 +10658,8 @@ function renderReassort() {
         <table style="font-size:13px;width:100%;"><thead><tr style="border-bottom:0.5px solid #e8e0e4;">
           ${["Article","Catégorie","Stock","En stock depuis","Prix"].map(h=>`<th style="text-align:left;padding:6px 8px;font-size:11px;font-weight:500;color:#888;">${h}</th>`).join("")}
         </tr></thead><tbody>
-          ${jamaisVendus.map(a=>`<tr style="border-bottom:0.5px solid #f0ebee;">
-            <td style="padding:8px;font-weight:500;">${a.name}</td>
+          ${jamaisVendus.map(a=>`<tr onclick="voirArticleStock('${a.id}')" style="border-bottom:0.5px solid #f0ebee;cursor:pointer;" title="Voir dans le Stock">
+            <td style="padding:8px;font-weight:500;text-decoration:underline;text-decoration-style:dotted;color:#993556;">${a.name}</td>
             <td style="padding:8px;color:#888;">${a.category||"—"}</td>
             <td style="padding:8px;text-align:center;font-weight:600;color:${a.stock<3?"#a32d2d":"#333"}">${a.stock}</td>
             <td style="padding:8px;"><span style="background:#f5eaf5;color:#6a2d6a;padding:2px 8px;border-radius:8px;font-size:11px;">${a.joursEcart}j</span></td>
@@ -10668,8 +10678,8 @@ function renderReassort() {
           </tr></thead>
           <tbody>
             ${urgents.map(a=>`
-              <tr style="border-bottom:0.5px solid #f0ebee;">
-                <td style="padding:8px;font-weight:500;">${a.name}</td>
+              <tr onclick="voirArticleStock('${a.id}')" style="border-bottom:0.5px solid #f0ebee;cursor:pointer;" title="Voir dans le Stock">
+                <td style="padding:8px;font-weight:500;text-decoration:underline;text-decoration-style:dotted;color:#993556;">${a.name}</td>
                 <td style="padding:8px;color:#888;">${a.category||"—"}</td>
                 <td style="padding:8px;text-align:center;font-weight:500;color:${a.stock<3?"#a32d2d":"#333"};">${a.stock}</td>
                 <td style="padding:8px;">${a.derniereVente?a.derniereVente.toLocaleDateString("fr-FR"):"<span style='color:#aaa;font-size:11px;'>—</span>"}</td>
@@ -10695,8 +10705,8 @@ function renderReassort() {
           </tr></thead>
           <tbody>
             ${peuVendus.map(a=>`
-              <tr style="border-bottom:0.5px solid #f0ebee;">
-                <td style="padding:8px;font-weight:500;">${a.name}</td>
+              <tr onclick="voirArticleStock('${a.id}')" style="border-bottom:0.5px solid #f0ebee;cursor:pointer;" title="Voir dans le Stock">
+                <td style="padding:8px;font-weight:500;text-decoration:underline;text-decoration-style:dotted;color:#993556;">${a.name}</td>
                 <td style="padding:8px;color:#888;">${a.category||"—"}</td>
                 <td style="padding:8px;text-align:center;font-weight:500;">${a.stock}</td>
                 <td style="padding:8px;">${a.derniereVente?a.derniereVente.toLocaleDateString("fr-FR"):"<span style='color:#aaa;font-size:11px;'>—</span>"}</td>
