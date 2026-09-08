@@ -7414,7 +7414,7 @@ function renderStats() {
 
   // ── Top articles ──────────────────────────────────────────────
   const am={};
-  vf.forEach(v=>v.panier.filter(x=>!x.retour&&!estArticleSac(x)).forEach(i=>{if(!am[i.id])am[i.id]={name:i.name,qty:0,ca:0};am[i.id].qty+=i.qty;am[i.id].ca+=i.price*i.qty;}));
+  vf.forEach(v=>v.panier.filter(x=>!x.retour&&!estArticleSac(x)).forEach(i=>{if(!am[i.id])am[i.id]={name:i.name,qty:0,ca:0};am[i.id].qty+=i.qty;am[i.id].ca+=calculerPrixPayeReel(v,i)*i.qty;}));
   const top=Object.values(am).sort((a,b)=>b.qty-a.qty).slice(0,5);
   const payM={};
   vf.forEach(v=>{payM[v.payMode]=(payM[v.payMode]||0)+v.total;});
@@ -7430,7 +7430,7 @@ function renderStats() {
     const pid = i.prodIdOriginal || i.id;
     const p = prodMapAll[pid];
     const cat = p?.category || "Autre";
-    const montantLigne = i.price*(i.qty||1);
+    const montantLigne = calculerPrixPayeReel(v, i) * (i.qty||1);
     catMap[cat] = (catMap[cat]||0) + montantLigne;
     if(p?.grandeTaille) caGrandeTaille += montantLigne;
   }));
@@ -7443,7 +7443,7 @@ function renderStats() {
     const pid = i.prodIdOriginal || i.id;
     const p = prodMapAll[pid];
     if(p?.depotVente) {
-      const montant = i.price*(i.qty||1);
+      const montant = calculerPrixPayeReel(v, i) * (i.qty||1);
       caDepotVente += montant;
       const nomCli = ((p.depotClientPrenom||"")+" "+(p.depotClientNom||"")).trim() || "Cliente inconnue";
       clientsDepotVenteM[nomCli] = (clientsDepotVenteM[nomCli]||0) + montant;
@@ -7761,7 +7761,7 @@ function renderStats() {
     ${(()=>{
       const allV=STATE.ventes.filter(v=>!v.test&&!v.annulee);
       const amA={};
-      allV.forEach(v=>v.panier.filter(x=>!x.retour&&!estArticleSac(x)).forEach(i=>{if(!amA[i.id])amA[i.id]={name:i.name,qty:0,ca:0};amA[i.id].qty+=i.qty;amA[i.id].ca+=i.price*i.qty;}));
+      allV.forEach(v=>v.panier.filter(x=>!x.retour&&!estArticleSac(x)).forEach(i=>{if(!amA[i.id])amA[i.id]={name:i.name,qty:0,ca:0};amA[i.id].qty+=i.qty;amA[i.id].ca+=calculerPrixPayeReel(v,i)*i.qty;}));
       const topQ=Object.values(amA).sort((a,b)=>b.qty-a.qty).slice(0,10);
       const topC=Object.values(amA).sort((a,b)=>b.ca-a.ca).slice(0,10);
       const maxQ=Math.max(...topQ.map(x=>x.qty),1);
