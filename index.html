@@ -2606,7 +2606,7 @@ function renderCaisse() {
                       <span style="font-size:13px;font-weight:700;color:#993556;">-5€ offerts</span>
                       <button onclick="utiliserAvoirId('${bonAnniv.id}')" style="background:#993556;color:#fff;border:none;border-radius:6px;padding:4px 12px;font-size:12px;cursor:pointer;font-weight:500;">🎁 Utiliser</button>
                     </div>
-                    <div style="font-size:10px;color:#aaa;margin-top:3px;">Valable jusqu'au ${new Date(bonAnniv.expiration).toLocaleDateString("fr-FR")}</div>
+                    <div style="font-size:10px;color:#aaa;margin-top:3px;">Valable jusqu'au ${new Date(bonAnniv.expiration).toLocaleDateString("fr-FR")} · dès 20€ d'achat</div>
                   </div>`:""}
                   ${avoirsClient.length?`<div style="background:#fff3e8;border:1px solid #e07c00;border-radius:8px;padding:6px 8px;">
                     <div style="font-size:11px;color:#e07c00;font-weight:600;margin-bottom:4px;">🎟️ Avoir(s) :</div>
@@ -3303,9 +3303,13 @@ window.utiliserAvoirId = (avoirId) => {
   if(st.needsManager && !verifierCodeManager("Ce bon est expiré depuis "+st.joursDepasse+" jours (plus de 15 jours).")) {
     return;
   }
-  if(avoir.typeAvoir==="bienvenue") {
+  if(avoir.typeAvoir==="bienvenue" || avoir.typeAvoir==="anniversaire") {
     const sousTotal = calcPanier().stTotal;
-    if(sousTotal < 20) { alert("⚠️ Le bon de bienvenue n'est utilisable qu'à partir de 20€ d'achat (panier actuel : "+eur(sousTotal)+")."); return; }
+    if(sousTotal < 20) {
+      const nomBon = avoir.typeAvoir==="bienvenue" ? "Le bon de bienvenue" : "Le bon anniversaire";
+      alert("⚠️ "+nomBon+" n'est utilisable qu'à partir de 20€ d'achat (panier actuel : "+eur(sousTotal)+").");
+      return;
+    }
   }
   // Retirer si déjà dans le panier
   STATE.panier = STATE.panier.filter(x=>x.avoirId!==avoirId);
