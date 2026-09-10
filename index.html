@@ -7145,6 +7145,7 @@ function renderClientDetail() {
     +'</div>'
     +'<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;margin-bottom:12px;">'
     +'<div style="background:#f9f6f8;border-radius:8px;padding:8px;"><div style="color:#888;margin-bottom:2px;">📞 Téléphone</div><div style="font-weight:500;">'+(c.tel||"—")+'</div></div>'
+    +'<div style="background:#f9f6f8;border-radius:8px;padding:8px;grid-column:1/-1;"><div style="color:#888;margin-bottom:2px;">📧 Email</div><div style="font-weight:500;word-break:break-all;">'+(c.email||"—")+'</div></div>'
     +'<div style="background:#f9f6f8;border-radius:8px;padding:8px;"><div style="color:#888;margin-bottom:2px;">📍 Code postal</div><div style="font-weight:500;">'+(c.cp||"—")+'</div></div>'
     +'<div style="background:#f9f6f8;border-radius:8px;padding:8px;"><div style="color:#888;margin-bottom:2px;">🎂 Anniversaire</div><div style="font-weight:500;">'+(c.anniversaire||"—")+'</div></div>'
     +'<div style="background:#f9f6f8;border-radius:8px;padding:8px;"><div style="color:#888;margin-bottom:2px;">🕐 Dernière visite</div><div style="font-weight:500;">'+(derniereVisite?derniereVisite.toLocaleDateString("fr-FR"):"—")+(joursDepuis!==null?' <span style="color:#aaa;font-size:10px;">('+joursDepuis+'j)</span>':'')+'</div></div>'
