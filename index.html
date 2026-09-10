@@ -7392,66 +7392,6 @@ function renderPaceWidget() {
   const ecartSemainePct = pctRealiseSemaine - pctAttenduSemaine;
   const ecartSemaineEuros = caSemaineRealise - (objSemaine*pctAttenduSemaine/100);
 
-  // ── Combien faire heure par heure aujourd'hui ───────────────────
-  // Horaires d'ouverture : lundi 13h30-18h30, mardi-samedi 10h-18h30, dimanche fermé
-  const jourSemaineNow = now.getDay();
-  let heureDebut = null, heureFin = null;
-  if(jourSemaineNow===1) { heureDebut=13; heureFin=19; }
-  else if(jourSemaineNow>=2 && jourSemaineNow<=6) { heureDebut=10; heureFin=19; }
-
-  let heureParHeureHtml = "";
-  if(heureDebut!==null) {
-    // Répartition horaire moyenne réelle du CA, basée sur l'historique des ventes (toutes journées confondues)
-    const cumulHeures = {}; let totalHist = 0;
-    (STATE.ventes||[]).forEach(v=>{
-      if(v.test||v.annulee) return;
-      const h = new Date(v.date).getHours();
-      if(h<heureDebut||h>=heureFin) return;
-      cumulHeures[h] = (cumulHeures[h]||0)+v.total;
-      totalHist += v.total;
-    });
-    const nbHeures = heureFin-heureDebut;
-    const distHeure = {};
-    for(let h=heureDebut; h<heureFin; h++) distHeure[h] = totalHist>0 ? (cumulHeures[h]||0)/totalHist : 1/nbHeures;
-
-    const objJour = poidsTotalMois>0 ? objM*((PCT_JOUR[jourSemaineNow]||0)/poidsTotalMois) : 0;
-    const heureActuelle = now.getHours() + now.getMinutes()/60;
-
-    let cumulAttendu = 0;
-    const lignesHeures = [];
-    for(let h=heureDebut; h<heureFin; h++) {
-      const objHeure = objJour*distHeure[h];
-      const estPassee = h+1 <= heureActuelle;
-      const estActuelle = h <= heureActuelle && heureActuelle < h+1;
-      lignesHeures.push({h, objHeure, estPassee, estActuelle});
-    }
-    // Attendu à l'instant présent : heures pleines déjà passées + fraction de l'heure en cours
-    const attenduADate = lignesHeures.reduce((s,l)=>{
-      if(l.estPassee) return s+l.objHeure;
-      if(l.estActuelle) return s+l.objHeure*(heureActuelle-l.h);
-      return s;
-    }, 0);
-    const ecartJourEuros = caJour - attenduADate;
-    const enAvanceJour = ecartJourEuros >= -0.5;
-
-    heureParHeureHtml = `
-    <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;margin-bottom:14px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <div style="font-weight:600;font-size:13px;color:#555;">🕐 Combien faire heure par heure aujourd'hui</div>
-        <div style="font-size:12px;font-weight:600;color:${enAvanceJour?"#3b6d11":"#a32d2d"};">${enAvanceJour?"✅ En avance":"⚠️ En retard"} de ${eur(Math.abs(ecartJourEuros))}</div>
-      </div>
-      <div style="font-size:11px;color:#888;margin-bottom:10px;">Objectif du jour : <strong>${eur(objJour)}</strong> — déjà réalisé : <strong style="color:#993556;">${eur(caJour)}</strong></div>
-      <div style="max-height:220px;overflow-y:auto;">
-        ${lignesHeures.map(l=>`
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px;border-radius:6px;margin-bottom:2px;background:${l.estActuelle?"#fbeaf0":"transparent"};${l.estPassee?"opacity:0.55;":""}">
-            <span style="font-size:12px;font-weight:${l.estActuelle?600:400};color:${l.estActuelle?"#993556":"#555"};">${String(l.h).padStart(2,"0")}h–${String(l.h+1).padStart(2,"0")}h${l.estActuelle?" ← maintenant":""}</span>
-            <span style="font-size:12px;color:#888;">objectif : <strong style="color:#333;">${eur(l.objHeure)}</strong></span>
-          </div>
-        `).join("")}
-      </div>
-    </div>`;
-  }
-
   const bloc = (titre, pctRealise, pctAttendu, ecartEuros, caRealise) => {
     const enAvance = ecartEuros >= -0.5;
     const col = enAvance?"#3b6d11":"#a32d2d";
@@ -7469,10 +7409,7 @@ function renderPaceWidget() {
       </div>`;
   };
 
-  // CA du jour même (utilisé pour le suivi heure par heure)
-  const caJour = STATE.ventes.filter(v=>{if(v.test||v.annulee)return false;const dv=new Date(v.date);return dv.toDateString()===now.toDateString();}).reduce((s,v)=>s+v.total,0);
-
-  return heureParHeureHtml + `
+  return `
   <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
     ${bloc("📅 Cette semaine", pctRealiseSemaine, pctAttenduSemaine, ecartSemaineEuros, caSemaineRealise)}
     ${bloc("🗓️ Ce mois-ci", pctRealiseMois, pctAttenduMois, ecartMoisEuros, caMoisRealise)}
