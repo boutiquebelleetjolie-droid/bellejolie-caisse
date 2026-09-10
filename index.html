@@ -7352,6 +7352,70 @@ function renderHistorique() {
 }
 
 // ─── STATS ──────────────────────────────────────────────────────
+// Widget "en avance / en retard" pour la semaine et le mois en cours, basé sur le poids réel
+// de chaque jour de la semaine dans le CA (PCT_JOUR) plutôt qu'un simple ratio de jours écoulés.
+function renderPaceWidget() {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  const objM = OBJECTIFS_MENSUEL[m] || 0;
+  if(objM<=0) return ""; // mois fermé (août) ou sans objectif défini
+
+  // Poids cumulé des jours écoulés vs poids total du mois (samedi pèse plus, dimanche 0, etc.)
+  let poidsEcoule = 0, poidsTotalMois = 0;
+  for(let j=1; j<=daysInMonth; j++) {
+    const wd = new Date(y, m, j).getDay();
+    const poids = PCT_JOUR[wd]||0;
+    poidsTotalMois += poids;
+    if(j <= d) poidsEcoule += poids;
+  }
+  const pctAttenduMois = poidsTotalMois>0 ? (poidsEcoule/poidsTotalMois*100) : 0;
+  const caMoisRealise = STATE.ventes.filter(v=>!v.test&&!v.annulee&&new Date(v.date).getFullYear()===y&&new Date(v.date).getMonth()===m).reduce((s,v)=>s+v.total,0);
+  const pctRealiseMois = objM>0 ? (caMoisRealise/objM*100) : 0;
+  const ecartMoisPct = pctRealiseMois - pctAttenduMois;
+  const ecartMoisEuros = caMoisRealise - (objM*pctAttenduMois/100);
+
+  // Semaine en cours (lundi → aujourd'hui), pondérée dans le même objectif mensuel
+  const lundi = new Date(now); lundi.setDate(now.getDate() - ((now.getDay()+6)%7)); lundi.setHours(0,0,0,0);
+  let poidsEcouleSem = 0, poidsTotalSem = 0;
+  for(let i=0;i<7;i++) {
+    const dd = new Date(lundi); dd.setDate(lundi.getDate()+i);
+    if(dd.getMonth()!==m) continue;
+    const poids = PCT_JOUR[dd.getDay()]||0;
+    poidsTotalSem += poids;
+    if(dd <= now) poidsEcouleSem += poids;
+  }
+  const objSemaine = poidsTotalMois>0 ? objM*(poidsTotalSem/poidsTotalMois) : 0;
+  const caSemaineRealise = STATE.ventes.filter(v=>{if(v.test||v.annulee)return false;const dv=new Date(v.date);return dv>=lundi&&dv<=now;}).reduce((s,v)=>s+v.total,0);
+  const pctAttenduSemaine = poidsTotalSem>0 ? (poidsEcouleSem/poidsTotalSem*100) : 0;
+  const pctRealiseSemaine = objSemaine>0 ? (caSemaineRealise/objSemaine*100) : 0;
+  const ecartSemainePct = pctRealiseSemaine - pctAttenduSemaine;
+  const ecartSemaineEuros = caSemaineRealise - (objSemaine*pctAttenduSemaine/100);
+
+  const bloc = (titre, pctRealise, pctAttendu, ecartEuros, caRealise) => {
+    const enAvance = ecartEuros >= -0.5;
+    const col = enAvance?"#3b6d11":"#a32d2d";
+    return `
+      <div style="background:${enAvance?"#eaf3de":"#fcebeb"};border:1px solid ${enAvance?"#aed882":"#f0959599"};border-radius:12px;padding:14px;flex:1;min-width:180px;">
+        <div style="font-weight:600;font-size:13px;color:${col};margin-bottom:6px;">${enAvance?"✅":"⚠️"} ${titre} — ${enAvance?"En avance":"En retard"}</div>
+        <div style="font-size:24px;font-weight:700;color:${col};">${pctRealise.toFixed(0)}%</div>
+        <div style="font-size:11px;color:#888;margin-bottom:8px;">de l'objectif réalisé — on devrait être à <strong>${pctAttendu.toFixed(0)}%</strong> aujourd'hui</div>
+        <div style="background:#fff;border-radius:6px;height:9px;overflow:hidden;position:relative;margin-bottom:6px;">
+          <div style="position:absolute;height:100%;width:${Math.min(100,pctRealise)}%;background:${col};border-radius:6px;"></div>
+          <div style="position:absolute;left:${Math.min(100,pctAttendu)}%;top:-2px;height:13px;width:2px;background:#333;"></div>
+        </div>
+        <div style="font-size:12px;color:${col};font-weight:600;">${enAvance?"+":""}${eur(ecartEuros)} ${enAvance?"d'avance":"de retard"}</div>
+        <div style="font-size:10px;color:#aaa;margin-top:2px;">${eur(caRealise)} réalisés à date</div>
+      </div>`;
+  };
+
+  return `
+  <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
+    ${bloc("📅 Cette semaine", pctRealiseSemaine, pctAttenduSemaine, ecartSemaineEuros, caSemaineRealise)}
+    ${bloc("🗓️ Ce mois-ci", pctRealiseMois, pctAttenduMois, ecartMoisEuros, caMoisRealise)}
+  </div>`;
+}
+
 function renderStats() {
   const per = STATE.statPer;
   const now = new Date();
@@ -7529,6 +7593,8 @@ function renderStats() {
         <button onclick="STATE.statPer='${k}';render()" style="padding:6px 12px;border-radius:8px;border:none;background:${per===k?"#993556":"#f5f0f2"};color:${per===k?"#fff":"#333"};cursor:pointer;font-weight:${per===k?500:400};font-size:13px;">${l}</button>
       `).join("")}
     </div>
+
+    ${renderPaceWidget()}
 
     <!-- Navigation période -->
     ${showNav?`
