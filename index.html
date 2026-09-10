@@ -7479,6 +7479,99 @@ function renderPaceWidget() {
   </div>`;
 }
 
+// Répartition horaire réelle du CA, calculée sur l'historique des ventes du même jour de semaine
+// (fallback sur tous les jours si pas assez de données). Retourne {heure: %} sur les heures d'ouverture.
+function calculerRepartitionHoraire(weekday) {
+  const parHeureJour = {}, parHeureTout = {};
+  let totalJour = 0, totalTout = 0;
+  STATE.ventes.forEach(v=>{
+    if(v.test||v.annulee) return;
+    const dv = new Date(v.date);
+    const h = dv.getHours();
+    parHeureTout[h] = (parHeureTout[h]||0) + v.total;
+    totalTout += v.total;
+    if(dv.getDay()===weekday) { parHeureJour[h] = (parHeureJour[h]||0) + v.total; totalJour += v.total; }
+  });
+  const source = totalJour >= 200 ? parHeureJour : parHeureTout; // assez de recul sur ce jour précis ?
+  const total = totalJour >= 200 ? totalJour : totalTout;
+  if(total<=0) return null;
+  const pct = {};
+  Object.keys(source).forEach(h=>{ pct[h] = source[h]/total*100; });
+  return pct;
+}
+
+// Widget "combien faire heure par heure" pour la journée en cours
+function renderPaceHoraireWidget() {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+  const wd = now.getDay();
+  if(wd===0) return ""; // fermé le dimanche
+  const objM = OBJECTIFS_MENSUEL[m] || 0;
+  if(objM<=0) return "";
+
+  const daysInMonth = new Date(y, m+1, 0).getDate();
+  let poidsTotalMois = 0;
+  for(let j=1;j<=daysInMonth;j++) poidsTotalMois += PCT_JOUR[new Date(y,m,j).getDay()]||0;
+  const objJour = poidsTotalMois>0 ? objM*((PCT_JOUR[wd]||0)/poidsTotalMois) : 0;
+  if(objJour<=0) return "";
+
+  const repartHoraire = calculerRepartitionHoraire(wd);
+  if(!repartHoraire) return "";
+
+  // Heures d'ouverture : Lundi 13h30–18h30, Mardi–Samedi 10h00–18h30 (on arrondit à l'heure pleine)
+  const heureOuv = wd===1 ? 13 : 10;
+  const heureFerm = 18; // dernière heure pleine avant 18h30
+
+  const heureActuelle = now.getHours() + now.getMinutes()/60;
+  let poidsEcoule = 0, poidsTotalJour = 0;
+  const lignesHoraires = [];
+  for(let h=heureOuv; h<=heureFerm; h++) {
+    const poidsH = repartHoraire[h] || 0;
+    poidsTotalJour += poidsH;
+    const heureEstPassee = h < Math.floor(heureActuelle);
+    const heureEnCours = h === Math.floor(heureActuelle);
+    if(heureEstPassee) poidsEcoule += poidsH;
+    else if(heureEnCours) poidsEcoule += poidsH * (heureActuelle - h);
+    lignesHoraires.push({h, poidsH, passee: h < heureActuelle});
+  }
+  if(poidsTotalJour<=0) return "";
+
+  const caJour = STATE.ventes.filter(v=>{if(v.test||v.annulee)return false;const dv=new Date(v.date);return dv.toDateString()===now.toDateString();}).reduce((s,v)=>s+v.total,0);
+  const pctAttenduJour = Math.min(100, poidsEcoule/poidsTotalJour*100);
+  const objAttenduJour = objJour * pctAttenduJour/100;
+  const ecartJour = caJour - objAttenduJour;
+  const enAvance = ecartJour >= -0.5;
+  const col = enAvance?"#3b6d11":"#a32d2d";
+
+  const tableHoraire = lignesHoraires.map(l=>{
+    const objH = objJour * l.poidsH/poidsTotalJour;
+    return `<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:0.5px solid #f0ebee;${l.passee?'':'opacity:0.45;'}">
+      <span>${String(l.h).padStart(2,"0")}h–${String(l.h+1).padStart(2,"0")}h</span>
+      <span style="font-weight:500;">${eur(objH)}</span>
+    </div>`;
+  }).join("");
+
+  return `
+  <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;margin-bottom:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <div style="font-weight:600;font-size:13px;color:#555;">🕐 Objectif heure par heure — aujourd'hui</div>
+      <span style="font-size:11px;color:#aaa;">Objectif du jour : ${eur(objJour)}</span>
+    </div>
+    <div style="background:${enAvance?"#eaf3de":"#fcebeb"};border:1px solid ${enAvance?"#aed882":"#f0959599"};border-radius:10px;padding:10px 12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <div style="font-size:12px;color:${col};font-weight:600;">${enAvance?"✅ En avance":"⚠️ En retard"}</div>
+        <div style="font-size:10px;color:#888;">On devrait être à ${eur(objAttenduJour)} à cette heure-ci</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-size:18px;font-weight:700;color:${col};">${eur(caJour)}</div>
+        <div style="font-size:11px;color:${col};font-weight:500;">${enAvance?"+":""}${eur(ecartJour)}</div>
+      </div>
+    </div>
+    <div style="font-size:11px;color:#888;margin-bottom:4px;">Répartition estimée par heure (basée sur l'historique) :</div>
+    ${tableHoraire}
+  </div>`;
+}
+
 function renderStats() {
   const per = STATE.statPer;
   const now = new Date();
@@ -7657,6 +7750,7 @@ function renderStats() {
       `).join("")}
     </div>
 
+    ${renderPaceHoraireWidget()}
     ${renderPaceWidget()}
 
     <!-- Navigation période -->
