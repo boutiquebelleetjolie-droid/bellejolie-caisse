@@ -2616,7 +2616,9 @@ function renderCaisse() {
                         ? `<div style="font-size:9px;color:#a32d2d;font-weight:600;">🔒 Expiré ${st.joursDepasse}j — code manager requis</div>`
                         : st.joursDepasse>0
                           ? `<div style="font-size:9px;color:#e07c00;">⏳ Expiré depuis ${st.joursDepasse}j (tolérance 15j)</div>`
-                          : "";
+                          : a.expiration
+                            ? `<div style="font-size:9px;color:#aaa;">Expire le ${new Date(a.expiration).toLocaleDateString("fr-FR")}</div>`
+                            : "";
                       return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
                       <span style="font-size:12px;font-weight:500;color:#854f0b;">${eur(a.solde)} <span style="font-size:10px;color:#aaa;">#${a.code}</span>${note}</span>
                       <button onclick="utiliserAvoirId('${a.id}')" style="background:#e07c00;color:#fff;border:none;border-radius:5px;padding:3px 10px;font-size:11px;cursor:pointer;">Utiliser</button>
