@@ -7514,9 +7514,13 @@ function renderPaceHoraireWidget() {
 
   const tableHoraire = lignesHoraires.map(l=>{
     const objH = objJour * l.poidsH/poidsTotalJour;
+    const objHBoost = objBoostJour * l.poidsH/poidsTotalJour;
     return `<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;border-bottom:0.5px solid #f0ebee;${l.passee?'':'opacity:0.45;'}">
       <span>${String(l.h).padStart(2,"0")}h–${String(l.h+1).padStart(2,"0")}h</span>
-      <span style="font-weight:500;">${eur(objH)}</span>
+      <span style="text-align:right;">
+        <span style="font-weight:500;">${eur(objH)}</span>
+        ${objBoostJour>0?`<span style="color:#aaa;font-size:10px;"> · 🚀${eur(objHBoost)}</span>`:""}
+      </span>
     </div>`;
   }).join("");
 
