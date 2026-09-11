@@ -13343,6 +13343,7 @@ function renderStatsRetours() {
   (STATE.ventes||[]).filter(v=>!v.test&&!v.annulee&&new Date(v.date)>=debut).forEach(v=>{
     (v.panier||[]).filter(x=>x.retour&&!x.avoirId).forEach(it=>{
       lignesRetour.push({
+        venteId: v.id,
         articleId: it.prodIdOriginal || it.id.replace("R_",""),
         nom: it.name.replace(" (↩)",""),
         prix: it.price,
@@ -13443,7 +13444,7 @@ function renderStatsRetours() {
       </div>
       <div style="padding:8px 0;">
         ${lignesRetour.slice(-10).reverse().map(r=>`
-          <div style="padding:7px 14px;border-bottom:0.5px solid #f5f0f2;font-size:12px;">
+          <div onclick="voirTicketVenteId('${r.venteId}')" style="padding:7px 14px;border-bottom:0.5px solid #f5f0f2;font-size:12px;cursor:pointer;" title="Voir le ticket">
             <div style="display:flex;justify-content:space-between;">
               <span style="font-weight:500;color:#a32d2d;">↩ ${r.nom}</span>
               <span style="color:#888;">${new Date(r.date).toLocaleDateString("fr-FR")}</span>
@@ -13593,6 +13594,18 @@ function renderCalendrierSemaine(lundiFin) {
   </div>`;
 }
 
+// Ouvrir le ticket d'une vente depuis son id (utilisé par Remises, Retours, Historique...)
+window.voirTicketVenteId = (venteId) => {
+  const vv = STATE.ventes.find(x=>x.id===venteId);
+  if(!vv) { alert("Ticket introuvable (peut-être supprimé)."); return; }
+  STATE.showTicket = vv.payMode==="avoir_cree"
+    ? {...vv, type:"avoir", avoir:(STATE.avoirs||[]).find(a=>a.id===vv.id)}
+    : vv.payMode==="remboursement_especes"
+      ? {...vv, type:"remboursement_especes", montant:vv.montantRembourse}
+      : {...vv, type:"vente"};
+  render();
+};
+
 function renderRemises() {
   const now = new Date();
   const moisNoms=["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
@@ -13656,20 +13669,20 @@ function renderRemises() {
         : parseFloat(i.remise);
       if(r>0){
         remArt+=r; nbRemArt++;
-        lignesRemise.push({date,heure,type:"Article",detail:`${i.name} -${i.remise}${i.remiseType==="pct"?"%":"€"}`,montant:r,client,vendeur});
+        lignesRemise.push({id:v.id,date,heure,type:"Article",detail:`${i.name} -${i.remise}${i.remiseType==="pct"?"%":"€"}`,montant:r,client,vendeur});
       }
     });
 
     // Remise globale panier
     if(v.remise&&parseFloat(v.remise)>0){
       remGlobal+=parseFloat(v.remise); nbRemGlobal++;
-      lignesRemise.push({date,heure,type:"Globale",detail:`Remise -${v.remType==="pct"?v.remise+"%":eur(v.remise)}`,montant:parseFloat(v.remise),client,vendeur});
+      lignesRemise.push({id:v.id,date,heure,type:"Globale",detail:`Remise -${v.remType==="pct"?v.remise+"%":eur(v.remise)}`,montant:parseFloat(v.remise),client,vendeur});
     }
 
     // Fidélité -20%
     if(v.remiseFid&&v.remiseFid>0){
       remFid+=v.remiseFid; nbRemFid++;
-      lignesRemise.push({date,heure,type:"Fidélité -20%",detail:"Programme fidélité",montant:v.remiseFid,client,vendeur});
+      lignesRemise.push({id:v.id,date,heure,type:"Fidélité -20%",detail:"Programme fidélité",montant:v.remiseFid,client,vendeur});
     }
 
     // Avoirs utilisés comme mode de paiement
@@ -13786,7 +13799,7 @@ function renderRemises() {
         </tr></thead>
         <tbody>
           ${lignesRemise.map(l=>`
-            <tr style="border-bottom:0.5px solid #f0ebee;">
+            <tr onclick="voirTicketVenteId('${l.id}')" style="border-bottom:0.5px solid #f0ebee;cursor:pointer;" title="Voir le ticket">
               <td style="padding:6px 8px;">${l.date}</td>
               <td style="padding:6px 8px;color:#888;">${l.heure}</td>
               <td style="padding:6px 8px;"><span style="background:#fbeaf0;color:#993556;padding:1px 6px;border-radius:6px;font-size:11px;">${l.type}</span></td>
