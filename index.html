@@ -15403,8 +15403,9 @@ STATE.facturesClients = ls("bj_factures_clients", []);
 const savedVendeurs = ls("bj_vendeurs", null);
 // On ne restaure que le code PIN, pas le nom (le nom est défini dans VENDEURS)
 if(savedVendeurs) savedVendeurs.forEach((sv,i)=>{ if(VENDEURS[i]&&sv.code){VENDEURS[i].code=sv.code;} });
-// Migration : réécrire bj_vendeurs sans les noms pour effacer les anciens noms en mémoire
-lsSet("bj_vendeurs", VENDEURS.map(v=>({code:v.code})));
+// (Ne plus repousser bj_vendeurs ici : ça écrasait à chaque démarrage la valeur des autres appareils
+// avec l'éventuelle valeur locale obsolète de CET appareil, avant même que la synchro temps réel
+// ait eu la chance de récupérer la vraie valeur à jour depuis le cloud.)
 
 // ─── MIGRATION : générer barcodeVariantes manquants ───
 (function migrationBarcodeVariantes() {
