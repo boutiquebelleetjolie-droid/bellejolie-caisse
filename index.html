@@ -7625,7 +7625,8 @@ function renderStats() {
   // ── Top articles ──────────────────────────────────────────────
   const am={};
   vf.forEach(v=>v.panier.filter(x=>!x.retour&&!estArticleSac(x)).forEach(i=>{const pid=i.prodIdOriginal||i.id;if(!am[pid])am[pid]={id:pid,name:i.name,qty:0,ca:0};am[pid].qty+=i.qty;am[pid].ca+=calculerPrixPayeReel(v,i)*i.qty;}));
-  const top=Object.values(am).sort((a,b)=>b.qty-a.qty).slice(0,15);
+  const nbTop = per==="mois" ? 40 : 15;
+  const top=Object.values(am).sort((a,b)=>b.qty-a.qty).slice(0,nbTop);
   const payM={};
   vf.forEach(v=>{payM[v.payMode]=(payM[v.payMode]||0)+v.total;});
   const vendM={};
@@ -7792,7 +7793,7 @@ function renderStats() {
         </div>
       </div>
       <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;">
-        <div style="font-weight:500;font-size:13px;margin-bottom:12px;">🏆 Top 15 articles</div>
+        <div style="font-weight:500;font-size:13px;margin-bottom:12px;">🏆 Top ${nbTop} articles</div>
         <div style="max-height:420px;overflow-y:auto;">
         ${top.length===0?`<div style="color:#aaa;font-size:13px;">Aucune vente</div>`:top.map((a,i)=>`
           <div onclick="voirArticleStock('${a.id}')" style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:0.5px solid #e8e0e4;font-size:13px;cursor:pointer;" title="Voir dans le Stock">
