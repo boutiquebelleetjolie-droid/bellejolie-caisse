@@ -7352,6 +7352,9 @@ function renderHistorique() {
 }
 
 // ─── STATS ──────────────────────────────────────────────────────
+// PCT_JOUR est indexé 0=lundi...6=dimanche (pas la convention JS getDay() où 0=dimanche) : convertir avant utilisation
+function pctJourDe(date) { return PCT_JOUR[(date.getDay()+6)%7] || 0; }
+
 // Widget "en avance / en retard" pour la semaine et le mois en cours, basé sur le poids réel
 // de chaque jour de la semaine dans le CA (PCT_JOUR) plutôt qu'un simple ratio de jours écoulés.
 function renderPaceWidget() {
@@ -7359,21 +7362,22 @@ function renderPaceWidget() {
   const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
   const daysInMonth = new Date(y, m+1, 0).getDate();
   const objM = OBJECTIFS_MENSUEL[m] || 0;
+  const objBoostM = OBJECTIFS_BOOST[m] || 0;
   if(objM<=0) return ""; // mois fermé (août) ou sans objectif défini
 
   // Poids cumulé des jours écoulés vs poids total du mois (samedi pèse plus, dimanche 0, etc.)
   let poidsEcoule = 0, poidsTotalMois = 0;
   for(let j=1; j<=daysInMonth; j++) {
-    const wd = new Date(y, m, j).getDay();
-    const poids = PCT_JOUR[wd]||0;
+    const poids = pctJourDe(new Date(y, m, j));
     poidsTotalMois += poids;
     if(j <= d) poidsEcoule += poids;
   }
   const pctAttenduMois = poidsTotalMois>0 ? (poidsEcoule/poidsTotalMois*100) : 0;
   const caMoisRealise = STATE.ventes.filter(v=>!v.test&&!v.annulee&&new Date(v.date).getFullYear()===y&&new Date(v.date).getMonth()===m).reduce((s,v)=>s+v.total,0);
   const pctRealiseMois = objM>0 ? (caMoisRealise/objM*100) : 0;
-  const ecartMoisPct = pctRealiseMois - pctAttenduMois;
   const ecartMoisEuros = caMoisRealise - (objM*pctAttenduMois/100);
+  const pctRealiseMoisBoost = objBoostM>0 ? (caMoisRealise/objBoostM*100) : 0;
+  const ecartMoisBoostEuros = caMoisRealise - (objBoostM*pctAttenduMois/100);
 
   // Semaine en cours (lundi → aujourd'hui), pondérée dans le même objectif mensuel
   const lundi = new Date(now); lundi.setDate(now.getDate() - ((now.getDay()+6)%7)); lundi.setHours(0,0,0,0);
@@ -7381,20 +7385,24 @@ function renderPaceWidget() {
   for(let i=0;i<7;i++) {
     const dd = new Date(lundi); dd.setDate(lundi.getDate()+i);
     if(dd.getMonth()!==m) continue;
-    const poids = PCT_JOUR[dd.getDay()]||0;
+    const poids = pctJourDe(dd);
     poidsTotalSem += poids;
     if(dd <= now) poidsEcouleSem += poids;
   }
   const objSemaine = poidsTotalMois>0 ? objM*(poidsTotalSem/poidsTotalMois) : 0;
+  const objBoostSemaine = poidsTotalMois>0 ? objBoostM*(poidsTotalSem/poidsTotalMois) : 0;
   const caSemaineRealise = STATE.ventes.filter(v=>{if(v.test||v.annulee)return false;const dv=new Date(v.date);return dv>=lundi&&dv<=now;}).reduce((s,v)=>s+v.total,0);
   const pctAttenduSemaine = poidsTotalSem>0 ? (poidsEcouleSem/poidsTotalSem*100) : 0;
   const pctRealiseSemaine = objSemaine>0 ? (caSemaineRealise/objSemaine*100) : 0;
-  const ecartSemainePct = pctRealiseSemaine - pctAttenduSemaine;
   const ecartSemaineEuros = caSemaineRealise - (objSemaine*pctAttenduSemaine/100);
+  const pctRealiseSemaineBoost = objBoostSemaine>0 ? (caSemaineRealise/objBoostSemaine*100) : 0;
+  const ecartSemaineBoostEuros = caSemaineRealise - (objBoostSemaine*pctAttenduSemaine/100);
 
-  const bloc = (titre, pctRealise, pctAttendu, ecartEuros, caRealise) => {
+  const bloc = (titre, pctRealise, pctAttendu, ecartEuros, caRealise, pctRealiseBoost, ecartBoostEuros) => {
     const enAvance = ecartEuros >= -0.5;
     const col = enAvance?"#3b6d11":"#a32d2d";
+    const enAvanceBoost = ecartBoostEuros >= -0.5;
+    const colBoost = enAvanceBoost?"#3b6d11":"#a32d2d";
     return `
       <div style="background:${enAvance?"#eaf3de":"#fcebeb"};border:1px solid ${enAvance?"#aed882":"#f0959599"};border-radius:12px;padding:14px;flex:1;min-width:180px;">
         <div style="font-weight:600;font-size:13px;color:${col};margin-bottom:6px;">${enAvance?"✅":"⚠️"} ${titre} — ${enAvance?"En avance":"En retard"}</div>
@@ -7405,14 +7413,18 @@ function renderPaceWidget() {
           <div style="position:absolute;left:${Math.min(100,pctAttendu)}%;top:-2px;height:13px;width:2px;background:#333;"></div>
         </div>
         <div style="font-size:12px;color:${col};font-weight:600;">${enAvance?"+":""}${eur(ecartEuros)} ${enAvance?"d'avance":"de retard"}</div>
-        <div style="font-size:10px;color:#aaa;margin-top:2px;">${eur(caRealise)} réalisés à date</div>
+        <div style="font-size:10px;color:#aaa;margin-top:2px;margin-bottom:8px;">${eur(caRealise)} réalisés à date</div>
+        <div style="border-top:1px dashed #ccc;padding-top:8px;display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:11px;color:#888;">🚀 Objectif boost</span>
+          <span style="font-size:12px;font-weight:600;color:${colBoost};">${pctRealiseBoost.toFixed(0)}% (${enAvanceBoost?"+":""}${eur(ecartBoostEuros)})</span>
+        </div>
       </div>`;
   };
 
   return `
   <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
-    ${bloc("📅 Cette semaine", pctRealiseSemaine, pctAttenduSemaine, ecartSemaineEuros, caSemaineRealise)}
-    ${bloc("🗓️ Ce mois-ci", pctRealiseMois, pctAttenduMois, ecartMoisEuros, caMoisRealise)}
+    ${bloc("📅 Cette semaine", pctRealiseSemaine, pctAttenduSemaine, ecartSemaineEuros, caSemaineRealise, pctRealiseSemaineBoost, ecartSemaineBoostEuros)}
+    ${bloc("🗓️ Ce mois-ci", pctRealiseMois, pctAttenduMois, ecartMoisEuros, caMoisRealise, pctRealiseMoisBoost, ecartMoisBoostEuros)}
   </div>`;
 }
 
@@ -7447,9 +7459,12 @@ function renderPaceHoraireWidget() {
   if(objM<=0) return "";
 
   const daysInMonth = new Date(y, m+1, 0).getDate();
+  const objBoostM = OBJECTIFS_BOOST[m] || 0;
   let poidsTotalMois = 0;
-  for(let j=1;j<=daysInMonth;j++) poidsTotalMois += PCT_JOUR[new Date(y,m,j).getDay()]||0;
-  const objJour = poidsTotalMois>0 ? objM*((PCT_JOUR[wd]||0)/poidsTotalMois) : 0;
+  for(let j=1;j<=daysInMonth;j++) poidsTotalMois += pctJourDe(new Date(y,m,j));
+  const poidsJourAuj = PCT_JOUR[(wd+6)%7] || 0;
+  const objJour = poidsTotalMois>0 ? objM*(poidsJourAuj/poidsTotalMois) : 0;
+  const objBoostJour = poidsTotalMois>0 ? objBoostM*(poidsJourAuj/poidsTotalMois) : 0;
   if(objJour<=0) return "";
 
   const repartHoraire = calculerRepartitionHoraire(wd);
@@ -7476,9 +7491,13 @@ function renderPaceHoraireWidget() {
   const caJour = STATE.ventes.filter(v=>{if(v.test||v.annulee)return false;const dv=new Date(v.date);return dv.toDateString()===now.toDateString();}).reduce((s,v)=>s+v.total,0);
   const pctAttenduJour = Math.min(100, poidsEcoule/poidsTotalJour*100);
   const objAttenduJour = objJour * pctAttenduJour/100;
+  const objAttenduJourBoost = objBoostJour * pctAttenduJour/100;
   const ecartJour = caJour - objAttenduJour;
+  const ecartJourBoost = caJour - objAttenduJourBoost;
   const enAvance = ecartJour >= -0.5;
+  const enAvanceBoost = ecartJourBoost >= -0.5;
   const col = enAvance?"#3b6d11":"#a32d2d";
+  const colBoost = enAvanceBoost?"#3b6d11":"#a32d2d";
 
   const tableHoraire = lignesHoraires.map(l=>{
     const objH = objJour * l.poidsH/poidsTotalJour;
@@ -7494,7 +7513,7 @@ function renderPaceHoraireWidget() {
       <div style="font-weight:600;font-size:13px;color:#555;">🕐 Objectif heure par heure — aujourd'hui</div>
       <span style="font-size:11px;color:#aaa;">Objectif du jour : ${eur(objJour)}</span>
     </div>
-    <div style="background:${enAvance?"#eaf3de":"#fcebeb"};border:1px solid ${enAvance?"#aed882":"#f0959599"};border-radius:10px;padding:10px 12px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;">
+    <div style="background:${enAvance?"#eaf3de":"#fcebeb"};border:1px solid ${enAvance?"#aed882":"#f0959599"};border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
       <div>
         <div style="font-size:12px;color:${col};font-weight:600;">${enAvance?"✅ En avance":"⚠️ En retard"}</div>
         <div style="font-size:10px;color:#888;">On devrait être à ${eur(objAttenduJour)} à cette heure-ci</div>
@@ -7504,6 +7523,11 @@ function renderPaceHoraireWidget() {
         <div style="font-size:11px;color:${col};font-weight:500;">${enAvance?"+":""}${eur(ecartJour)}</div>
       </div>
     </div>
+    ${objBoostJour>0?`
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#f9f6f8;border-radius:8px;margin-bottom:10px;">
+      <span style="font-size:11px;color:#888;">🚀 Objectif boost du jour (${eur(objBoostJour)})</span>
+      <span style="font-size:12px;font-weight:600;color:${colBoost};">${enAvanceBoost?"+":""}${eur(ecartJourBoost)}</span>
+    </div>`:""}
     <div style="font-size:11px;color:#888;margin-bottom:4px;">Répartition estimée par heure (basée sur l'historique) :</div>
     ${tableHoraire}
   </div>`;
