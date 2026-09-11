@@ -7625,7 +7625,7 @@ function renderStats() {
   // ── Top articles ──────────────────────────────────────────────
   const am={};
   vf.forEach(v=>v.panier.filter(x=>!x.retour&&!estArticleSac(x)).forEach(i=>{const pid=i.prodIdOriginal||i.id;if(!am[pid])am[pid]={id:pid,name:i.name,qty:0,ca:0};am[pid].qty+=i.qty;am[pid].ca+=calculerPrixPayeReel(v,i)*i.qty;}));
-  const nbTop = per==="mois" ? 40 : 15;
+  const nbTop = per==="mois" ? 40 : per==="semaine" ? 30 : 15;
   const top=Object.values(am).sort((a,b)=>b.qty-a.qty).slice(0,nbTop);
   const payM={};
   vf.forEach(v=>{payM[v.payMode]=(payM[v.payMode]||0)+v.total;});
