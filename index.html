@@ -7355,8 +7355,20 @@ function renderHistorique() {
 // PCT_JOUR est indexé 0=lundi...6=dimanche (pas la convention JS getDay() où 0=dimanche) : convertir avant utilisation
 function pctJourDe(date) { return PCT_JOUR[(date.getDay()+6)%7] || 0; }
 
-// Widget "en avance / en retard" pour la semaine et le mois en cours, basé sur le poids réel
-// de chaque jour de la semaine dans le CA (PCT_JOUR) plutôt qu'un simple ratio de jours écoulés.
+// Fraction (0 à 1) de la journée d'ouverture déjà écoulée à l'instant 'now' : 0 avant l'ouverture,
+// 1 après la fermeture, proportionnel entre les deux. Lundi 13h30-18h30, Mardi-Samedi 10h-18h30, dimanche fermé.
+function fractionJourEcoulee(now) {
+  const wd = now.getDay();
+  if(wd===0) return 0;
+  const hOuv = wd===1 ? 13.5 : 10, hFerm = 18.5;
+  const heureActuelle = now.getHours() + now.getMinutes()/60;
+  if(heureActuelle <= hOuv) return 0;
+  if(heureActuelle >= hFerm) return 1;
+  return (heureActuelle-hOuv)/(hFerm-hOuv);
+}
+
+// Widget "en avance / en retard" pour la semaine et le mois en cours, basé sur objJourCalc/objSemCalc
+// (système déjà existant : période du mois, soldes, vacances... bien plus précis qu'un simple ratio de jours).
 function renderPaceWidget() {
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
@@ -7364,35 +7376,38 @@ function renderPaceWidget() {
   const objM = OBJECTIFS_MENSUEL[m] || 0;
   const objBoostM = OBJECTIFS_BOOST[m] || 0;
   if(objM<=0) return ""; // mois fermé (août) ou sans objectif défini
+  const ratioBoost = objM>0 ? objBoostM/objM : 0;
+  const fracAuj = fractionJourEcoulee(now);
 
-  // Poids cumulé des jours écoulés vs poids total du mois (samedi pèse plus, dimanche 0, etc.)
-  let poidsEcoule = 0, poidsTotalMois = 0;
+  // Mois : objectif de chaque jour déjà calculé par objJourCalc (période du mois/soldes/vacances incluses)
+  let objTotalMois = 0, objEcouleMois = 0;
   for(let j=1; j<=daysInMonth; j++) {
-    const poids = pctJourDe(new Date(y, m, j));
-    poidsTotalMois += poids;
-    if(j <= d) poidsEcoule += poids;
+    const oj = objJourCalc(new Date(y, m, j));
+    objTotalMois += oj;
+    if(j < d) objEcouleMois += oj;
+    else if(j === d) objEcouleMois += oj*fracAuj;
   }
-  const pctAttenduMois = poidsTotalMois>0 ? (poidsEcoule/poidsTotalMois*100) : 0;
+  const pctAttenduMois = objTotalMois>0 ? (objEcouleMois/objTotalMois*100) : 0;
   const caMoisRealise = STATE.ventes.filter(v=>!v.test&&!v.annulee&&new Date(v.date).getFullYear()===y&&new Date(v.date).getMonth()===m).reduce((s,v)=>s+v.total,0);
   const pctRealiseMois = objM>0 ? (caMoisRealise/objM*100) : 0;
   const ecartMoisEuros = caMoisRealise - (objM*pctAttenduMois/100);
   const pctRealiseMoisBoost = objBoostM>0 ? (caMoisRealise/objBoostM*100) : 0;
   const ecartMoisBoostEuros = caMoisRealise - (objBoostM*pctAttenduMois/100);
 
-  // Semaine en cours (lundi → aujourd'hui), pondérée dans le même objectif mensuel
+  // Semaine en cours (lundi → aujourd'hui)
   const lundi = new Date(now); lundi.setDate(now.getDate() - ((now.getDay()+6)%7)); lundi.setHours(0,0,0,0);
-  let poidsEcouleSem = 0, poidsTotalSem = 0;
+  const objSemaine = objSemCalc(now);
+  const objBoostSemaine = objSemaine*ratioBoost;
+  let objEcouleSem = 0, objTotalSem = 0;
   for(let i=0;i<7;i++) {
     const dd = new Date(lundi); dd.setDate(lundi.getDate()+i);
-    if(dd.getMonth()!==m) continue;
-    const poids = pctJourDe(dd);
-    poidsTotalSem += poids;
-    if(dd <= now) poidsEcouleSem += poids;
+    const oj = objJourCalc(dd);
+    objTotalSem += oj;
+    if(dd.toDateString()===now.toDateString()) objEcouleSem += oj*fracAuj;
+    else if(dd < now) objEcouleSem += oj;
   }
-  const objSemaine = poidsTotalMois>0 ? objM*(poidsTotalSem/poidsTotalMois) : 0;
-  const objBoostSemaine = poidsTotalMois>0 ? objBoostM*(poidsTotalSem/poidsTotalMois) : 0;
   const caSemaineRealise = STATE.ventes.filter(v=>{if(v.test||v.annulee)return false;const dv=new Date(v.date);return dv>=lundi&&dv<=now;}).reduce((s,v)=>s+v.total,0);
-  const pctAttenduSemaine = poidsTotalSem>0 ? (poidsEcouleSem/poidsTotalSem*100) : 0;
+  const pctAttenduSemaine = objTotalSem>0 ? (objEcouleSem/objTotalSem*100) : 0;
   const pctRealiseSemaine = objSemaine>0 ? (caSemaineRealise/objSemaine*100) : 0;
   const ecartSemaineEuros = caSemaineRealise - (objSemaine*pctAttenduSemaine/100);
   const pctRealiseSemaineBoost = objBoostSemaine>0 ? (caSemaineRealise/objBoostSemaine*100) : 0;
@@ -7458,13 +7473,9 @@ function renderPaceHoraireWidget() {
   const objM = OBJECTIFS_MENSUEL[m] || 0;
   if(objM<=0) return "";
 
-  const daysInMonth = new Date(y, m+1, 0).getDate();
   const objBoostM = OBJECTIFS_BOOST[m] || 0;
-  let poidsTotalMois = 0;
-  for(let j=1;j<=daysInMonth;j++) poidsTotalMois += pctJourDe(new Date(y,m,j));
-  const poidsJourAuj = PCT_JOUR[(wd+6)%7] || 0;
-  const objJour = poidsTotalMois>0 ? objM*(poidsJourAuj/poidsTotalMois) : 0;
-  const objBoostJour = poidsTotalMois>0 ? objBoostM*(poidsJourAuj/poidsTotalMois) : 0;
+  const objJour = objJourCalc(now);
+  const objBoostJour = objM>0 ? objJour*(objBoostM/objM) : 0;
   if(objJour<=0) return "";
 
   const repartHoraire = calculerRepartitionHoraire(wd);
