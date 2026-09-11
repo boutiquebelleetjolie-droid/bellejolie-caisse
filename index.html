@@ -7369,7 +7369,7 @@ function fractionJourEcoulee(now) {
 
 // Widget "en avance / en retard" pour la semaine et le mois en cours, basé sur objJourCalc/objSemCalc
 // (système déjà existant : période du mois, soldes, vacances... bien plus précis qu'un simple ratio de jours).
-function renderPaceWidget() {
+function renderPaceWidget(periode) {
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
   const daysInMonth = new Date(y, m+1, 0).getDate();
@@ -7379,20 +7379,45 @@ function renderPaceWidget() {
   const ratioBoost = objM>0 ? objBoostM/objM : 0;
   const fracAuj = fractionJourEcoulee(now);
 
-  // Mois : objectif de chaque jour déjà calculé par objJourCalc (période du mois/soldes/vacances incluses)
-  let objTotalMois = 0, objEcouleMois = 0;
-  for(let j=1; j<=daysInMonth; j++) {
-    const oj = objJourCalc(new Date(y, m, j));
-    objTotalMois += oj;
-    if(j < d) objEcouleMois += oj;
-    else if(j === d) objEcouleMois += oj*fracAuj;
+  const bloc = (titre, pctRealise, pctAttendu, ecartEuros, caRealise, pctRealiseBoost, ecartBoostEuros) => {
+    const enAvance = ecartEuros >= -0.5;
+    const col = enAvance?"#3b6d11":"#a32d2d";
+    const enAvanceBoost = ecartBoostEuros >= -0.5;
+    const colBoost = enAvanceBoost?"#3b6d11":"#a32d2d";
+    return `
+      <div style="background:${enAvance?"#f6faf1":"#fdf5f5"};border:0.5px solid ${enAvance?"#cfe4b8":"#f0d0d0"};border-radius:10px;padding:10px 12px;margin-bottom:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;">
+          <span style="font-weight:500;font-size:12px;color:${col};">${enAvance?"✅":"⚠️"} ${titre} — ${enAvance?"en avance":"en retard"}</span>
+          <span style="font-size:19px;font-weight:600;color:${col};">${pctRealise.toFixed(0)}%</span>
+        </div>
+        <div style="font-size:10px;color:#999;margin:2px 0 6px;">attendu à ${pctAttendu.toFixed(0)}% aujourd'hui · ${eur(caRealise)} réalisés</div>
+        <div style="background:#fff;border-radius:5px;height:6px;overflow:hidden;position:relative;margin-bottom:5px;">
+          <div style="position:absolute;height:100%;width:${Math.min(100,pctRealise)}%;background:${col};border-radius:5px;"></div>
+          <div style="position:absolute;left:${Math.min(100,pctAttendu)}%;top:-1px;height:8px;width:1.5px;background:#666;"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:11px;">
+          <span style="color:${col};font-weight:500;">${enAvance?"+":""}${eur(ecartEuros)}</span>
+          <span style="color:#aaa;">🚀 boost : <span style="color:${colBoost};font-weight:500;">${pctRealiseBoost.toFixed(0)}% (${enAvanceBoost?"+":""}${eur(ecartBoostEuros)})</span></span>
+        </div>
+      </div>`;
+  };
+
+  if(periode==="mois") {
+    let objTotalMois = 0, objEcouleMois = 0;
+    for(let j=1; j<=daysInMonth; j++) {
+      const oj = objJourCalc(new Date(y, m, j));
+      objTotalMois += oj;
+      if(j < d) objEcouleMois += oj;
+      else if(j === d) objEcouleMois += oj*fracAuj;
+    }
+    const pctAttenduMois = objTotalMois>0 ? (objEcouleMois/objTotalMois*100) : 0;
+    const caMoisRealise = STATE.ventes.filter(v=>!v.test&&!v.annulee&&new Date(v.date).getFullYear()===y&&new Date(v.date).getMonth()===m).reduce((s,v)=>s+v.total,0);
+    const pctRealiseMois = objM>0 ? (caMoisRealise/objM*100) : 0;
+    const ecartMoisEuros = caMoisRealise - (objM*pctAttenduMois/100);
+    const pctRealiseMoisBoost = objBoostM>0 ? (caMoisRealise/objBoostM*100) : 0;
+    const ecartMoisBoostEuros = caMoisRealise - (objBoostM*pctAttenduMois/100);
+    return bloc("🗓️ Ce mois-ci", pctRealiseMois, pctAttenduMois, ecartMoisEuros, caMoisRealise, pctRealiseMoisBoost, ecartMoisBoostEuros);
   }
-  const pctAttenduMois = objTotalMois>0 ? (objEcouleMois/objTotalMois*100) : 0;
-  const caMoisRealise = STATE.ventes.filter(v=>!v.test&&!v.annulee&&new Date(v.date).getFullYear()===y&&new Date(v.date).getMonth()===m).reduce((s,v)=>s+v.total,0);
-  const pctRealiseMois = objM>0 ? (caMoisRealise/objM*100) : 0;
-  const ecartMoisEuros = caMoisRealise - (objM*pctAttenduMois/100);
-  const pctRealiseMoisBoost = objBoostM>0 ? (caMoisRealise/objBoostM*100) : 0;
-  const ecartMoisBoostEuros = caMoisRealise - (objBoostM*pctAttenduMois/100);
 
   // Semaine en cours (lundi → aujourd'hui)
   const lundi = new Date(now); lundi.setDate(now.getDate() - ((now.getDay()+6)%7)); lundi.setHours(0,0,0,0);
@@ -7412,35 +7437,7 @@ function renderPaceWidget() {
   const ecartSemaineEuros = caSemaineRealise - (objSemaine*pctAttenduSemaine/100);
   const pctRealiseSemaineBoost = objBoostSemaine>0 ? (caSemaineRealise/objBoostSemaine*100) : 0;
   const ecartSemaineBoostEuros = caSemaineRealise - (objBoostSemaine*pctAttenduSemaine/100);
-
-  const bloc = (titre, pctRealise, pctAttendu, ecartEuros, caRealise, pctRealiseBoost, ecartBoostEuros) => {
-    const enAvance = ecartEuros >= -0.5;
-    const col = enAvance?"#3b6d11":"#a32d2d";
-    const enAvanceBoost = ecartBoostEuros >= -0.5;
-    const colBoost = enAvanceBoost?"#3b6d11":"#a32d2d";
-    return `
-      <div style="background:${enAvance?"#eaf3de":"#fcebeb"};border:1px solid ${enAvance?"#aed882":"#f0959599"};border-radius:12px;padding:14px;flex:1;min-width:180px;">
-        <div style="font-weight:600;font-size:13px;color:${col};margin-bottom:6px;">${enAvance?"✅":"⚠️"} ${titre} — ${enAvance?"En avance":"En retard"}</div>
-        <div style="font-size:24px;font-weight:700;color:${col};">${pctRealise.toFixed(0)}%</div>
-        <div style="font-size:11px;color:#888;margin-bottom:8px;">de l'objectif réalisé — on devrait être à <strong>${pctAttendu.toFixed(0)}%</strong> aujourd'hui</div>
-        <div style="background:#fff;border-radius:6px;height:9px;overflow:hidden;position:relative;margin-bottom:6px;">
-          <div style="position:absolute;height:100%;width:${Math.min(100,pctRealise)}%;background:${col};border-radius:6px;"></div>
-          <div style="position:absolute;left:${Math.min(100,pctAttendu)}%;top:-2px;height:13px;width:2px;background:#333;"></div>
-        </div>
-        <div style="font-size:12px;color:${col};font-weight:600;">${enAvance?"+":""}${eur(ecartEuros)} ${enAvance?"d'avance":"de retard"}</div>
-        <div style="font-size:10px;color:#aaa;margin-top:2px;margin-bottom:8px;">${eur(caRealise)} réalisés à date</div>
-        <div style="border-top:1px dashed #ccc;padding-top:8px;display:flex;justify-content:space-between;align-items:center;">
-          <span style="font-size:11px;color:#888;">🚀 Objectif boost</span>
-          <span style="font-size:12px;font-weight:600;color:${colBoost};">${pctRealiseBoost.toFixed(0)}% (${enAvanceBoost?"+":""}${eur(ecartBoostEuros)})</span>
-        </div>
-      </div>`;
-  };
-
-  return `
-  <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;">
-    ${bloc("📅 Cette semaine", pctRealiseSemaine, pctAttenduSemaine, ecartSemaineEuros, caSemaineRealise, pctRealiseSemaineBoost, ecartSemaineBoostEuros)}
-    ${bloc("🗓️ Ce mois-ci", pctRealiseMois, pctAttenduMois, ecartMoisEuros, caMoisRealise, pctRealiseMoisBoost, ecartMoisBoostEuros)}
-  </div>`;
+  return bloc("📅 Cette semaine", pctRealiseSemaine, pctAttenduSemaine, ecartSemaineEuros, caSemaineRealise, pctRealiseSemaineBoost, ecartSemaineBoostEuros);
 }
 
 // Répartition horaire réelle du CA, calculée sur l'historique des ventes du même jour de semaine
@@ -7519,28 +7516,23 @@ function renderPaceHoraireWidget() {
   }).join("");
 
   return `
-  <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;margin-bottom:14px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-      <div style="font-weight:600;font-size:13px;color:#555;">🕐 Objectif heure par heure — aujourd'hui</div>
-      <span style="font-size:11px;color:#aaa;">Objectif du jour : ${eur(objJour)}</span>
+  <div style="background:#fafafa;border:0.5px solid #ebebeb;border-radius:10px;padding:10px 12px;margin-bottom:12px;">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;">
+      <span style="font-weight:500;font-size:12px;color:#666;">🕐 Aujourd'hui, heure par heure</span>
+      <span style="font-size:10px;color:#aaa;">objectif du jour : ${eur(objJour)}</span>
     </div>
-    <div style="background:${enAvance?"#eaf3de":"#fcebeb"};border:1px solid ${enAvance?"#aed882":"#f0959599"};border-radius:10px;padding:10px 12px;margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;">
-      <div>
-        <div style="font-size:12px;color:${col};font-weight:600;">${enAvance?"✅ En avance":"⚠️ En retard"}</div>
-        <div style="font-size:10px;color:#888;">On devrait être à ${eur(objAttenduJour)} à cette heure-ci</div>
-      </div>
-      <div style="text-align:right;">
-        <div style="font-size:18px;font-weight:700;color:${col};">${eur(caJour)}</div>
-        <div style="font-size:11px;color:${col};font-weight:500;">${enAvance?"+":""}${eur(ecartJour)}</div>
-      </div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px;">
+      <span style="font-size:11px;color:${col};font-weight:500;">${enAvance?"✅ en avance":"⚠️ en retard"} · devrait être à ${eur(objAttenduJour)}</span>
+      <span style="font-size:15px;font-weight:600;color:${col};">${eur(caJour)} <span style="font-size:11px;">(${enAvance?"+":""}${eur(ecartJour)})</span></span>
     </div>
     ${objBoostJour>0?`
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:#f9f6f8;border-radius:8px;margin-bottom:10px;">
-      <span style="font-size:11px;color:#888;">🚀 Objectif boost du jour (${eur(objBoostJour)})</span>
-      <span style="font-size:12px;font-weight:600;color:${colBoost};">${enAvanceBoost?"+":""}${eur(ecartJourBoost)}</span>
-    </div>`:""}
-    <div style="font-size:11px;color:#888;margin-bottom:4px;">Répartition estimée par heure (basée sur l'historique) :</div>
-    ${tableHoraire}
+    <div style="display:flex;justify-content:space-between;font-size:10px;color:#aaa;margin-bottom:8px;">
+      <span>🚀 boost : devrait être à ${eur(objAttenduJourBoost)}</span>
+      <span style="color:${colBoost};font-weight:500;">${enAvanceBoost?"+":""}${eur(ecartJourBoost)}</span>
+    </div>`:`<div style="margin-bottom:6px;"></div>`}
+    <div style="max-height:180px;overflow-y:auto;">
+      ${tableHoraire}
+    </div>
   </div>`;
 }
 
@@ -7722,8 +7714,9 @@ function renderStats() {
       `).join("")}
     </div>
 
-    ${renderPaceHoraireWidget()}
-    ${renderPaceWidget()}
+    ${per==="jour"?renderPaceHoraireWidget():""}
+    ${per==="semaine"?renderPaceWidget("semaine"):""}
+    ${per==="mois"?renderPaceWidget("mois"):""}
 
     <!-- Navigation période -->
     ${showNav?`
