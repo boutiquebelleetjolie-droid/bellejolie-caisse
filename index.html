@@ -145,6 +145,7 @@ const CLES_SYNC_TEMPS_REEL = {
   bj_products: "products", bj_clients: "clients", bj_ventes: "ventes", bj_avoirs: "avoirs",
   bj_ouvertures: "ouvertures", bj_caisse_jour: "caisseJour", bj_attente: "ticketsAttente",
   bj_ejs_service: "emailjsServiceId", bj_ejs_template: "emailjsTemplateId", bj_ejs_key: "emailjsPublicKey",
+  bj_vendeurs: "__vendeurs__", // cas spécial : met à jour les codes PIN de VENDEURS, pas un champ STATE
 };
 const CLES_SYNC_PROTEGEES = new Set(["emailjsServiceId","emailjsTemplateId","emailjsPublicKey"]); // ne jamais écraser par une valeur vide venue d'un autre appareil
 window._syncBannerTimeout = null;
@@ -160,7 +161,11 @@ function demarrerSyncTempsReel() {
       // Appliquer la mise à jour venue d'un autre appareil
       try {
         localStorage.setItem(storageKey, JSON.stringify(data.value));
-        STATE[stateKey] = data.value;
+        if(stateKey==="__vendeurs__") {
+          (data.value||[]).forEach((sv,i)=>{ if(VENDEURS[i]&&sv.code) VENDEURS[i].code=sv.code; });
+        } else {
+          STATE[stateKey] = data.value;
+        }
         render();
         afficherBandeauSyncDiscret();
       } catch(err) { console.error("Erreur application sync temps réel pour '"+storageKey+"':", err); }
