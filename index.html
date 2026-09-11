@@ -7625,7 +7625,7 @@ function renderStats() {
   // ── Top articles ──────────────────────────────────────────────
   const am={};
   vf.forEach(v=>v.panier.filter(x=>!x.retour&&!estArticleSac(x)).forEach(i=>{const pid=i.prodIdOriginal||i.id;if(!am[pid])am[pid]={id:pid,name:i.name,qty:0,ca:0};am[pid].qty+=i.qty;am[pid].ca+=calculerPrixPayeReel(v,i)*i.qty;}));
-  const top=Object.values(am).sort((a,b)=>b.qty-a.qty).slice(0,5);
+  const top=Object.values(am).sort((a,b)=>b.qty-a.qty).slice(0,15);
   const payM={};
   vf.forEach(v=>{payM[v.payMode]=(payM[v.payMode]||0)+v.total;});
   const vendM={};
@@ -7792,7 +7792,8 @@ function renderStats() {
         </div>
       </div>
       <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;">
-        <div style="font-weight:500;font-size:13px;margin-bottom:12px;">Top 5 articles</div>
+        <div style="font-weight:500;font-size:13px;margin-bottom:12px;">🏆 Top 15 articles</div>
+        <div style="max-height:420px;overflow-y:auto;">
         ${top.length===0?`<div style="color:#aaa;font-size:13px;">Aucune vente</div>`:top.map((a,i)=>`
           <div onclick="voirArticleStock('${a.id}')" style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:0.5px solid #e8e0e4;font-size:13px;cursor:pointer;" title="Voir dans le Stock">
             <div style="display:flex;gap:8px;align-items:center;">
@@ -7802,6 +7803,7 @@ function renderStats() {
             <div style="text-align:right;"><div style="font-weight:500;">${a.qty} vte${a.qty>1?"s":""}</div><div style="font-size:11px;color:#888;">${eur(a.ca)}</div></div>
           </div>
         `).join("")}
+        </div>
       </div>
       <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;">
         <div style="font-weight:500;font-size:13px;margin-bottom:12px;">Répartition du CA par catégorie</div>
@@ -8127,7 +8129,6 @@ function renderStats() {
       </div>
     </div>
     `:""}
-  ${renderReassortBloc()}
   </div>`;
 }
 
