@@ -6746,6 +6746,16 @@ window.supprimerCliente = (id) => {
 
 window.openClientDetail = id => { STATE.showClientDetail=STATE.clients.find(c=>c.id===id); render(); };
 
+// Complète rapidement le domaine de l'email client (Gmail, Outlook...) sans avoir à le taper
+window.completerEmailDomaine = (domaine) => {
+  const actuel = STATE.clientForm.email || "";
+  const partieLocale = actuel.split("@")[0].trim();
+  STATE.clientForm.email = (partieLocale || "prenom.nom") + "@" + domaine;
+  render();
+  const champ = document.getElementById("champ-email-client");
+  if(champ) { champ.focus(); champ.select(); }
+};
+
 function renderClientModal() {
   const f=STATE.clientForm;
   return `
@@ -6753,7 +6763,18 @@ function renderClientModal() {
     <div class="modal" style="max-width:360px;">
       <div class="modal-header"><span style="font-weight:500;">${STATE.editClientId?"Modifier le client":"Nouveau client"}</span><button onclick="setState({showClientModal:false,showNewClient:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button></div>
       <div class="modal-body">
-        ${["prenom:Prénom *","nom:Nom *","tel:Téléphone","email:Email","cp:Code postal","anniversaire:Date d'anniversaire (JJ/MM)"].map(s=>{const[k,l]=s.split(":");return `<label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">${l}</label><input value="${f[k]||""}" oninput="STATE.clientForm.${k}=this.value" style="width:100%;box-sizing:border-box;margin-bottom:10px;"/>`;}).join("")}
+        ${["prenom:Prénom *","nom:Nom *","tel:Téléphone","email:Email","cp:Code postal","anniversaire:Date d'anniversaire (JJ/MM)"].map(s=>{const[k,l]=s.split(":");
+          if(k==="email") {
+            return `<label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">${l}</label>
+              <input id="champ-email-client" value="${f[k]||""}" oninput="STATE.clientForm.${k}=this.value" placeholder="prenom.nom@..." style="width:100%;box-sizing:border-box;margin-bottom:6px;"/>
+              <div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px;">
+                ${["gmail.com","outlook.com","hotmail.fr","yahoo.fr","orange.fr","free.fr","icloud.com"].map(dom=>
+                  `<button type="button" onclick="completerEmailDomaine('${dom}')" style="background:#f5f0f2;border:1px solid #e8d8de;border-radius:6px;padding:3px 9px;font-size:11px;color:#666;cursor:pointer;">${dom}</button>`
+                ).join("")}
+              </div>`;
+          }
+          return `<label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">${l}</label><input value="${f[k]||""}" oninput="STATE.clientForm.${k}=this.value" style="width:100%;box-sizing:border-box;margin-bottom:10px;"/>`;
+        }).join("")}
         <div style="background:#fbeaf0;border:1px solid #f0c8d4;border-radius:8px;padding:10px;margin-bottom:10px;">
           <label style="display:flex;align-items:center;gap:10px;cursor:pointer;">
             <input type="checkbox" ${f.suitReseaux?"checked":""} onchange="STATE.clientForm.suitReseaux=this.checked;render()" style="width:18px;height:18px;accent-color:#993556;flex-shrink:0;"/>
