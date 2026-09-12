@@ -8566,6 +8566,7 @@ function renderAnnulations() {
               <td style="padding:8px;text-align:right;font-weight:600;color:#993556;">${eur(v.total)}</td>
               <td style="padding:8px;text-align:center;"><span style="font-size:11px;padding:2px 7px;background:#e6f1fb;color:#185fa5;border-radius:10px;">${mL[v.payMode]||v.payMode}</span></td>
               <td style="padding:8px;text-align:center;">
+                ${new Date(v.date).toDateString()===new Date().toDateString() ? `
                 <div style="display:flex;flex-direction:column;gap:4px;">
                   <button onclick="confirmerAnnulationComplete('${v.id}')"
                     style="background:#fcebeb;color:#a32d2d;border:1px solid #f09595;border-radius:7px;padding:5px 8px;font-size:11px;cursor:pointer;font-weight:500;white-space:nowrap;"
@@ -8578,6 +8579,7 @@ function renderAnnulations() {
                     ✕ Annulation comptable
                   </button>
                 </div>
+                ` : `<span style="font-size:11px;color:#bbb;" title="Seules les ventes du jour peuvent être annulées">Non annulable</span>`}
               </td>
             </tr>
           `).join("")}
@@ -8585,6 +8587,7 @@ function renderAnnulations() {
       </table>
       </div>`}
     </div>
+    <div style="font-size:11px;color:#aaa;margin:-10px 0 16px;">⚠️ Seules les ventes d'aujourd'hui peuvent être annulées.</div>
 
     <!-- Ventes déjà annulées -->
     ${annulees.length>0?`
@@ -8908,6 +8911,10 @@ window.validerRetourHistorique = (venteId, articlesIds) => {
 window.annulerVente = (venteId, complet) => {
   const v = STATE.ventes.find(x=>x.id===venteId);
   if(!v||v.annulee) return;
+  if(new Date(v.date).toDateString() !== new Date().toDateString()) {
+    alert("⚠️ Seules les ventes d'aujourd'hui peuvent être annulées.");
+    return;
+  }
 
   // Marquer la vente comme annulée (toujours)
   STATE.ventes = STATE.ventes.map(x=>x.id===venteId?{
