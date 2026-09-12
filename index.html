@@ -15592,11 +15592,11 @@ if(!localStorage.getItem("bj_clean_v1")) {
   localStorage.setItem("bj_clean_v1","1");
 }
 
-// Purge automatique des tickets annulés (complète ET comptable) de plus de 30 jours
+// Purge automatique des tickets annulés (complète ET comptable) de plus de 24h
 // Attention : ceci retire aussi définitivement les annulations "comptables" de l'historique
 // d'achat client (fidélité) après ce délai — décision volontaire, pas un oubli.
 (function() {
-  const DELAI_PURGE = 30*24*60*60*1000;
+  const DELAI_PURGE = 24*60*60*1000;
   const avant = STATE.ventes.length;
   STATE.ventes = STATE.ventes.filter(v => {
     if(!v.annulee) return true;
@@ -15605,7 +15605,7 @@ if(!localStorage.getItem("bj_clean_v1")) {
   });
   if(STATE.ventes.length !== avant) {
     lsSet("bj_ventes", STATE.ventes);
-    console.log("Purge tickets annulés (>30j) :", avant-STATE.ventes.length, "supprimé(s)");
+    console.log("Purge tickets annulés (>24h) :", avant-STATE.ventes.length, "supprimé(s)");
   }
 })();
 
