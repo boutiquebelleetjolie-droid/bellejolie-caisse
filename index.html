@@ -8523,7 +8523,7 @@ function renderAnnulations() {
         ✅ Articles remis en stock<br>
         ✅ Fidélité client ajustée<br>
         ✅ Avoir généré (CB/chèque)<br>
-        <span style="font-size:11px;color:#c77;">Irréversible</span>
+        <span style="font-size:11px;color:#c77;">Réversible sous conditions (voir liste ci-dessous)</span>
       </div>
       <div style="background:#faeeda;border:1px solid #fac775;border-radius:10px;padding:12px;font-size:12px;color:#854f0b;">
         <div style="font-weight:600;margin-bottom:4px;">📋 Annulation comptable</div>
@@ -8597,9 +8597,12 @@ function renderAnnulations() {
             <span style="color:${v.typeAnnulation==='complete'?'#a32d2d':'#854f0b'};font-weight:500;">${v.typeAnnulation==='complete'?'✕ Annulée (complète)':`📋 Annulée (comptable)`}</span>
             <span style="color:#888;margin-left:8px;">${new Date(v.date).toLocaleDateString("fr-FR")} — #${v.id.slice(-8)}</span>
           </div>
-          <div style="text-align:right;">
-            <div style="font-weight:500;">${eur(v.total)}</div>
-            ${v.client?`<div style="color:#888;font-size:11px;">${v.client.prenom} ${v.client.nom}</div>`:""}
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="text-align:right;">
+              <div style="font-weight:500;">${eur(v.total)}</div>
+              ${v.client?`<div style="color:#888;font-size:11px;">${v.client.prenom} ${v.client.nom}</div>`:""}
+            </div>
+            <button onclick="restaurerVenteAnnulee('${v.id}')" title="Annuler l'annulation" style="background:#eef4fd;border:1px solid #b8d4f5;border-radius:6px;padding:4px 8px;font-size:11px;color:#185fa5;cursor:pointer;white-space:nowrap;">↩️ Restaurer</button>
           </div>
         </div>
       `).join("")}
@@ -8607,6 +8610,78 @@ function renderAnnulations() {
     </div>`:""}
   </div>`;
 }
+
+// ── ANNULER UNE ANNULATION : restaurer une vente annulée par erreur ────
+window.restaurerVenteAnnulee = (venteId) => {
+  const v = STATE.ventes.find(x=>x.id===venteId);
+  if(!v || !v.annulee) return;
+
+  if(v.typeAnnulation !== "complete") {
+    // Annulation comptable : rien d'autre n'avait été touché, simple bascule
+    if(!confirm("Annuler cette annulation comptable et remettre le ticket comme vente active ?")) return;
+    STATE.ventes = STATE.ventes.map(x=>x.id===venteId?{...x, annulee:false, typeAnnulation:null, dateAnnulation:null, annuleePar:null, restauree:new Date().toISOString(), restrauréePar:STATE.vendeur.nom}:x);
+    lsSet("bj_ventes", STATE.ventes);
+    render();
+    return;
+  }
+
+  // Annulation complète : vérifier qu'on peut proprement tout ré-inverser
+  const avoirsPayesDansVente = v.panier.filter(x=>x.avoirId);
+  const avoirDejaReutilise = avoirsPayesDansVente.find(it => {
+    const a = (STATE.avoirs||[]).find(a=>a.id===it.avoirId);
+    return a && a.utilise; // remis dispo par l'annulation, mais déjà re-dépensé depuis
+  });
+  if(avoirDejaReutilise) {
+    alert("⚠️ Impossible d'annuler automatiquement cette annulation : un bon d'avoir qui avait été remis disponible a déjà été réutilisé depuis. Il faudra corriger le stock/la fidélité/les avoirs manuellement.");
+    return;
+  }
+  const avoirCompensationCode = v.avoirCompensationCode;
+  const avoirCompensation = avoirCompensationCode ? (STATE.avoirs||[]).find(a=>a.code===avoirCompensationCode) : null;
+  if(avoirCompensation && avoirCompensation.utilise) {
+    alert("⚠️ Impossible d'annuler automatiquement cette annulation : le bon d'avoir de compensation créé lors de l'annulation a déjà été utilisé par la cliente. Il faudra corriger manuellement.");
+    return;
+  }
+
+  if(!confirm(`Annuler cette annulation complète et remettre la vente comme active ?\n\nTotal : ${eur(v.total)}\n\n• Le stock sera re-décompté\n• La fidélité client sera re-comptabilisée\n• Le bon d'avoir de compensation créé (s'il y en a un) sera supprimé\n• Les avoirs utilisés dans cette vente seront re-marqués comme dépensés`)) return;
+
+  // 1. Re-décrémenter le stock des articles achetés
+  v.panier.filter(x=>!x.retour&&!x.avoirId).forEach(it=>{
+    STATE.products = ajusterStock(STATE.products, it.prodIdOriginal||it.id, -it.qty, it.taille, it.couleur);
+  });
+  lsSet("bj_products", STATE.products);
+
+  // 2. Re-marquer comme dépensés les avoirs utilisés dans cette vente
+  avoirsPayesDansVente.forEach(it=>{
+    STATE.avoirs = (STATE.avoirs||[]).map(a=>a.id===it.avoirId?{...a,solde:0,utilise:true}:a);
+  });
+  if(avoirsPayesDansVente.length) lsSet("bj_avoirs", STATE.avoirs);
+
+  // 3. Ré-ajuster la fidélité client
+  if(v.client) {
+    STATE.clients = STATE.clients.map(c=>c.id===v.client.id?{
+      ...c,
+      totalAchats:  (c.totalAchats||0)+1,
+      montantCumule:(c.montantCumule||0)+v.total,
+    }:c);
+    lsSet("bj_clients", STATE.clients);
+  }
+
+  // 4. Supprimer le bon d'avoir de compensation créé par l'annulation (s'il existe et n'a pas été utilisé)
+  if(avoirCompensation) {
+    STATE.avoirs = (STATE.avoirs||[]).filter(a=>a.id!==avoirCompensation.id);
+    lsSet("bj_avoirs", STATE.avoirs);
+    if(v.client) {
+      STATE.clients = STATE.clients.map(c=>c.id===v.client.id?{...c, avoirs:(c.avoirs||[]).filter(id=>id!==avoirCompensation.id)}:c);
+      lsSet("bj_clients", STATE.clients);
+    }
+  }
+
+  // 5. Réactiver la vente
+  STATE.ventes = STATE.ventes.map(x=>x.id===venteId?{...x, annulee:false, typeAnnulation:null, dateAnnulation:null, annuleePar:null, restauree:new Date().toISOString(), restrauréePar:STATE.vendeur.nom}:x);
+  lsSet("bj_ventes", STATE.ventes);
+  render();
+  alert("✅ La vente a été restaurée comme active.");
+};
 
 // ── ANNULATION COMPLÈTE : stock + fidélité + avoir ─────────────────────
 window.confirmerAnnulationComplete = (venteId) => {
@@ -8887,6 +8962,9 @@ window.annulerVente = (venteId, complet) => {
         STATE.clients=STATE.clients.map(c=>c.id===v.client.id?{...c,avoirs:[...(c.avoirs||[]),avoirCree.id]}:c);
         lsSet("bj_clients",STATE.clients);
       }
+      // Garder une trace du code de cet avoir sur la vente, pour pouvoir le retrouver/supprimer si on annule l'annulation
+      STATE.ventes = STATE.ventes.map(x=>x.id===venteId?{...x, avoirCompensationCode: avoirCree.code}:x);
+      lsSet("bj_ventes", STATE.ventes);
     }
   }
 
@@ -15514,20 +15592,20 @@ if(!localStorage.getItem("bj_clean_v1")) {
   localStorage.setItem("bj_clean_v1","1");
 }
 
-// Purge automatique des tickets annulés (complète ET comptable) de plus de 7 jours
+// Purge automatique des tickets annulés (complète ET comptable) de plus de 30 jours
 // Attention : ceci retire aussi définitivement les annulations "comptables" de l'historique
 // d'achat client (fidélité) après ce délai — décision volontaire, pas un oubli.
 (function() {
-  const SEPT_JOURS = 7*24*60*60*1000;
+  const DELAI_PURGE = 30*24*60*60*1000;
   const avant = STATE.ventes.length;
   STATE.ventes = STATE.ventes.filter(v => {
     if(!v.annulee) return true;
     const dateRef = v.dateAnnulation || v.date;
-    return (Date.now() - new Date(dateRef).getTime()) < SEPT_JOURS;
+    return (Date.now() - new Date(dateRef).getTime()) < DELAI_PURGE;
   });
   if(STATE.ventes.length !== avant) {
     lsSet("bj_ventes", STATE.ventes);
-    console.log("Purge tickets annulés (>7j) :", avant-STATE.ventes.length, "supprimé(s)");
+    console.log("Purge tickets annulés (>30j) :", avant-STATE.ventes.length, "supprimé(s)");
   }
 })();
 
