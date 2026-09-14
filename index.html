@@ -8397,6 +8397,7 @@ window.validerCorrectionVenteManquante = () => {
     remise:0, remiseFid:0, remiseProg:0,
     total, mixed, pays, payMode,
     correctionManuelle: true, noteCorrection: f.note||"", creeLe: new Date().toISOString(), creePar: STATE.vendeur.nom,
+    depotTraite: true,
   };
   STATE.ventes = [...STATE.ventes, vente];
   lsSet("bj_ventes", STATE.ventes);
@@ -16076,6 +16077,48 @@ if(savedVendeurs) savedVendeurs.forEach((sv,i)=>{ if(VENDEURS[i]&&sv.code){VENDE
 // — notamment à chaque vidage de cache/données du navigateur — avec un risque de perte de vraies
 // ventes si l'appareil n'avait pas encore eu le temps de resynchroniser depuis le cloud. Sa mission
 // (nettoyer les données de test à l'ouverture) est de toute façon terminée depuis longtemps.)
+
+// Réparation automatique : les corrections manuelles créées avant le correctif du bordereau
+// de dépôt banque n'avaient pas leur part espèces ajoutée à une clôture. On la rattrape ici,
+// une seule fois par correction (repère depotTraite pour ne jamais la compter deux fois).
+(function() {
+  let changed = false;
+  (STATE.ventes||[]).forEach(v => {
+    if(!v.correctionManuelle || v.depotTraite) return;
+    const especesCorrection = (v.pays||[]).find(p=>p.mode==="especes")?.montant || 0;
+    if(especesCorrection<=0) { v.depotTraite = true; changed = true; return; }
+    const dateStrZ = dateLocaleStr(new Date(v.date));
+    const zExistant = (STATE.caisseJour||[]).find(z=>z.date===dateStrZ);
+    if(zExistant) {
+      STATE.caisseJour = STATE.caisseJour.map(z=>z.date===dateStrZ?{
+        ...z,
+        caTTC: (z.caTTC||0)+v.total,
+        caHT: (z.caHT||0)+v.total/1.20,
+        tvaCol: (z.tvaCol||0)+(v.total-v.total/1.20),
+        especes: (z.especes||0)+especesCorrection,
+        aDeposer: (z.aDeposer||0)+especesCorrection,
+        nbVentes: (z.nbVentes||0)+1,
+        note: (z.note?z.note+" · ":"")+"Correction manuelle ajoutée : "+eur(v.total),
+      }:z);
+    } else {
+      const FOND_RESERVE = 80;
+      STATE.caisseJour = [...(STATE.caisseJour||[]), {
+        id: uid("Z"), date: dateStrZ, heure: new Date().toISOString(),
+        nbVentes: 1, caTTC: v.total, caHT: v.total/1.20, tvaCol: v.total-v.total/1.20,
+        especes: especesCorrection, fondOuverture: FOND_RESERVE, fondFermeture: FOND_RESERVE+especesCorrection,
+        aDeposer: especesCorrection, ecart: 0, payM: Object.fromEntries((v.pays||[]).map(p=>[p.mode,p.montant])),
+        note: "Clôture reconstituée — "+(v.noteCorrection||"ticket Z papier, données perdues"),
+        vendeur: v.creePar || v.vendeur?.nom || "",
+      }];
+    }
+    v.depotTraite = true;
+    changed = true;
+  });
+  if(changed) {
+    lsSet("bj_ventes", STATE.ventes);
+    lsSet("bj_caisse_jour", STATE.caisseJour);
+  }
+})();
 
 // Purge automatique des tickets annulés (complète ET comptable) de plus de 24h
 // Attention : ceci retire aussi définitivement les annulations "comptables" de l'historique
