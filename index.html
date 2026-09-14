@@ -147,6 +147,7 @@ const CLES_SYNC_TEMPS_REEL = {
   bj_ejs_service: "emailjsServiceId", bj_ejs_template: "emailjsTemplateId", bj_ejs_key: "emailjsPublicKey",
   bj_vendeurs: "__vendeurs__", // cas spécial : met à jour les codes PIN de VENDEURS, pas un champ STATE
   bj_registre_personnel: "registrePersonnel",
+  bj_lien_avis_google: "lienAvisGoogle",
 };
 const CLES_SYNC_PROTEGEES = new Set(["emailjsServiceId","emailjsTemplateId","emailjsPublicKey"]); // ne jamais écraser par une valeur vide venue d'un autre appareil
 window._syncBannerTimeout = null;
@@ -617,6 +618,7 @@ let STATE = {
   depotsBanque: ls("bj_depots_banque", []),
   mouvementsDefectueux: ls("bj_mouvements_defectueux", []),
   registrePersonnel: ls("bj_registre_personnel", []),
+  lienAvisGoogle: ls("bj_lien_avis_google", ""),
   showRegistrePersonnel: false,
   editSalarieId: null,
   salarieForm: null,
@@ -717,6 +719,7 @@ function setState(patch) {
   if(patch.depotsBanque  !== undefined) lsSet("bj_depots_banque", STATE.depotsBanque);
   if(patch.mouvementsDefectueux !== undefined) lsSet("bj_mouvements_defectueux", STATE.mouvementsDefectueux);
   if(patch.registrePersonnel !== undefined) lsSet("bj_registre_personnel", STATE.registrePersonnel);
+  if(patch.lienAvisGoogle !== undefined) lsSet("bj_lien_avis_google", STATE.lienAvisGoogle);
   if(patch.ouvertures !== undefined) lsSet("bj_ouvertures", STATE.ouvertures);
   if(patch.reservations  !== undefined) lsSet("bj_reservations",  STATE.reservations);
   if(patch.transferts  !== undefined) lsSet("bj_transferts",   STATE.transferts);
@@ -1656,6 +1659,26 @@ function renderVendeurSettings() {
             ${ejsOk?"✅ EmailJS configuré — Mettre à jour":"💾 Sauvegarder la configuration EmailJS"}
           </button>
           ${ejsOk?`<div style="font-size:11px;color:#3b6d11;margin-top:6px;text-align:center;">✅ EmailJS actif — les emails s'envoient directement</div>`:""}
+        </div>
+
+        <!-- Config avis Google -->
+        <div style="border-top:0.5px solid #e8e0e4;padding-top:14px;">
+          <div style="font-weight:500;font-size:13px;margin-bottom:4px;">⭐ Lien avis Google</div>
+          <div style="font-size:12px;color:#888;margin-bottom:10px;">
+            Un email d'invitation à laisser un avis sera envoyé automatiquement quelques jours après un achat (si un email client est renseigné).
+            ${!STATE.lienAvisGoogle?`<br><strong style="color:#e07c00;">⚠️ Tant que ce lien n'est pas renseigné, aucun email n'est envoyé.</strong> Il faut d'abord créer/activer ta fiche <a href="https://business.google.com" target="_blank" style="color:#185fa5;">Google My Business</a> pour obtenir ce lien.`:""}
+          </div>
+          <div style="margin-bottom:10px;">
+            <label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Lien vers la page d'avis (ex: g.page/r/xxxx/review)</label>
+            <input type="text" value="${STATE.lienAvisGoogle||''}"
+              oninput="STATE.lienAvisGoogle=this.value"
+              placeholder="https://g.page/r/..."
+              style="width:100%;box-sizing:border-box;"/>
+          </div>
+          <button onclick="setState({lienAvisGoogle:STATE.lienAvisGoogle||''});alert('✅ Lien avis Google enregistré !')"
+            style="width:100%;padding:10px;background:${STATE.lienAvisGoogle?"#3b6d11":"#185fa5"};color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">
+            ${STATE.lienAvisGoogle?"✅ Lien enregistré — Mettre à jour":"💾 Enregistrer le lien"}
+          </button>
         </div>
 
         <!-- Config Gemini (lecture auto des factures) -->
@@ -15914,12 +15937,60 @@ render();
 // Démarrer la synchronisation temps réel avec les autres appareils
 demarrerSyncTempsReel();
 
+// ── DEMANDE D'AVIS GOOGLE (envoyée quelques jours après un achat) ──────
+window.verifierDemandesAvis = () => {
+  if(!STATE.lienAvisGoogle) return; // pas de lien configuré -> on n'envoie rien, volontairement
+  if(!STATE.emailjsServiceId || !STATE.emailjsTemplateId || !STATE.emailjsPublicKey) return; // EmailJS pas configuré
+  const DELAI_JOURS = 5; // envoyé 5 jours après l'achat
+  const now = new Date();
+  const cible = new Date(now); cible.setDate(now.getDate()-DELAI_JOURS);
+  const cibleStr = dateLocaleStr(cible);
+
+  (STATE.ventes||[]).forEach(v => {
+    if(v.test || v.annulee) return;
+    if(!v.client || !v.client.email) return;
+    if(v.total<=0) return; // pas pour un pur retour/avoir
+    if(dateLocaleStr(new Date(v.date)) !== cibleStr) return;
+    const cleEnvoi = `bj_avis_envoye_${v.id}`;
+    if(ls(cleEnvoi, false)) return;
+    envoyerDemandeAvis(v);
+    lsSet(cleEnvoi, true);
+  });
+};
+
+window.envoyerDemandeAvis = async (v) => {
+  try {
+    const prenom = v.client?.prenom || "";
+    const html = `
+      <div style="font-family:Arial,sans-serif;max-width:480px;margin:0 auto;padding:24px;">
+        <p>Bonjour ${prenom||"Madame"},</p>
+        <p>Merci pour votre visite chez <strong>Belle&Jolie</strong> ! Nous espérons que vous êtes ravie de vos achats. 🌸</p>
+        <p>Si vous avez deux minutes, votre avis compte énormément pour notre petite boutique :</p>
+        <p style="text-align:center;margin:24px 0;">
+          <a href="${STATE.lienAvisGoogle}" target="_blank" style="background:#993556;color:#fff;padding:12px 28px;border-radius:8px;text-decoration:none;font-weight:600;">⭐ Laisser un avis Google</a>
+        </p>
+        <p>Merci infiniment pour votre confiance !</p>
+        <p>Belle&Jolie — Mode &amp; Élégance</p>
+      </div>`;
+    await emailjs.send(STATE.emailjsServiceId, STATE.emailjsTemplateId, {
+      to_email: v.client.email,
+      to_name: prenom,
+      subject: "Votre avis compte pour nous 🌸 — Belle&Jolie",
+      message: html,
+    });
+    console.log(`✅ Demande d'avis envoyée à ${v.client.email}`);
+  } catch(err) {
+    console.error("Erreur demande d'avis:", err);
+  }
+};
+
 // Vérifier anniversaires et sauvegarde auto après chargement
 setTimeout(() => {
   if(STATE.vendeur) {
     verifierAnniversaires();
     verifierSauvegardeAuto();
     verifierRappelsReservation();
+    verifierDemandesAvis();
   }
 }, 3000);
 
@@ -15928,6 +15999,7 @@ setInterval(() => {
   if(STATE.vendeur) {
     verifierAnniversaires();
     verifierSauvegardeAuto();
+    verifierDemandesAvis();
   }
 }, 3600000);
 
