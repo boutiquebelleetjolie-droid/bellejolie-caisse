@@ -15908,12 +15908,11 @@ if(savedVendeurs) savedVendeurs.forEach((sv,i)=>{ if(VENDEURS[i]&&sv.code){VENDE
   if(changed) { STATE.ouvertures = fusion; lsSet("bj_ouvertures", STATE.ouvertures); }
 })();
 
-// Nettoyage unique des données de test (ouverture boutique 01/09)
-// Le flag "bj_clean_v1" évite de refaire le nettoyage à chaque chargement
-if(!localStorage.getItem("bj_clean_v1")) {
-  ["bj_ventes","bj_avoirs","bj_annul_lignes","bj_caisse_jour","bj_attente","bj_inventaires","bj_clients"].forEach(k=>localStorage.removeItem(k));
-  localStorage.setItem("bj_clean_v1","1");
-}
+// (Le nettoyage unique des données de test de l'ouverture du 01/09 a été retiré : il effaçait
+// bj_ventes/bj_avoirs/bj_clients/etc. à chaque fois que le drapeau local 'bj_clean_v1' disparaissait
+// — notamment à chaque vidage de cache/données du navigateur — avec un risque de perte de vraies
+// ventes si l'appareil n'avait pas encore eu le temps de resynchroniser depuis le cloud. Sa mission
+// (nettoyer les données de test à l'ouverture) est de toute façon terminée depuis longtemps.)
 
 // Purge automatique des tickets annulés (complète ET comptable) de plus de 24h
 // Attention : ceci retire aussi définitivement les annulations "comptables" de l'historique
