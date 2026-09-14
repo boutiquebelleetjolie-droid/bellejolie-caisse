@@ -12380,6 +12380,9 @@ window.verifierBonAnniversaireClient = (client) => {
   const dateAnniv = new Date(anneeAnniv, parseInt(mois)-1, parseInt(jour));
   const dateDebut = new Date(dateAnniv); dateDebut.setDate(dateAnniv.getDate()-3); // disponible dès 3 jours avant
   const dateFin   = new Date(dateAnniv); dateFin.setMonth(dateAnniv.getMonth()+3); // valable 3 mois après le jour J
+  // Ne pas accorder de bon rétroactif : si le compte a été créé APRÈS que l'anniversaire de cette
+  // année soit déjà passé, pas de bon pour cette année (il faudra attendre le prochain anniversaire).
+  if(client.createdAt && new Date(client.createdAt) > dateAnniv) return null;
   // Bon valable dès J-3 jusqu'à J+3 mois
   if(now >= dateDebut && now <= dateFin) {
     const code = "ANNIV"+anneeAnniv+client.id.slice(-6).toUpperCase();
