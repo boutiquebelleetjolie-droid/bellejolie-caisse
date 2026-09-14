@@ -1315,6 +1315,7 @@ function renderApp() {
   ${STATE.showBCModal      ? renderBCModal()         : ""}
   ${STATE.showStkModal     ? renderStkModal()        : ""}
   ${STATE.showDefectueux   ? renderDefectueuxModal() : ""}
+  ${STATE.showHistoriqueArticle ? renderHistoriqueArticleModal() : ""}
   ${STATE.showProdModal    ? renderProdModal()       : ""}
   ${STATE.showClientModal  ? renderClientModal()     : ""}
   ${STATE.showClientDetail ? renderClientDetail()    : ""}
@@ -5349,6 +5350,71 @@ window.validerReception = () => {
   alert("✅ Réception validée !\n"+nbCrees+" article(s) créé(s)"+(nbMaj?" · "+nbMaj+" via fiche":""));
 };
 
+// Historique des ventes d'un article précis : quand a-t-il été vendu, à qui, à quel prix
+window.voirHistoriqueVentesArticle = (productId) => {
+  STATE.showHistoriqueArticle = productId;
+  render();
+};
+
+function renderHistoriqueArticleModal() {
+  const p = STATE.products.find(x=>x.id===STATE.showHistoriqueArticle);
+  if(!p) return "";
+  const evenements = [];
+  (STATE.ventes||[]).forEach(v=>{
+    if(v.test) return;
+    (v.panier||[]).forEach(it=>{
+      if((it.prodIdOriginal||it.id)!==p.id) return;
+      evenements.push({
+        date: v.date, qty: it.qty||1, prixPaye: calculerPrixPayeReel(v, it),
+        prixNormal: it.price, retour: !!it.retour, avoirId: it.avoirId||null,
+        annulee: v.annulee, typeAnnulation: v.typeAnnulation,
+        client: v.client, venteId: v.id, taille: it.taille||"", couleur: it.couleur||"",
+        vendeur: v.vendeur?.nom || "",
+      });
+    });
+  });
+  evenements.sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const nbVentes = evenements.filter(e=>!e.retour&&!e.avoirId&&!e.annulee).length;
+  const nbRetours = evenements.filter(e=>e.retour&&!e.avoirId&&!e.annulee).length;
+
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)setState({showHistoriqueArticle:null})">
+    <div class="modal" style="max-width:520px;max-height:85vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <span style="font-weight:500;">📅 Historique — ${p.name}</span>
+        <button onclick="setState({showHistoriqueArticle:null})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
+      </div>
+      <div style="padding:0 20px 8px;font-size:11px;color:#888;">Réf. ${p.ref} · ${nbVentes} vente${nbVentes>1?"s":""}${nbRetours?" · "+nbRetours+" retour"+(nbRetours>1?"s":""):""}</div>
+      <div class="modal-body" style="overflow-y:auto;flex:1;">
+        ${evenements.length===0?`<div style="text-align:center;color:#aaa;padding:24px 0;">Aucune vente enregistrée pour cet article.</div>`:
+        evenements.map(e=>{
+          const dateStr = new Date(e.date).toLocaleDateString("fr-FR",{weekday:"short",day:"2-digit",month:"short",year:"numeric"});
+          const heureStr = new Date(e.date).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+          const variante = [e.taille,e.couleur].filter(Boolean).join(" / ");
+          const badge = e.annulee
+            ? `<span style="background:#f5f0f2;color:#888;font-size:10px;padding:2px 7px;border-radius:6px;font-weight:600;">ANNULÉE</span>`
+            : e.avoirId
+              ? `<span style="background:#eef4fd;color:#185fa5;font-size:10px;padding:2px 7px;border-radius:6px;font-weight:600;">💳 PAYÉ EN AVOIR</span>`
+              : e.retour
+                ? `<span style="background:#fff3e8;color:#e07c00;font-size:10px;padding:2px 7px;border-radius:6px;font-weight:600;">↩️ RETOUR</span>`
+                : `<span style="background:#eaf3de;color:#3b6d11;font-size:10px;padding:2px 7px;border-radius:6px;font-weight:600;">✅ VENDU</span>`;
+          return `
+          <div onclick="voirTicketVenteId('${e.venteId}')" style="padding:10px 20px;border-bottom:0.5px solid #f0ebee;cursor:pointer;" title="Voir le ticket">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+              <span style="font-size:13px;font-weight:500;">${dateStr} <span style="color:#aaa;font-weight:400;">à ${heureStr}</span></span>
+              ${badge}
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#666;">
+              <span>${e.qty>1?e.qty+"× · ":""}${variante?variante+" · ":""}${e.client?e.client.prenom+" "+e.client.nom:"Client anonyme"}${e.vendeur?" · "+e.vendeur:""}</span>
+              <span style="font-weight:600;color:#333;">${eur(e.prixPaye*e.qty)}${e.prixPaye<e.prixNormal?` <span style="color:#aaa;font-weight:400;text-decoration:line-through;font-size:10px;">${eur(e.prixNormal*e.qty)}</span>`:""}</span>
+            </div>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>
+  </div>`;
+}
+
 function renderStockTableau(prods, isV1) {
   const cols = ["","Photo","Réf.","Article","Catégorie"];
   if(isV1) cols.push("PV TTC","PV HT","PA HT","PA TTC","🔒 Coeff","🔒 Marge brute","🔒 Coeff final","🔒 Marge finale","Stock","Actions");
@@ -5380,7 +5446,7 @@ prods.forEach(p=>{
   t += '<td style="padding:9px 6px;">'+photo+'</td>';
   t += '<td style="padding:9px 6px;font-family:monospace;font-size:12px;">'+p.ref+'</td>';
   const dernierReassort = p.dernierReassort ? new Date(p.dernierReassort).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}) : null;
-  t += '<td style="padding:9px 6px;"><div style="font-weight:500;">'+p.name+(p.depotVente?' <span style="background:#eef4fd;color:#185fa5;font-size:9px;padding:1px 6px;border-radius:7px;font-weight:600;">🔄 DÉPÔT</span>':'')+'</div>'+(p.marque?'<div style="font-size:10px;color:#993556;font-weight:600;text-transform:uppercase;">'+p.marque+'</div>':'')+'<div style="font-size:11px;color:#888;">'+p.barcode+(dernierReassort?' · 📦 '+dernierReassort:'')+'</div></td>';
+  t += '<td style="padding:9px 6px;"><div onclick="voirHistoriqueVentesArticle(\''+p.id+'\')" style="font-weight:500;text-decoration:underline;text-decoration-style:dotted;cursor:pointer;color:#333;" title="Voir l\'historique des ventes">'+p.name+(p.depotVente?' <span style="background:#eef4fd;color:#185fa5;font-size:9px;padding:1px 6px;border-radius:7px;font-weight:600;">🔄 DÉPÔT</span>':'')+'</div>'+(p.marque?'<div style="font-size:10px;color:#993556;font-weight:600;text-transform:uppercase;">'+p.marque+'</div>':'')+'<div style="font-size:11px;color:#888;">'+p.barcode+(dernierReassort?' · 📦 '+dernierReassort:'')+'</div></td>';
   const moisEnReserve = p.enReserve && p.dateReserve ? Math.floor((Date.now()-new Date(p.dateReserve))/(1000*60*60*24*30)) : 0;
   const alerteReserve = moisEnReserve >= 5;
   // Vérifier si l'article a des réservations clients actives
