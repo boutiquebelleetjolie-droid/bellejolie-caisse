@@ -2368,6 +2368,11 @@ function renderCaisse() {
   let alerteHtml = '';
   if(!ouvertureToday) alerteHtml += '<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:9px;padding:10px 14px;margin-bottom:6px;font-size:13px;color:#856404;display:flex;align-items:center;justify-content:space-between;"><span>⚠️ Fond de caisse du matin non validé — comptez votre caisse dans 🏦 Z Caisse</span><button onclick="setState({tab:\"caisse_jour\"})" style="padding:4px 10px;background:#ffc107;color:#856404;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;">→ Z Caisse</button></div>';
   if(!cloturHier && now.getHours()>=6) alerteHtml += '<div style="background:#fff3cd;border:1px solid #ffc107;border-radius:9px;padding:10px 14px;margin-bottom:6px;font-size:13px;color:#856404;">⚠️ Clôture du '+hier.toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})+' non faite → 🏦 Z Caisse</div>';
+  if(STATE.vendeur.id==="V1") {
+    const dans30jMed = new Date(Date.now()+30*86400000);
+    const aSuivreMed = (STATE.registrePersonnel||[]).filter(s=>!s.sortie && s.prochaineVisiteMedicale && new Date(s.prochaineVisiteMedicale)<=dans30jMed);
+    if(aSuivreMed.length) alerteHtml += '<div style="background:#fcebeb;border:1px solid #f0a5a5;border-radius:9px;padding:10px 14px;margin-bottom:6px;font-size:13px;color:#a32d2d;display:flex;align-items:center;justify-content:space-between;"><span>🩺 Visite médicale à prévoir : '+aSuivreMed.map(s=>s.prenom+' '+s.nom).join(', ')+'</span><button onclick="setState({showRegistrePersonnel:true})" style="padding:4px 10px;background:#a32d2d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;">→ Personnel</button></div>';
+  }
   const alerteBloc = alerteHtml ? '<div style="margin-bottom:10px;">'+alerteHtml+'</div>' : '';
   const bandeauEvenements = renderBandeauEvenements();
 
@@ -8230,6 +8235,63 @@ function renderStats() {
   </div>`;
 }
 
+// ── EXPORT COMPTABLE (CSV téléchargeable, pour la comptable) ────────
+window.exporterComptable = (mois, annee) => {
+  const TVA_TAUX = 0.20;
+  const moisNoms = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
+  const vf = STATE.ventes.filter(v=>{
+    if(v.test||v.annulee) return false;
+    const d=new Date(v.date);
+    return d.getMonth()===mois && d.getFullYear()===annee;
+  });
+  const nbJours = new Date(annee, mois+1, 0).getDate();
+  const modes = ["cb","especes","cheque","avoir","cadeau","mixte"];
+  const modeLabel = {cb:"CB",especes:"Especes",cheque:"Cheque",avoir:"Avoir",cadeau:"Carte cadeau",mixte:"Mixte"};
+
+  const sep = ";"; // séparateur point-virgule, plus fiable pour Excel FR
+  const fmt = n => (n||0).toFixed(2).replace(".", ",");
+  let lignes = [];
+  lignes.push(["Date","CA TTC","CA HT","TVA collectee (20%)", ...modes.map(m=>modeLabel[m]), "Nb tickets"].join(sep));
+
+  const totaux = {caTTC:0, caHT:0, tva:0, nb:0};
+  modes.forEach(m => totaux[m] = 0);
+
+  for(let j=1; j<=nbJours; j++) {
+    const dateJour = new Date(annee, mois, j);
+    const jv = vf.filter(v=>new Date(v.date).getDate()===j);
+    const caTTC = jv.reduce((s,v)=>s+v.total,0);
+    const caHT = caTTC/(1+TVA_TAUX);
+    const tva = caTTC-caHT;
+    const parMode = {};
+    modes.forEach(m=>parMode[m]=0);
+    jv.forEach(v=>{
+      if(v.mixed && Array.isArray(v.pays)) v.pays.forEach(p=>{ if(modes.includes(p.mode)) parMode[p.mode]+=parseFloat(p.montant||0); });
+      else if(modes.includes(v.payMode)) parMode[v.payMode]+=v.total;
+    });
+    lignes.push([
+      dateJour.toLocaleDateString("fr-FR"),
+      fmt(caTTC), fmt(caHT), fmt(tva),
+      ...modes.map(m=>fmt(parMode[m])),
+      jv.length
+    ].join(sep));
+    totaux.caTTC+=caTTC; totaux.caHT+=caHT; totaux.tva+=tva; totaux.nb+=jv.length;
+    modes.forEach(m=>totaux[m]+=parMode[m]);
+  }
+
+  lignes.push(["TOTAL", fmt(totaux.caTTC), fmt(totaux.caHT), fmt(totaux.tva), ...modes.map(m=>fmt(totaux[m])), totaux.nb].join(sep));
+
+  const csv = "\uFEFF" + lignes.join("\r\n"); // BOM pour accents corrects dans Excel
+  const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Belle-Jolie_export-comptable_${moisNoms[mois]}-${annee}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+};
+
 function renderBilan() {
   const now = new Date();
   if(!STATE.bilanMonth)  STATE.bilanMonth  = now.getMonth();
@@ -8349,6 +8411,7 @@ function renderBilan() {
       </div>
       <button onclick="STATE.bilanMonth=${nextM};STATE.bilanYear=${nextY};render()" ${isCur?"disabled":""} style="background:none;border:1px solid #ddd;border-radius:8px;padding:7px 14px;cursor:pointer;opacity:${isCur?0.4:1};">Mois suiv. ▶</button>
     </div>
+    <button onclick="exporterComptable(${STATE.bilanMonth},${STATE.bilanYear})" style="width:100%;padding:10px;background:#eef4fd;color:#185fa5;border:1px solid #b3d0f0;border-radius:9px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:16px;">📊 Export comptable — ${moisNoms[STATE.bilanMonth]} ${STATE.bilanYear} (.csv)</button>
     <!-- Boutons impression factures -->
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
       <button onclick="imprimerFacturesMois(${STATE.bilanMonth},${STATE.bilanYear})"
@@ -8717,6 +8780,18 @@ function renderRegistrePersonnelModal() {
           ℹ️ Outil pratique reprenant les mentions habituelles du registre (identité, emploi, contrat, dates). Vérifie avec ton comptable ou l'inspection du travail que ta tenue de registre respecte l'ensemble de tes obligations légales.
         </div>
 
+        ${(()=>{
+          const dans30j = new Date(); dans30j.setDate(dans30j.getDate()+30);
+          const aSuivre = liste.filter(s=>!s.sortie && s.prochaineVisiteMedicale && new Date(s.prochaineVisiteMedicale)<=dans30j);
+          if(!aSuivre.length) return "";
+          return `<div style="background:#fcebeb;border:1px solid #f0a5a5;border-radius:9px;padding:10px 12px;font-size:12px;color:#a32d2d;margin-bottom:14px;">
+            🩺 <strong>Visite médicale à prévoir :</strong> ${aSuivre.map(s=>{
+              const enRetard = new Date(s.prochaineVisiteMedicale) < new Date();
+              return `${s.prenom} ${s.nom} (${enRetard?"en retard, ":""}${formatDateFr(s.prochaineVisiteMedicale)})`;
+            }).join(" · ")}
+          </div>`;
+        })()}
+
         ${f ? `
         <div style="background:#f9f6f8;border-radius:10px;padding:14px;margin-bottom:14px;">
           <div style="font-weight:500;font-size:13px;margin-bottom:10px;">${STATE.editSalarieId?"Modifier":"Ajouter"} un(e) salarié(e)</div>
@@ -8748,6 +8823,10 @@ function renderRegistrePersonnelModal() {
           </div>
           <div style="margin-bottom:8px;"><label style="font-size:11px;color:#888;">Date de sortie (vide si toujours en poste)</label><input type="date" value="${f.sortie||''}" oninput="STATE.salarieForm.sortie=this.value" style="width:100%;"/></div>
           <div style="margin-bottom:8px;"><label style="font-size:11px;color:#888;">Titre de travail (salarié étranger hors UE — type et n°)</label><input value="${f.titre||''}" oninput="STATE.salarieForm.titre=this.value" style="width:100%;"/></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+            <div><label style="font-size:11px;color:#888;">🩺 Dernière visite médicale</label><input type="date" value="${f.visiteMedicale||''}" oninput="STATE.salarieForm.visiteMedicale=this.value" style="width:100%;"/></div>
+            <div><label style="font-size:11px;color:#888;">🔔 Prochaine visite prévue</label><input type="date" value="${f.prochaineVisiteMedicale||''}" oninput="STATE.salarieForm.prochaineVisiteMedicale=this.value" style="width:100%;"/></div>
+          </div>
           <div style="margin-bottom:12px;"><label style="font-size:11px;color:#888;">Remarques</label><input value="${f.remarques||''}" oninput="STATE.salarieForm.remarques=this.value" style="width:100%;"/></div>
           <div style="display:flex;gap:8px;">
             <button onclick="setState({salarieForm:null,editSalarieId:null})" class="btn-ghost" style="flex:1;">Annuler</button>
@@ -8769,11 +8848,14 @@ function renderRegistrePersonnelModal() {
             <th style="text-align:left;padding:6px 8px;color:#888;font-weight:500;">Entrée</th>
             <th style="text-align:left;padding:6px 8px;color:#888;font-weight:500;">Sortie</th>
             <th style="text-align:left;padding:6px 8px;color:#888;font-weight:500;">Statut</th>
+            <th style="text-align:left;padding:6px 8px;color:#888;font-weight:500;">🩺 Visite méd.</th>
             <th></th>
           </tr></thead>
           <tbody>
             ${liste.map(s=>{
               const actif = !s.sortie;
+              const visiteProche = s.prochaineVisiteMedicale && new Date(s.prochaineVisiteMedicale) <= new Date(Date.now()+30*86400000);
+              const visiteEnRetard = s.prochaineVisiteMedicale && new Date(s.prochaineVisiteMedicale) < new Date();
               return `<tr style="border-bottom:0.5px solid #f0ebee;">
                 <td style="padding:7px 8px;font-weight:500;">${s.nom} ${s.prenom}${s.titre?`<div style="font-size:9px;color:#aaa;">🪪 ${s.titre}</div>`:""}</td>
                 <td style="padding:7px 8px;">${formatDateFr(s.naissance)}${s.naissance?`<div style="font-size:9px;color:#aaa;">${calculerAge(s.naissance)}</div>`:""}</td>
@@ -8782,6 +8864,7 @@ function renderRegistrePersonnelModal() {
                 <td style="padding:7px 8px;">${formatDateFr(s.entree)}</td>
                 <td style="padding:7px 8px;">${formatDateFr(s.sortie)}</td>
                 <td style="padding:7px 8px;"><span style="background:${actif?'#eaf3de':'#f0ebee'};color:${actif?'#3b6d11':'#888'};padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;">${actif?"En poste":"Sorti"}</span></td>
+                <td style="padding:7px 8px;${visiteProche?`color:${visiteEnRetard?'#a32d2d':'#e07c00'};font-weight:600;`:'color:#aaa;'}">${s.prochaineVisiteMedicale?formatDateFr(s.prochaineVisiteMedicale)+(visiteProche?(visiteEnRetard?" ⚠️":" 🔔"):""):"—"}</td>
                 <td style="padding:7px 8px;white-space:nowrap;">
                   <button onclick="ouvrirFormSalarie('${s.id}')" style="background:none;border:none;cursor:pointer;font-size:13px;">✏️</button>
                   <button onclick="supprimerSalarie('${s.id}')" style="background:none;border:none;cursor:pointer;font-size:13px;">🗑️</button>
@@ -8799,7 +8882,7 @@ function renderRegistrePersonnelModal() {
 window.ouvrirFormSalarie = (id) => {
   const s = id ? (STATE.registrePersonnel||[]).find(x=>x.id===id) : null;
   STATE.editSalarieId = id || null;
-  STATE.salarieForm = s ? {...s} : {nom:"",prenom:"",naissance:"",sexe:"",nationalite:"",emploi:"",contrat:"CDI",entree:"",sortie:"",titre:"",remarques:""};
+  STATE.salarieForm = s ? {...s} : {nom:"",prenom:"",naissance:"",sexe:"",nationalite:"",emploi:"",contrat:"CDI",entree:"",sortie:"",titre:"",visiteMedicale:"",prochaineVisiteMedicale:"",remarques:""};
   render();
 };
 
