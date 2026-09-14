@@ -1327,6 +1327,7 @@ function renderApp() {
   ${STATE.showDefectueux   ? renderDefectueuxModal() : ""}
   ${STATE.showHistoriqueArticle ? renderHistoriqueArticleModal() : ""}
   ${STATE.showRegistrePersonnel ? renderRegistrePersonnelModal() : ""}
+  ${STATE.showCorrectionVente ? renderCorrectionVenteModal() : ""}
   ${STATE.showProdModal    ? renderProdModal()       : ""}
   ${STATE.showClientModal  ? renderClientModal()     : ""}
   ${STATE.showClientDetail ? renderClientDetail()    : ""}
@@ -8315,6 +8316,94 @@ window.exporterComptable = (mois, annee) => {
   URL.revokeObjectURL(url);
 };
 
+// ── RECONSTITUER UNE VENTE MANQUANTE (perte de données, à partir d'un ticket Z papier) ──
+window.ouvrirCorrectionVenteManquante = () => {
+  STATE.correctionForm = {date: dateLocaleStr(), cb:"", especes:"", cheque:"", note:""};
+  STATE.showCorrectionVente = true;
+  render();
+};
+
+function renderCorrectionVenteModal() {
+  if(STATE.vendeur.id!=="V1") return "";
+  const f = STATE.correctionForm || {};
+  const total = (parseFloat(f.cb)||0)+(parseFloat(f.especes)||0)+(parseFloat(f.cheque)||0);
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)setState({showCorrectionVente:false})">
+    <div class="modal" style="max-width:420px;">
+      <div class="modal-header">
+        <span style="font-weight:500;">🩹 Reconstituer une vente manquante</span>
+        <button onclick="setState({showCorrectionVente:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
+      </div>
+      <div class="modal-body">
+        <div style="background:#fff3e8;border:1px solid #f0dcb0;border-radius:9px;padding:9px 12px;font-size:11px;color:#854f0b;margin-bottom:14px;line-height:1.5;">
+          ⚠️ À utiliser uniquement en cas de perte de données confirmée, à partir d'un ticket Z papier ou d'un relevé de TPE. Ça ajoute le montant au chiffre d'affaires et à la comptabilité de la date choisie, mais <strong>ne remet pas d'articles précis</strong> (impossible de savoir lesquels) — donc n'affecte ni le stock, ni le détail par article, ni la fidélité client.
+        </div>
+        <div style="margin-bottom:10px;">
+          <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Date de la vente</label>
+          <input type="date" value="${f.date||''}" oninput="STATE.correctionForm.date=this.value;render()" style="width:100%;box-sizing:border-box;"/>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+          <div>
+            <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">💳 Montant CB</label>
+            <input type="number" step="0.01" value="${f.cb||''}" oninput="STATE.correctionForm.cb=this.value;render()" placeholder="0,00" style="width:100%;box-sizing:border-box;"/>
+          </div>
+          <div>
+            <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">💶 Montant espèces</label>
+            <input type="number" step="0.01" value="${f.especes||''}" oninput="STATE.correctionForm.especes=this.value;render()" placeholder="0,00" style="width:100%;box-sizing:border-box;"/>
+          </div>
+        </div>
+        <div style="margin-bottom:10px;">
+          <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">📝 Montant chèque (si applicable)</label>
+          <input type="number" step="0.01" value="${f.cheque||''}" oninput="STATE.correctionForm.cheque=this.value;render()" placeholder="0,00" style="width:100%;box-sizing:border-box;"/>
+        </div>
+        <div style="margin-bottom:14px;">
+          <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Note (motif de la correction)</label>
+          <input value="${f.note||''}" oninput="STATE.correctionForm.note=this.value" placeholder="Ex: ticket Z papier du 02/09, données perdues" style="width:100%;box-sizing:border-box;"/>
+        </div>
+        <div style="background:#f5f0f2;border-radius:9px;padding:10px 14px;margin-bottom:14px;display:flex;justify-content:space-between;font-size:14px;font-weight:600;">
+          <span>Total à reconstituer</span><span>${eur(total)}</span>
+        </div>
+        <button onclick="validerCorrectionVenteManquante()" ${total<=0?"disabled":""} style="width:100%;padding:12px;background:${total>0?"#e07c00":"#ccc"};color:#fff;border:none;border-radius:9px;font-size:14px;font-weight:500;cursor:${total>0?"pointer":"not-allowed"};">
+          🩹 Ajouter cette vente reconstituée
+        </button>
+      </div>
+    </div>
+  </div>`;
+}
+
+window.validerCorrectionVenteManquante = () => {
+  const f = STATE.correctionForm;
+  const cb = parseFloat(f.cb)||0, especes = parseFloat(f.especes)||0, cheque = parseFloat(f.cheque)||0;
+  const total = cb+especes+cheque;
+  if(total<=0) return;
+  if(!f.date) { alert("Choisis une date."); return; }
+  if(!confirm(`Ajouter une vente reconstituée de ${eur(total)} le ${new Date(f.date).toLocaleDateString("fr-FR")} ?\n\nCB : ${eur(cb)}\nEspèces : ${eur(especes)}\nChèque : ${eur(cheque)}\n\nCette action est enregistrée comme une correction manuelle, traçable.`)) return;
+
+  const pays = [];
+  if(cb>0) pays.push({mode:"cb", montant:cb});
+  if(especes>0) pays.push({mode:"especes", montant:especes});
+  if(cheque>0) pays.push({mode:"cheque", montant:cheque});
+  const mixed = pays.length>1;
+  const payMode = mixed ? "mixte" : pays[0].mode;
+
+  const dateVente = new Date(f.date+"T12:00:00").toISOString();
+  const vente = {
+    id: uid("CORR"),
+    date: dateVente,
+    boutiqueId: BOUTIQUE_CONFIG.id,
+    panier: [{id:"correction_manuelle", name:"Vente reconstituée — "+(f.note||"ticket Z papier"), qty:1, price:total, remise:"", remiseType:""}],
+    client: null, clientId: null,
+    vendeur: STATE.vendeur,
+    remise:0, remiseFid:0, remiseProg:0,
+    total, mixed, pays, payMode,
+    correctionManuelle: true, noteCorrection: f.note||"", creeLe: new Date().toISOString(), creePar: STATE.vendeur.nom,
+  };
+  STATE.ventes = [...STATE.ventes, vente];
+  lsSet("bj_ventes", STATE.ventes);
+  setState({showCorrectionVente:false});
+  alert("✅ Vente reconstituée ajoutée : "+eur(total));
+};
+
 function renderBilan() {
   const now = new Date();
   if(!STATE.bilanMonth)  STATE.bilanMonth  = now.getMonth();
@@ -8434,7 +8523,8 @@ function renderBilan() {
       </div>
       <button onclick="STATE.bilanMonth=${nextM};STATE.bilanYear=${nextY};render()" ${isCur?"disabled":""} style="background:none;border:1px solid #ddd;border-radius:8px;padding:7px 14px;cursor:pointer;opacity:${isCur?0.4:1};">Mois suiv. ▶</button>
     </div>
-    <button onclick="exporterComptable(${STATE.bilanMonth},${STATE.bilanYear})" style="width:100%;padding:10px;background:#eef4fd;color:#185fa5;border:1px solid #b3d0f0;border-radius:9px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:16px;">📊 Export comptable — ${moisNoms[STATE.bilanMonth]} ${STATE.bilanYear} (.csv)</button>
+    <button onclick="exporterComptable(${STATE.bilanMonth},${STATE.bilanYear})" style="width:100%;padding:10px;background:#eef4fd;color:#185fa5;border:1px solid #b3d0f0;border-radius:9px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:8px;">📊 Export comptable — ${moisNoms[STATE.bilanMonth]} ${STATE.bilanYear} (.csv)</button>
+    <button onclick="ouvrirCorrectionVenteManquante()" style="width:100%;padding:10px;background:#fff3e8;color:#e07c00;border:1px solid #f0dcb0;border-radius:9px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:16px;">🩹 Reconstituer une vente manquante (à partir d'un ticket Z papier)</button>
     <!-- Boutons impression factures -->
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
       <button onclick="imprimerFacturesMois(${STATE.bilanMonth},${STATE.bilanYear})"
