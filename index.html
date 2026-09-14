@@ -90,7 +90,7 @@ const BOUTIQUE_CONFIG = {
   // Données "locales" propres à cette boutique (ventes, stock, Z de caisse, réservations)
   // Cette distinction sera utilisée lors de la migration vers Firebase
   DONNEES_GLOBALES: ["bj_clients","bj_avoirs","bj_promotions"],
-  DONNEES_LOCALES:  ["bj_products","bj_ventes","bj_caisse_jour","bj_reservations","bj_annul_lignes","bj_attente","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux","bj_ouvertures"],
+  DONNEES_LOCALES:  ["bj_products","bj_ventes","bj_caisse_jour","bj_reservations","bj_annul_lignes","bj_attente","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux","bj_ouvertures","bj_registre_personnel"],
 };
 
 // ════════════════════════════════════════════════════════════════
@@ -146,6 +146,7 @@ const CLES_SYNC_TEMPS_REEL = {
   bj_ouvertures: "ouvertures", bj_caisse_jour: "caisseJour", bj_attente: "ticketsAttente",
   bj_ejs_service: "emailjsServiceId", bj_ejs_template: "emailjsTemplateId", bj_ejs_key: "emailjsPublicKey",
   bj_vendeurs: "__vendeurs__", // cas spécial : met à jour les codes PIN de VENDEURS, pas un champ STATE
+  bj_registre_personnel: "registrePersonnel",
 };
 const CLES_SYNC_PROTEGEES = new Set(["emailjsServiceId","emailjsTemplateId","emailjsPublicKey"]); // ne jamais écraser par une valeur vide venue d'un autre appareil
 window._syncBannerTimeout = null;
@@ -615,6 +616,10 @@ let STATE = {
   caisseJour:  ls("bj_caisse_jour", []),
   depotsBanque: ls("bj_depots_banque", []),
   mouvementsDefectueux: ls("bj_mouvements_defectueux", []),
+  registrePersonnel: ls("bj_registre_personnel", []),
+  showRegistrePersonnel: false,
+  editSalarieId: null,
+  salarieForm: null,
   ouvertures: ls("bj_ouvertures", {}),
   fondOuverture: {},
   fondFermeture: {},      // Z de caisse journaliers
@@ -711,6 +716,7 @@ function setState(patch) {
   if(patch.caisseJour    !== undefined) lsSet("bj_caisse_jour",   STATE.caisseJour);
   if(patch.depotsBanque  !== undefined) lsSet("bj_depots_banque", STATE.depotsBanque);
   if(patch.mouvementsDefectueux !== undefined) lsSet("bj_mouvements_defectueux", STATE.mouvementsDefectueux);
+  if(patch.registrePersonnel !== undefined) lsSet("bj_registre_personnel", STATE.registrePersonnel);
   if(patch.ouvertures !== undefined) lsSet("bj_ouvertures", STATE.ouvertures);
   if(patch.reservations  !== undefined) lsSet("bj_reservations",  STATE.reservations);
   if(patch.transferts  !== undefined) lsSet("bj_transferts",   STATE.transferts);
@@ -1280,6 +1286,7 @@ function renderApp() {
       </div>
       <div style="font-size:12px;color:#888;">${STATE.vendeur.nom}</div>
       ${STATE.vendeur.id==="V1"?`<button onclick="showVendeurSettings()" style="background:none;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px;color:#666;">⚙️ PIN</button>`:""}
+      ${STATE.vendeur.id==="V1"?`<button onclick="setState({showRegistrePersonnel:true})" style="background:none;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px;color:#666;">👥 Personnel</button>`:""}
     </div>
   </div>
   ${STATE.vendeur.role==="apprenti"?`
@@ -1316,6 +1323,7 @@ function renderApp() {
   ${STATE.showStkModal     ? renderStkModal()        : ""}
   ${STATE.showDefectueux   ? renderDefectueuxModal() : ""}
   ${STATE.showHistoriqueArticle ? renderHistoriqueArticleModal() : ""}
+  ${STATE.showRegistrePersonnel ? renderRegistrePersonnelModal() : ""}
   ${STATE.showProdModal    ? renderProdModal()       : ""}
   ${STATE.showClientModal  ? renderClientModal()     : ""}
   ${STATE.showClientDetail ? renderClientDetail()    : ""}
@@ -1718,6 +1726,7 @@ window.exporterDonnees = () => {
     depotsVente:STATE.depotsVente||[],
     depotsBanque:STATE.depotsBanque||[],
     mouvementsDefectueux:STATE.mouvementsDefectueux||[],
+    registrePersonnel:STATE.registrePersonnel||[],
     ouvertures:STATE.ouvertures||{},
     // Config EmailJS incluse pour ne pas la perdre si le navigateur efface ses données
     emailjsServiceId:STATE.emailjsServiceId||"", emailjsTemplateId:STATE.emailjsTemplateId||"", emailjsPublicKey:STATE.emailjsPublicKey||"",
@@ -1872,6 +1881,7 @@ window.importerDonnees = (input) => {
       if(data.depotsVente) {STATE.depotsVente=data.depotsVente;lsSet("bj_depots_vente",data.depotsVente);}
       if(data.depotsBanque) {STATE.depotsBanque=data.depotsBanque;lsSet("bj_depots_banque",data.depotsBanque);}
       if(data.mouvementsDefectueux) {STATE.mouvementsDefectueux=data.mouvementsDefectueux;lsSet("bj_mouvements_defectueux",data.mouvementsDefectueux);}
+      if(data.registrePersonnel) {STATE.registrePersonnel=data.registrePersonnel;lsSet("bj_registre_personnel",data.registrePersonnel);}
       if(data.ouvertures) {STATE.ouvertures=data.ouvertures;lsSet("bj_ouvertures",data.ouvertures);}
       if(data.historiquePromo){STATE.historiquePromo=data.historiquePromo;lsSet("bj_historique_promo",data.historiquePromo);}
       // Config EmailJS : restaurée si présente dans la sauvegarde (évite de la reperdre si le navigateur efface ses données)
@@ -8680,6 +8690,137 @@ function renderAnnulations() {
   </div>`;
 }
 
+// ── REGISTRE UNIQUE DU PERSONNEL (réservé à la gérante, V1) ─────────
+function renderRegistrePersonnelModal() {
+  if(STATE.vendeur.id!=="V1") return ""; // sécurité : jamais visible pour les autres comptes
+  const liste = [...(STATE.registrePersonnel||[])].sort((a,b)=>(a.entree||"").localeCompare(b.entree||""));
+  const f = STATE.salarieForm;
+
+  const formatDateFr = iso => iso ? new Date(iso).toLocaleDateString("fr-FR") : "—";
+  const calculerAge = iso => {
+    if(!iso) return "";
+    const n = new Date(iso), a = new Date();
+    let age = a.getFullYear()-n.getFullYear();
+    if(a.getMonth()<n.getMonth()||(a.getMonth()===n.getMonth()&&a.getDate()<n.getDate())) age--;
+    return age+" ans";
+  };
+
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)setState({showRegistrePersonnel:false,editSalarieId:null,salarieForm:null})">
+    <div class="modal" style="max-width:720px;">
+      <div class="modal-header">
+        <span style="font-weight:500;">📋 Registre unique du personnel</span>
+        <button onclick="setState({showRegistrePersonnel:false,editSalarieId:null,salarieForm:null})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
+      </div>
+      <div class="modal-body">
+        <div style="background:#fff8e1;border:1px solid #f0dcb0;border-radius:9px;padding:9px 12px;font-size:11px;color:#854f0b;margin-bottom:14px;line-height:1.5;">
+          ℹ️ Outil pratique reprenant les mentions habituelles du registre (identité, emploi, contrat, dates). Vérifie avec ton comptable ou l'inspection du travail que ta tenue de registre respecte l'ensemble de tes obligations légales.
+        </div>
+
+        ${f ? `
+        <div style="background:#f9f6f8;border-radius:10px;padding:14px;margin-bottom:14px;">
+          <div style="font-weight:500;font-size:13px;margin-bottom:10px;">${STATE.editSalarieId?"Modifier":"Ajouter"} un(e) salarié(e)</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+            <div><label style="font-size:11px;color:#888;">Nom *</label><input value="${f.nom||''}" oninput="STATE.salarieForm.nom=this.value" style="width:100%;"/></div>
+            <div><label style="font-size:11px;color:#888;">Prénom *</label><input value="${f.prenom||''}" oninput="STATE.salarieForm.prenom=this.value" style="width:100%;"/></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+            <div><label style="font-size:11px;color:#888;">Date de naissance</label><input type="date" value="${f.naissance||''}" oninput="STATE.salarieForm.naissance=this.value" style="width:100%;"/></div>
+            <div><label style="font-size:11px;color:#888;">Sexe</label>
+              <select onchange="STATE.salarieForm.sexe=this.value" style="width:100%;">
+                <option value="" ${!f.sexe?"selected":""}>—</option>
+                <option value="F" ${f.sexe==="F"?"selected":""}>Féminin</option>
+                <option value="M" ${f.sexe==="M"?"selected":""}>Masculin</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+            <div><label style="font-size:11px;color:#888;">Nationalité</label><input value="${f.nationalite||''}" oninput="STATE.salarieForm.nationalite=this.value" placeholder="Française" style="width:100%;"/></div>
+            <div><label style="font-size:11px;color:#888;">Emploi occupé</label><input value="${f.emploi||''}" oninput="STATE.salarieForm.emploi=this.value" placeholder="Vendeuse" style="width:100%;"/></div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
+            <div><label style="font-size:11px;color:#888;">Type de contrat</label>
+              <select onchange="STATE.salarieForm.contrat=this.value" style="width:100%;">
+                ${["CDI","CDD","Apprentissage","Stage","Intérim","Autre"].map(c=>`<option value="${c}" ${f.contrat===c?"selected":""}>${c}</option>`).join("")}
+              </select>
+            </div>
+            <div><label style="font-size:11px;color:#888;">Date d'entrée *</label><input type="date" value="${f.entree||''}" oninput="STATE.salarieForm.entree=this.value" style="width:100%;"/></div>
+          </div>
+          <div style="margin-bottom:8px;"><label style="font-size:11px;color:#888;">Date de sortie (vide si toujours en poste)</label><input type="date" value="${f.sortie||''}" oninput="STATE.salarieForm.sortie=this.value" style="width:100%;"/></div>
+          <div style="margin-bottom:8px;"><label style="font-size:11px;color:#888;">Titre de travail (salarié étranger hors UE — type et n°)</label><input value="${f.titre||''}" oninput="STATE.salarieForm.titre=this.value" style="width:100%;"/></div>
+          <div style="margin-bottom:12px;"><label style="font-size:11px;color:#888;">Remarques</label><input value="${f.remarques||''}" oninput="STATE.salarieForm.remarques=this.value" style="width:100%;"/></div>
+          <div style="display:flex;gap:8px;">
+            <button onclick="setState({salarieForm:null,editSalarieId:null})" class="btn-ghost" style="flex:1;">Annuler</button>
+            <button onclick="enregistrerSalarie()" class="btn-primary" style="flex:1;">Enregistrer</button>
+          </div>
+        </div>
+        ` : `
+        <button onclick="ouvrirFormSalarie()" class="btn-primary" style="width:100%;margin-bottom:14px;">+ Ajouter un(e) salarié(e)</button>
+        `}
+
+        ${liste.length===0?`<div style="text-align:center;color:#aaa;padding:20px 0;">Aucun salarié enregistré.</div>`:`
+        <div style="overflow-x:auto;">
+        <table style="width:100%;font-size:12px;border-collapse:collapse;">
+          <thead><tr style="border-bottom:0.5px solid #e8e0e4;">
+            <th style="text-align:left;padding:6px 8px;color:#888;font-weight:500;">Nom Prénom</th>
+            <th style="text-align:left;padding:6px 8px;color:#888;font-weight:500;">Naissance</th>
+            <th style="text-align:left;padding:6px 8px;color:#888;font-weight:500;">Emploi</th>
+            <th style="text-align:left;padding:6px 8px;color:#888;font-weight:500;">Contrat</th>
+            <th style="text-align:left;padding:6px 8px;color:#888;font-weight:500;">Entrée</th>
+            <th style="text-align:left;padding:6px 8px;color:#888;font-weight:500;">Sortie</th>
+            <th style="text-align:left;padding:6px 8px;color:#888;font-weight:500;">Statut</th>
+            <th></th>
+          </tr></thead>
+          <tbody>
+            ${liste.map(s=>{
+              const actif = !s.sortie;
+              return `<tr style="border-bottom:0.5px solid #f0ebee;">
+                <td style="padding:7px 8px;font-weight:500;">${s.nom} ${s.prenom}${s.titre?`<div style="font-size:9px;color:#aaa;">🪪 ${s.titre}</div>`:""}</td>
+                <td style="padding:7px 8px;">${formatDateFr(s.naissance)}${s.naissance?`<div style="font-size:9px;color:#aaa;">${calculerAge(s.naissance)}</div>`:""}</td>
+                <td style="padding:7px 8px;">${s.emploi||"—"}</td>
+                <td style="padding:7px 8px;">${s.contrat||"—"}</td>
+                <td style="padding:7px 8px;">${formatDateFr(s.entree)}</td>
+                <td style="padding:7px 8px;">${formatDateFr(s.sortie)}</td>
+                <td style="padding:7px 8px;"><span style="background:${actif?'#eaf3de':'#f0ebee'};color:${actif?'#3b6d11':'#888'};padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;">${actif?"En poste":"Sorti"}</span></td>
+                <td style="padding:7px 8px;white-space:nowrap;">
+                  <button onclick="ouvrirFormSalarie('${s.id}')" style="background:none;border:none;cursor:pointer;font-size:13px;">✏️</button>
+                  <button onclick="supprimerSalarie('${s.id}')" style="background:none;border:none;cursor:pointer;font-size:13px;">🗑️</button>
+                </td>
+              </tr>`;
+            }).join("")}
+          </tbody>
+        </table>
+        </div>`}
+      </div>
+    </div>
+  </div>`;
+}
+
+window.ouvrirFormSalarie = (id) => {
+  const s = id ? (STATE.registrePersonnel||[]).find(x=>x.id===id) : null;
+  STATE.editSalarieId = id || null;
+  STATE.salarieForm = s ? {...s} : {nom:"",prenom:"",naissance:"",sexe:"",nationalite:"",emploi:"",contrat:"CDI",entree:"",sortie:"",titre:"",remarques:""};
+  render();
+};
+
+window.enregistrerSalarie = () => {
+  const f = STATE.salarieForm;
+  if(!f.nom?.trim() || !f.prenom?.trim()) { alert("Le nom et le prénom sont obligatoires."); return; }
+  if(!f.entree) { alert("La date d'entrée est obligatoire."); return; }
+  const id = STATE.editSalarieId || uid("SAL");
+  const salarie = {...f, id};
+  const liste = STATE.registrePersonnel||[];
+  const idx = liste.findIndex(x=>x.id===id);
+  const nouvelle = idx>=0 ? liste.map(x=>x.id===id?salarie:x) : [...liste, salarie];
+  setState({registrePersonnel:nouvelle, salarieForm:null, editSalarieId:null});
+};
+
+window.supprimerSalarie = (id) => {
+  const s = (STATE.registrePersonnel||[]).find(x=>x.id===id);
+  if(!s) return;
+  if(!confirm(`Supprimer définitivement ${s.prenom} ${s.nom} du registre ?`)) return;
+  setState({registrePersonnel:(STATE.registrePersonnel||[]).filter(x=>x.id!==id)});
+};
 // ── ANNULER UNE ANNULATION : restaurer une vente annulée par erreur ────
 window.restaurerVenteAnnulee = (venteId) => {
   const v = STATE.ventes.find(x=>x.id===venteId);
