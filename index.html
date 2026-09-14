@@ -8400,8 +8400,68 @@ window.validerCorrectionVenteManquante = () => {
   };
   STATE.ventes = [...STATE.ventes, vente];
   lsSet("bj_ventes", STATE.ventes);
+
+  // Créer ou compléter l'entrée de clôture de cette date, pour que les espèces à déposer
+  // apparaissent bien dans le bordereau de dépôt banque (sinon la correction n'y figure jamais).
+  if(especes>0) {
+    const dateStrZ = f.date; // format YYYY-MM-DD
+    const zExistant = (STATE.caisseJour||[]).find(z=>z.date===dateStrZ);
+    if(zExistant) {
+      STATE.caisseJour = STATE.caisseJour.map(z=>z.date===dateStrZ?{
+        ...z,
+        caTTC: (z.caTTC||0)+total,
+        caHT: (z.caHT||0)+total/1.20,
+        tvaCol: (z.tvaCol||0)+(total-total/1.20),
+        especes: (z.especes||0)+especes,
+        aDeposer: (z.aDeposer||0)+especes,
+        nbVentes: (z.nbVentes||0)+1,
+        note: (z.note?z.note+" · ":"")+"Correction manuelle ajoutée : "+eur(total),
+      }:z);
+    } else {
+      const FOND_RESERVE = 80;
+      STATE.caisseJour = [...(STATE.caisseJour||[]), {
+        id: uid("Z"), date: dateStrZ, heure: new Date().toISOString(),
+        nbVentes: 1, caTTC: total, caHT: total/1.20, tvaCol: total-total/1.20,
+        especes, fondOuverture: FOND_RESERVE, fondFermeture: FOND_RESERVE+especes,
+        aDeposer: especes, ecart: 0, payM: Object.fromEntries(pays.map(p=>[p.mode,p.montant])),
+        note: "Clôture reconstituée — "+(f.note||"ticket Z papier, données perdues"),
+        vendeur: STATE.vendeur.nom,
+      }];
+    }
+    lsSet("bj_caisse_jour", STATE.caisseJour);
+  }
+
   setState({showCorrectionVente:false});
-  alert("✅ Vente reconstituée ajoutée : "+eur(total));
+  alert("✅ Vente reconstituée ajoutée : "+eur(total)+(especes>0?"\n\n💶 "+eur(especes)+" ajoutés au bordereau de dépôt banque (onglet Dépôt-vente → Dépôt banque).":""));
+};
+
+window.supprimerCorrectionVente = (id) => {
+  const v = STATE.ventes.find(x=>x.id===id);
+  if(!v) return;
+  if(!confirm(`Supprimer cette correction de ${eur(v.total)} du ${new Date(v.date).toLocaleDateString("fr-FR")} ?`)) return;
+
+  // Retirer la part espèces de la clôture associée, s'il y en avait une créée/complétée pour cette correction
+  const especesCorrection = (v.pays||[]).find(p=>p.mode==="especes")?.montant || 0;
+  if(especesCorrection>0) {
+    const dateStrZ = dateLocaleStr(new Date(v.date));
+    STATE.caisseJour = (STATE.caisseJour||[]).map(z=>{
+      if(z.date!==dateStrZ) return z;
+      return {
+        ...z,
+        caTTC: Math.max(0,(z.caTTC||0)-v.total),
+        caHT: Math.max(0,(z.caHT||0)-v.total/1.20),
+        tvaCol: Math.max(0,(z.tvaCol||0)-(v.total-v.total/1.20)),
+        especes: Math.max(0,(z.especes||0)-especesCorrection),
+        aDeposer: Math.max(0,(z.aDeposer||0)-especesCorrection),
+        nbVentes: Math.max(0,(z.nbVentes||0)-1),
+      };
+    });
+    lsSet("bj_caisse_jour", STATE.caisseJour);
+  }
+
+  STATE.ventes = STATE.ventes.filter(x=>x.id!==id);
+  lsSet("bj_ventes", STATE.ventes);
+  render();
 };
 
 function renderBilan() {
@@ -8524,7 +8584,20 @@ function renderBilan() {
       <button onclick="STATE.bilanMonth=${nextM};STATE.bilanYear=${nextY};render()" ${isCur?"disabled":""} style="background:none;border:1px solid #ddd;border-radius:8px;padding:7px 14px;cursor:pointer;opacity:${isCur?0.4:1};">Mois suiv. ▶</button>
     </div>
     <button onclick="exporterComptable(${STATE.bilanMonth},${STATE.bilanYear})" style="width:100%;padding:10px;background:#eef4fd;color:#185fa5;border:1px solid #b3d0f0;border-radius:9px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:8px;">📊 Export comptable — ${moisNoms[STATE.bilanMonth]} ${STATE.bilanYear} (.csv)</button>
-    <button onclick="ouvrirCorrectionVenteManquante()" style="width:100%;padding:10px;background:#fff3e8;color:#e07c00;border:1px solid #f0dcb0;border-radius:9px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:16px;">🩹 Reconstituer une vente manquante (à partir d'un ticket Z papier)</button>
+    <button onclick="ouvrirCorrectionVenteManquante()" style="width:100%;padding:10px;background:#fff3e8;color:#e07c00;border:1px solid #f0dcb0;border-radius:9px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:8px;">🩹 Reconstituer une vente manquante (à partir d'un ticket Z papier)</button>
+    ${(()=>{
+      const corrections = (STATE.ventes||[]).filter(v=>v.correctionManuelle).sort((a,b)=>new Date(b.date)-new Date(a.date));
+      if(!corrections.length) return "";
+      return `<div style="background:#fff8e1;border:1px solid #f0dcb0;border-radius:9px;padding:8px 12px;margin-bottom:16px;font-size:12px;">
+        <div style="font-weight:500;color:#854f0b;margin-bottom:4px;">Corrections manuelles existantes :</div>
+        ${corrections.map(v=>`
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;">
+            <span>${new Date(v.date).toLocaleDateString("fr-FR")} — ${eur(v.total)} <span style="color:#aaa;">(${v.noteCorrection||"sans note"})</span></span>
+            <button onclick="supprimerCorrectionVente('${v.id}')" style="background:none;border:none;color:#a32d2d;cursor:pointer;font-size:12px;">🗑️ Supprimer</button>
+          </div>
+        `).join("")}
+      </div>`;
+    })()}
     <!-- Boutons impression factures -->
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
       <button onclick="imprimerFacturesMois(${STATE.bilanMonth},${STATE.bilanYear})"
