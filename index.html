@@ -12202,13 +12202,12 @@ window.verifierSauvegardeAuto = () => {
 
 // ─── BON ANNIVERSAIRE 5€ ────────────────────────────────────────
 
-// Vérifier si une cliente a son anniversaire aujourd'hui ou dans 7 jours
+// Vérifier si une cliente a son anniversaire dans 3 jours (déclenche l'envoi automatique)
 window.verifierAnniversaires = () => {
   const now = new Date();
   const fmt = d => `${String(d.getDate()).padStart(2,"0")}/${String(d.getMonth()+1).padStart(2,"0")}`;
-  const today  = fmt(now);
-  const in7    = new Date(now); in7.setDate(now.getDate()+7);
-  const in7Str = fmt(in7);
+  const dans3j = new Date(now); dans3j.setDate(now.getDate()+3);
+  const dans3jStr = fmt(dans3j);
 
   STATE.clients.forEach(c => {
     if(!c.anniversaire) return;
@@ -12217,8 +12216,8 @@ window.verifierAnniversaires = () => {
     const bonKey = `bj_bon_anniv_${c.id}_${annee}`;
     const dejàCréé = ls(bonKey, false);
 
-    // Créer le bon si : aujourd'hui OU dans 7 jours — même sans email (bon créé en local)
-    if((anniv === today || anniv === in7Str) && !dejàCréé) {
+    // Créer le bon 3 jours avant la date d'anniversaire — même sans email (bon créé en local)
+    if(anniv === dans3jStr && !dejàCréé) {
       envoyerBonAnniversaire(c, annee);
       lsSet(bonKey, true);
     }
@@ -12379,9 +12378,10 @@ window.verifierBonAnniversaireClient = (client) => {
   const [jour, mois] = client.anniversaire.split("/");
   const anneeAnniv = now.getFullYear();
   const dateAnniv = new Date(anneeAnniv, parseInt(mois)-1, parseInt(jour));
-  const dateFin   = new Date(dateAnniv); dateFin.setMonth(dateAnniv.getMonth()+3);
-  // Bon valable si on est dans la fenêtre anniversaire (jour J à J+21)
-  if(now >= dateAnniv && now <= dateFin) {
+  const dateDebut = new Date(dateAnniv); dateDebut.setDate(dateAnniv.getDate()-3); // disponible dès 3 jours avant
+  const dateFin   = new Date(dateAnniv); dateFin.setMonth(dateAnniv.getMonth()+3); // valable 3 mois après le jour J
+  // Bon valable dès J-3 jusqu'à J+3 mois
+  if(now >= dateDebut && now <= dateFin) {
     const code = "ANNIV"+anneeAnniv+client.id.slice(-6).toUpperCase();
     // Chercher TOUT bon avec ce code cette année, utilisé ou non — ne jamais en recréer un si un existe déjà
     let bon = (STATE.avoirs||[]).find(a=>a.code===code);
