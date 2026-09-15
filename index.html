@@ -90,7 +90,7 @@ const BOUTIQUE_CONFIG = {
   // Données "locales" propres à cette boutique (ventes, stock, Z de caisse, réservations)
   // Cette distinction sera utilisée lors de la migration vers Firebase
   DONNEES_GLOBALES: ["bj_clients","bj_avoirs","bj_promotions"],
-  DONNEES_LOCALES:  ["bj_products","bj_ventes","bj_caisse_jour","bj_reservations","bj_annul_lignes","bj_attente","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux","bj_ouvertures","bj_registre_personnel"],
+  DONNEES_LOCALES:  ["bj_products","bj_ventes","bj_caisse_jour","bj_reservations","bj_annul_lignes","bj_attente","bj_depots_vente","bj_depots_banque","bj_solde_depot_reporte","bj_mouvements_defectueux","bj_ouvertures","bj_registre_personnel"],
 };
 
 // ════════════════════════════════════════════════════════════════
@@ -616,6 +616,7 @@ let STATE = {
   sauvegardeEmail:ls("bj_sauvegarde_email",""),
   caisseJour:  ls("bj_caisse_jour", []),
   depotsBanque: ls("bj_depots_banque", []),
+  soldeDepotReporte: ls("bj_solde_depot_reporte", 0),
   mouvementsDefectueux: ls("bj_mouvements_defectueux", []),
   registrePersonnel: ls("bj_registre_personnel", []),
   lienAvisGoogle: ls("bj_lien_avis_google", ""),
@@ -717,6 +718,7 @@ function setState(patch) {
   if(patch.annulLignes !== undefined) lsSet("bj_annul_lignes", STATE.annulLignes);
   if(patch.caisseJour    !== undefined) lsSet("bj_caisse_jour",   STATE.caisseJour);
   if(patch.depotsBanque  !== undefined) lsSet("bj_depots_banque", STATE.depotsBanque);
+  if(patch.soldeDepotReporte !== undefined) lsSet("bj_solde_depot_reporte", STATE.soldeDepotReporte);
   if(patch.mouvementsDefectueux !== undefined) lsSet("bj_mouvements_defectueux", STATE.mouvementsDefectueux);
   if(patch.registrePersonnel !== undefined) lsSet("bj_registre_personnel", STATE.registrePersonnel);
   if(patch.lienAvisGoogle !== undefined) lsSet("bj_lien_avis_google", STATE.lienAvisGoogle);
@@ -1772,7 +1774,7 @@ window.exporterDonnees = () => {
 
 window.pousserToutVersCloud = async () => {
   if(!_fbDb) { alert("⚠️ Firebase n'est pas connecté sur cet appareil."); return; }
-  const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisse_jour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux","bj_ouvertures","bj_ejs_service","bj_ejs_template","bj_ejs_key","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
+  const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisse_jour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_solde_depot_reporte","bj_mouvements_defectueux","bj_ouvertures","bj_ejs_service","bj_ejs_template","bj_ejs_key","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
   let compte = 0, erreurs = 0;
   for(const k of cles) {
     try {
@@ -1809,7 +1811,7 @@ window.restaurerDepuisCloud = async () => {
   if(!confirm("🔄 Ça va remplacer TOUTES les données actuellement affichées sur cet appareil par celles sauvegardées dans le cloud.\n\nContinuer ?")) return;
   try {
     const data = await firestorePullAll();
-    const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisse_jour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_mouvements_defectueux","bj_ouvertures","bj_ejs_service","bj_ejs_template","bj_ejs_key","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
+    const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisse_jour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_solde_depot_reporte","bj_mouvements_defectueux","bj_ouvertures","bj_ejs_service","bj_ejs_template","bj_ejs_key","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
     let compte = 0;
     cles.forEach(k => { if(data[k]!==undefined) { localStorage.setItem(k, JSON.stringify(data[k])); compte++; } });
     alert("✅ "+compte+" éléments restaurés depuis le cloud !\n\nL'application va se recharger.");
@@ -1904,6 +1906,7 @@ window.importerDonnees = (input) => {
       if(data.reservations) {STATE.reservations=data.reservations;lsSet("bj_reservations",data.reservations);}
       if(data.depotsVente) {STATE.depotsVente=data.depotsVente;lsSet("bj_depots_vente",data.depotsVente);}
       if(data.depotsBanque) {STATE.depotsBanque=data.depotsBanque;lsSet("bj_depots_banque",data.depotsBanque);}
+      if(data.soldeDepotReporte!==undefined) {STATE.soldeDepotReporte=data.soldeDepotReporte;lsSet("bj_solde_depot_reporte",data.soldeDepotReporte);}
       if(data.mouvementsDefectueux) {STATE.mouvementsDefectueux=data.mouvementsDefectueux;lsSet("bj_mouvements_defectueux",data.mouvementsDefectueux);}
       if(data.registrePersonnel) {STATE.registrePersonnel=data.registrePersonnel;lsSet("bj_registre_personnel",data.registrePersonnel);}
       if(data.ouvertures) {STATE.ouvertures=data.ouvertures;lsSet("bj_ouvertures",data.ouvertures);}
@@ -10142,17 +10145,25 @@ function renderDepotBanque() {
   // Retrouve, pour un jour donné, le dépôt dans lequel il a déjà été inclus (s'il y en a un)
   const depotDeJour = (dateStr) => (STATE.depotsBanque||[]).find(d => (d.jours||[]).some(j=>j.date===dateStr));
 
-  const totalSelection = jours.reduce((s,z) => {
+  const totalJoursCoches = jours.reduce((s,z) => {
     if(depotDeJour(z.date)) return s; // déjà déposé, ne compte pas dans une nouvelle sélection
     return STATE.depotSelection[z.date] ? s+z.aDeposer : s;
   }, 0);
+  const reporte = STATE.soldeDepotReporte||0;
+  const totalSuggere = totalJoursCoches + reporte;
+  if(STATE.depotMontantSaisi===undefined || STATE.depotMontantSaisi===null) STATE.depotMontantSaisi = totalSuggere>0?totalSuggere.toFixed(2):"";
+  const montantSaisi = parseFloat(STATE.depotMontantSaisi)||0;
+  const ecartDepot = totalSuggere - montantSaisi; // positif = tu gardes des pièces pour plus tard, négatif = tu rattrapes un report précédent
 
   const historique = [...(STATE.depotsBanque||[])].sort((a,b) => (b.creeLe||"").localeCompare(a.creeLe||""));
 
   return `
   <div style="max-width:560px;margin:0 auto;">
     <div style="font-weight:600;font-size:15px;margin-bottom:6px;">🏦 Bordereau de dépôt en banque</div>
-    <div style="font-size:12px;color:#888;margin-bottom:14px;">Cochez les journées dont les espèces sont dans le dépôt à faire, indiquez la date du dépôt, puis imprimez le bordereau.</div>
+    <div style="font-size:12px;color:#888;margin-bottom:14px;">Cochez les journées dont les espèces sont dans le dépôt à faire, ajustez le montant si tu gardes des pièces de côté, puis imprimez le bordereau.</div>
+
+    ${reporte>0.001?`<div style="background:#fff3e8;border:1px solid #f0dcb0;border-radius:9px;padding:9px 12px;margin-bottom:12px;font-size:12px;color:#854f0b;">🪙 Report du dépôt précédent (pièces gardées) : <strong>${eur(reporte)}</strong> — déjà inclus dans le montant suggéré ci-dessous.</div>`:""}
+    ${reporte<-0.001?`<div style="background:#eef4fd;border:1px solid #b3d0f0;border-radius:9px;padding:9px 12px;margin-bottom:12px;font-size:12px;color:#185fa5;">ℹ️ Tu avais déposé ${eur(-reporte)} de plus que prévu la dernière fois — c'est déjà déduit du montant suggéré ci-dessous.</div>`:""}
 
     <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:6px 14px;margin-bottom:14px;">
       ${jours.length===0?`<div style="padding:14px 0;color:#aaa;font-size:13px;text-align:center;">Aucune clôture avec des espèces à déposer.</div>`:
@@ -10173,18 +10184,28 @@ function renderDepotBanque() {
     </div>
 
     <div style="background:#fbeaf0;border-radius:10px;padding:14px;margin-bottom:14px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
-        <span style="font-weight:500;font-size:13px;color:#993556;">Total sélectionné</span>
-        <span style="font-weight:700;font-size:17px;color:#993556;">${eur(totalSelection)}</span>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <span style="font-size:12px;color:#993556;">Journées cochées</span>
+        <span style="font-size:13px;color:#993556;">${eur(totalJoursCoches)}</span>
       </div>
+      ${reporte!==0?`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+        <span style="font-size:12px;color:#993556;">${reporte>0?"+ Report précédent":"− Rattrapage report"}</span>
+        <span style="font-size:13px;color:#993556;">${eur(reporte)}</span>
+      </div>`:""}
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-top:6px;border-top:0.5px solid #f0c4d4;">
+        <span style="font-weight:500;font-size:13px;color:#993556;">Montant réellement déposé (billets, pas de pièces)</span>
+      </div>
+      <input type="number" step="0.01" value="${STATE.depotMontantSaisi}" oninput="STATE.depotMontantSaisi=this.value;render()"
+        style="width:100%;box-sizing:border-box;font-size:20px;font-weight:700;color:#993556;text-align:center;padding:10px;border:1px solid #e8b8c8;border-radius:8px;margin-bottom:8px;"/>
+      ${Math.abs(ecartDepot)>0.001?`<div style="font-size:11px;text-align:center;color:${ecartDepot>0?"#e07c00":"#185fa5"};margin-bottom:10px;">${ecartDepot>0?"🪙 "+eur(ecartDepot)+" de pièces gardées, reportées à la prochaine fois":"Tu déposes "+eur(-ecartDepot)+" de plus que le suggéré (rattrapage)"}</div>`:""}
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
         <label style="font-size:12px;color:#555;">Date du dépôt</label>
         <input type="date" value="${STATE.depotDateEffective}" onchange="STATE.depotDateEffective=this.value" style="border:1px solid #ddd;border-radius:7px;padding:6px 8px;font-size:13px;"/>
       </div>
     </div>
 
-    <button onclick="imprimerBordereauDepot()" ${totalSelection<=0?"disabled":""} class="btn-primary" style="width:100%;opacity:${totalSelection<=0?0.5:1};">
-      🖨️ Imprimer le bordereau (${eur(totalSelection)})
+    <button onclick="imprimerBordereauDepot()" ${(totalJoursCoches<=0&&montantSaisi<=0)?"disabled":""} class="btn-primary" style="width:100%;opacity:${(totalJoursCoches<=0&&montantSaisi<=0)?0.5:1};">
+      🖨️ Imprimer le bordereau (${eur(montantSaisi)})
     </button>
 
     ${historique.length>0?`
@@ -10194,7 +10215,7 @@ function renderDepotBanque() {
         <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:0.5px solid #f0ebee;">
           <div>
             <div style="font-size:13px;font-weight:500;">Déposé le ${new Date(d.dateDepot).toLocaleDateString("fr-FR")}</div>
-            <div style="font-size:11px;color:#888;">${(d.jours||[]).length} journée${(d.jours||[]).length>1?"s":""} — ${(d.jours||[]).map(j=>new Date(j.date).toLocaleDateString("fr-FR",{day:"numeric",month:"numeric"})).join(", ")}</div>
+            <div style="font-size:11px;color:#888;">${(d.jours||[]).length} journée${(d.jours||[]).length>1?"s":""} — ${(d.jours||[]).map(j=>new Date(j.date).toLocaleDateString("fr-FR",{day:"numeric",month:"numeric"})).join(", ")}${d.ecartReporte?` · ${d.ecartReporte>0?"🪙 report +":"rattrapage "}${eur(Math.abs(d.ecartReporte))}`:""}</div>
           </div>
           <div style="display:flex;align-items:center;gap:10px;">
             <span style="font-weight:600;color:#3b6d11;">${eur(d.total)}</span>
@@ -10210,6 +10231,7 @@ function renderDepotBanque() {
 window.toggleDepotJour = (dateStr) => {
   STATE.depotSelection = STATE.depotSelection||{};
   STATE.depotSelection[dateStr] = !STATE.depotSelection[dateStr];
+  STATE.depotMontantSaisi = null; // recalculer la suggestion avec la nouvelle sélection
   render();
 };
 
@@ -10220,10 +10242,17 @@ window.imprimerBordereauDepot = () => {
     .sort((a,b) => a.date.localeCompare(b.date))
     .map(z => ({date:z.date, montant:z.aDeposer}));
 
-  if(jours.length===0) { alert("Sélectionnez au moins une journée avant d'imprimer le bordereau."); return; }
+  const totalJours = jours.reduce((s,j)=>s+j.montant,0);
+  const ancienReporte = STATE.soldeDepotReporte||0;
+  const montantSaisi = parseFloat(STATE.depotMontantSaisi)||0;
 
-  const total = jours.reduce((s,j)=>s+j.montant,0);
+  if(jours.length===0 && montantSaisi<=0) { alert("Sélectionnez au moins une journée, ou saisissez un montant, avant d'imprimer le bordereau."); return; }
+  if(montantSaisi<=0) { alert("Le montant réellement déposé doit être supérieur à 0."); return; }
+
   const dateDepot = STATE.depotDateEffective || dateLocaleStr();
+  // Ce qui reste à reporter pour la prochaine fois (positif = pièces gardées, négatif = rattrapage effectué)
+  const nouveauReporte = (totalJours+ancienReporte) - montantSaisi;
+  const ecartReporte = nouveauReporte - 0; // valeur du report généré/résorbé par CE dépôt
 
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Bordereau de dépôt</title>
   <style>
@@ -10245,7 +10274,9 @@ window.imprimerBordereauDepot = () => {
   <table>
     <tr><th>☑</th><th>Journée</th><th class="right">Montant</th></tr>
     ${jours.map(j=>`<tr><td>☑</td><td>${new Date(j.date).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</td><td class="right">${eur(j.montant)}</td></tr>`).join("")}
-    <tr class="total"><td></td><td>TOTAL DÉPOSÉ</td><td class="right">${eur(total)}</td></tr>
+    ${ancienReporte!==0?`<tr><td></td><td>${ancienReporte>0?"Report du dépôt précédent (pièces gardées)":"Rattrapage report précédent"}</td><td class="right">${eur(ancienReporte)}</td></tr>`:""}
+    ${nouveauReporte!==0?`<tr><td></td><td>${nouveauReporte>0?"🪙 Pièces gardées, reportées au prochain dépôt":"Rattrapage à faire au prochain dépôt"}</td><td class="right">${eur(-nouveauReporte)}</td></tr>`:""}
+    <tr class="total"><td></td><td>TOTAL DÉPOSÉ (billets)</td><td class="right">${eur(montantSaisi)}</td></tr>
   </table>
   <div class="signature">
     <div>Signature</div>
@@ -10257,15 +10288,20 @@ window.imprimerBordereauDepot = () => {
   const w = window.open("","_blank","width=750,height=900");
   if(w) { w.document.write(html); w.document.close(); }
 
-  STATE.depotsBanque = [...(STATE.depotsBanque||[]), {id:uid("DEP"), dateDepot, jours, total, creeLe:new Date().toISOString()}];
+  STATE.depotsBanque = [...(STATE.depotsBanque||[]), {id:uid("DEP"), dateDepot, jours, total:montantSaisi, totalJours, ancienReporte, nouveauReporte, ecartReporte:nouveauReporte, creeLe:new Date().toISOString()}];
+  STATE.soldeDepotReporte = nouveauReporte;
   STATE.depotSelection = {};
-  setState({depotsBanque:STATE.depotsBanque});
+  STATE.depotMontantSaisi = null;
+  setState({depotsBanque:STATE.depotsBanque, soldeDepotReporte:STATE.soldeDepotReporte});
 };
 
 window.supprimerDepotBanque = (depotId) => {
-  if(!confirm("Supprimer ce dépôt ? Les journées concernées redeviendront disponibles pour un futur dépôt.")) return;
+  if(!confirm("Supprimer ce dépôt ? Les journées concernées redeviendront disponibles pour un futur dépôt, et le report associé sera annulé.")) return;
+  const d = (STATE.depotsBanque||[]).find(x=>x.id===depotId);
   STATE.depotsBanque = (STATE.depotsBanque||[]).filter(d=>d.id!==depotId);
-  setState({depotsBanque:STATE.depotsBanque});
+  // Annuler l'effet de ce dépôt sur le report : revenir au report d'avant ce dépôt précis
+  if(d && d.ancienReporte!==undefined) STATE.soldeDepotReporte = d.ancienReporte;
+  setState({depotsBanque:STATE.depotsBanque, soldeDepotReporte:STATE.soldeDepotReporte});
 };
 
 window.ajouterFacture = () => {
