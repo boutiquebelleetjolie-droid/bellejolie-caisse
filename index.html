@@ -10219,6 +10219,7 @@ function renderDepotBanque() {
           </div>
           <div style="display:flex;align-items:center;gap:10px;">
             <span style="font-weight:600;color:#3b6d11;">${eur(d.total)}</span>
+            <button onclick="reimprimerDepot('${d.id}')" title="Réimprimer ce bordereau" style="background:none;border:none;color:#185fa5;cursor:pointer;font-size:14px;">🖨️</button>
             <button onclick="supprimerDepotBanque('${d.id}')" title="Supprimer ce dépôt (les journées redeviennent disponibles)" style="background:none;border:none;color:#a32d2d;cursor:pointer;font-size:14px;">🗑️</button>
           </div>
         </div>
@@ -10235,25 +10236,9 @@ window.toggleDepotJour = (dateStr) => {
   render();
 };
 
-window.imprimerBordereauDepot = () => {
-  const depotDeJour = (dateStr) => (STATE.depotsBanque||[]).find(d => (d.jours||[]).some(j=>j.date===dateStr));
-  const jours = [...(STATE.caisseJour||[])]
-    .filter(z => (z.aDeposer||0) > 0.001 && !depotDeJour(z.date) && STATE.depotSelection?.[z.date])
-    .sort((a,b) => a.date.localeCompare(b.date))
-    .map(z => ({date:z.date, montant:z.aDeposer}));
-
-  const totalJours = jours.reduce((s,j)=>s+j.montant,0);
-  const ancienReporte = STATE.soldeDepotReporte||0;
-  const montantSaisi = parseFloat(STATE.depotMontantSaisi)||0;
-
-  if(jours.length===0 && montantSaisi<=0) { alert("Sélectionnez au moins une journée, ou saisissez un montant, avant d'imprimer le bordereau."); return; }
-  if(montantSaisi<=0) { alert("Le montant réellement déposé doit être supérieur à 0."); return; }
-
-  const dateDepot = STATE.depotDateEffective || dateLocaleStr();
-  // Ce qui reste à reporter pour la prochaine fois (positif = pièces gardées, négatif = rattrapage effectué)
-  const nouveauReporte = (totalJours+ancienReporte) - montantSaisi;
-  const ecartReporte = nouveauReporte - 0; // valeur du report généré/résorbé par CE dépôt
-
+// Génère et ouvre le HTML imprimable d'un bordereau, à partir des mêmes données
+// qu'il soit fraîchement créé ou réimprimé depuis l'historique.
+function genererEtOuvrirBordereau(dateDepot, jours, montantDepose, ancienReporte, nouveauReporte) {
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Bordereau de dépôt</title>
   <style>
     body{font-family:Arial,sans-serif;padding:30px;max-width:600px;margin:0 auto;color:#111;}
@@ -10276,7 +10261,7 @@ window.imprimerBordereauDepot = () => {
     ${jours.map(j=>`<tr><td>☑</td><td>${new Date(j.date).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</td><td class="right">${eur(j.montant)}</td></tr>`).join("")}
     ${ancienReporte!==0?`<tr><td></td><td>${ancienReporte>0?"Report du dépôt précédent (pièces gardées)":"Rattrapage report précédent"}</td><td class="right">${eur(ancienReporte)}</td></tr>`:""}
     ${nouveauReporte!==0?`<tr><td></td><td>${nouveauReporte>0?"🪙 Pièces gardées, reportées au prochain dépôt":"Rattrapage à faire au prochain dépôt"}</td><td class="right">${eur(-nouveauReporte)}</td></tr>`:""}
-    <tr class="total"><td></td><td>TOTAL DÉPOSÉ (billets)</td><td class="right">${eur(montantSaisi)}</td></tr>
+    <tr class="total"><td></td><td>TOTAL DÉPOSÉ (billets)</td><td class="right">${eur(montantDepose)}</td></tr>
   </table>
   <div class="signature">
     <div>Signature</div>
@@ -10287,12 +10272,40 @@ window.imprimerBordereauDepot = () => {
 
   const w = window.open("","_blank","width=750,height=900");
   if(w) { w.document.write(html); w.document.close(); }
+}
+
+window.imprimerBordereauDepot = () => {
+  const depotDeJour = (dateStr) => (STATE.depotsBanque||[]).find(d => (d.jours||[]).some(j=>j.date===dateStr));
+  const jours = [...(STATE.caisseJour||[])]
+    .filter(z => (z.aDeposer||0) > 0.001 && !depotDeJour(z.date) && STATE.depotSelection?.[z.date])
+    .sort((a,b) => a.date.localeCompare(b.date))
+    .map(z => ({date:z.date, montant:z.aDeposer}));
+
+  const totalJours = jours.reduce((s,j)=>s+j.montant,0);
+  const ancienReporte = STATE.soldeDepotReporte||0;
+  const montantSaisi = parseFloat(STATE.depotMontantSaisi)||0;
+
+  if(jours.length===0 && montantSaisi<=0) { alert("Sélectionnez au moins une journée, ou saisissez un montant, avant d'imprimer le bordereau."); return; }
+  if(montantSaisi<=0) { alert("Le montant réellement déposé doit être supérieur à 0."); return; }
+
+  const dateDepot = STATE.depotDateEffective || dateLocaleStr();
+  // Ce qui reste à reporter pour la prochaine fois (positif = pièces gardées, négatif = rattrapage effectué)
+  const nouveauReporte = (totalJours+ancienReporte) - montantSaisi;
+
+  genererEtOuvrirBordereau(dateDepot, jours, montantSaisi, ancienReporte, nouveauReporte);
 
   STATE.depotsBanque = [...(STATE.depotsBanque||[]), {id:uid("DEP"), dateDepot, jours, total:montantSaisi, totalJours, ancienReporte, nouveauReporte, ecartReporte:nouveauReporte, creeLe:new Date().toISOString()}];
   STATE.soldeDepotReporte = nouveauReporte;
   STATE.depotSelection = {};
   STATE.depotMontantSaisi = null;
   setState({depotsBanque:STATE.depotsBanque, soldeDepotReporte:STATE.soldeDepotReporte});
+};
+
+// Réimprimer un bordereau déjà créé, depuis l'historique
+window.reimprimerDepot = (depotId) => {
+  const d = (STATE.depotsBanque||[]).find(x=>x.id===depotId);
+  if(!d) return;
+  genererEtOuvrirBordereau(d.dateDepot, d.jours||[], d.total, d.ancienReporte||0, d.nouveauReporte||0);
 };
 
 window.supprimerDepotBanque = (depotId) => {
