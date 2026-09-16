@@ -225,6 +225,15 @@ const DB = {
 function ls(key, def)    { return DB.get(key, def); }
 function lsSet(key, val) { DB.set(key, val); }
 
+// Restaurations de scroll/curseur en attente (rAF + setTimeout) — annulées à chaque nouveau
+// rendu pour qu'une restauration en retard d'un rendu précédent n'écrase pas la position
+// actuelle du curseur en cas de frappe rapide (ex: saisie manuelle d'une référence).
+let _pendingRestoreTimers = [];
+function annulerRestaurationsEnAttente() {
+  _pendingRestoreTimers.forEach(t => t.raf ? cancelAnimationFrame(t.id) : clearTimeout(t.id));
+  _pendingRestoreTimers = [];
+}
+
 // ════════════════════════════════════════════════════════════════
 // VERROUILLAGE AUTOMATIQUE — 5 min d'inactivité
 // ════════════════════════════════════════════════════════════════
@@ -234,7 +243,9 @@ let _timerVerrouillage = null;
 function resetTimerVerrouillage() {
   if(!STATE.vendeur) return; // pas connecté → rien à faire
   clearTimeout(_timerVerrouillage);
+  if(STATE.panier && STATE.panier.length > 0) return; // encaissement en cours : ne jamais verrouiller
   _timerVerrouillage = setTimeout(() => {
+    if(STATE.panier && STATE.panier.length > 0) { resetTimerVerrouillage(); return; } // re-vérifier au cas où
     logout(); // retour direct à l'écran de choix des profils après inactivité
   }, INACTIVITE_MS);
 }
@@ -742,6 +753,10 @@ function render() {
     return;
   }
 
+  // Annuler toute restauration de curseur/scroll encore en attente d'un rendu précédent,
+  // pour éviter qu'elle n'écrase la position actuelle en cas de frappe rapide.
+  annulerRestaurationsEnAttente();
+
   // Sauvegarder focus + position curseur + position scroll
   const active = document.activeElement;
   let focusInfo = null;
@@ -781,9 +796,9 @@ function render() {
     }
   };
   restoreScroll();
-  requestAnimationFrame(restoreScroll);
-  setTimeout(restoreScroll, 50);
-  setTimeout(restoreScroll, 150);
+  _pendingRestoreTimers.push({raf:true, id: requestAnimationFrame(restoreScroll)});
+  _pendingRestoreTimers.push({raf:false, id: setTimeout(restoreScroll, 50)});
+  _pendingRestoreTimers.push({raf:false, id: setTimeout(restoreScroll, 150)});
 
   // Restaurer le focus
   if(focusInfo && focusInfo.selector) {
