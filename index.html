@@ -877,6 +877,67 @@ window.lockPinKey = (k) => {
   render();
 };
 
+function webAuthnSupporte() {
+  return !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create);
+}
+
+window.activerEmpreinteDigitale = async () => {
+  if(!webAuthnSupporte()) { alert("⚠️ Cet appareil ou ce navigateur ne supporte pas la connexion biométrique."); return; }
+  try {
+    const challenge = new Uint8Array(32); crypto.getRandomValues(challenge);
+    const userId = new Uint8Array(16); crypto.getRandomValues(userId);
+    const credential = await navigator.credentials.create({
+      publicKey: {
+        challenge,
+        rp: { name: "Belle&Jolie Caisse" },
+        user: { id: userId, name: STATE.vendeur.nom, displayName: STATE.vendeur.nom },
+        pubKeyCredParams: [{alg:-7, type:"public-key"}, {alg:-257, type:"public-key"}],
+        authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+        timeout: 60000,
+      }
+    });
+    if(credential) {
+      const credId = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)));
+      localStorage.setItem("bj_webauthn_"+STATE.vendeur.id, credId);
+      alert("✅ Connexion biométrique activée pour "+STATE.vendeur.nom+" sur cet appareil !");
+      render();
+    }
+  } catch(err) {
+    console.error("Erreur activation WebAuthn:", err);
+    alert("❌ Échec de l'activation : "+(err.message||err));
+  }
+};
+
+window.desactiverEmpreinteDigitale = () => {
+  localStorage.removeItem("bj_webauthn_"+STATE.vendeur.id);
+  render();
+};
+
+window.connexionEmpreinteDigitale = async (vendeurId) => {
+  const credIdB64 = localStorage.getItem("bj_webauthn_"+vendeurId);
+  if(!credIdB64) return;
+  try {
+    const credId = Uint8Array.from(atob(credIdB64), c=>c.charCodeAt(0));
+    const challenge = new Uint8Array(32); crypto.getRandomValues(challenge);
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge,
+        allowCredentials: [{id: credId, type:"public-key"}],
+        userVerification: "required",
+        timeout: 60000,
+      }
+    });
+    if(assertion) {
+      const v = VENDEURS.find(x=>x.id===vendeurId);
+      if(v) { setState({ vendeur: v, loginPin:"", loginError:"", loginSelected:null, tab:"caisse" }); resetTimerVerrouillage(); }
+    }
+  } catch(err) {
+    console.error("Erreur connexion WebAuthn:", err);
+    STATE.loginError = "Échec de la reconnaissance biométrique — utilise ton code PIN.";
+    render();
+  }
+};
+
 function renderLogin() {
   return `
   <div style="min-height:100vh;background:linear-gradient(135deg,#fbeaf0,#f5e8ee);display:flex;align-items:center;justify-content:center;padding:20px;">
@@ -897,7 +958,7 @@ function renderLogin() {
               <div style="font-weight:500;font-size:14px;">${v.nom}</div>
               <div style="font-size:12px;color:#888;">${v.role==="admin"?"Administrateur":v.role==="apprenti"?"Mode test / Apprenti":"Vendeur"}</div>
             </div>
-            ${STATE.loginSelected===v.id?`<div style="margin-left:auto;color:${v.color};font-size:18px;">✓</div>`:""}
+            ${STATE.loginSelected===v.id?`<div style="margin-left:auto;color:${v.color};font-size:18px;">✓</div>`:localStorage.getItem("bj_webauthn_"+v.id)?`<button onclick="event.stopPropagation();connexionEmpreinteDigitale('${v.id}')" title="Connexion biométrique" style="margin-left:auto;background:#f5f0f2;border:none;border-radius:8px;width:36px;height:36px;font-size:16px;cursor:pointer;">👆</button>`:""}
           </div>
         `).join("")}
       </div>
@@ -1551,6 +1612,24 @@ function renderVendeurSettings() {
           </div>
         `).join("")}
         <button onclick="saveVendeurs()" class="btn-primary" style="margin-bottom:16px;">Enregistrer les modifications</button>
+
+        <!-- Connexion biométrique (empreinte digitale / Face ID) -->
+        <div style="border-top:0.5px solid #e8e0e4;padding-top:14px;margin-bottom:14px;">
+          <div style="font-weight:500;font-size:13px;margin-bottom:4px;">👆 Connexion biométrique sur cet appareil</div>
+          <div style="font-size:12px;color:#888;margin-bottom:10px;">
+            Utilise l'empreinte digitale, Face ID ou le code de verrouillage de <strong>cet appareil précis</strong> pour te connecter, à la place du code PIN. À activer séparément sur chaque appareil (PC, téléphone...).
+          </div>
+          ${!webAuthnSupporte()?`
+            <div style="font-size:12px;color:#a32d2d;background:#fcebeb;border-radius:8px;padding:10px;">⚠️ Cet appareil ou ce navigateur ne supporte pas la connexion biométrique.</div>
+          `:localStorage.getItem("bj_webauthn_"+STATE.vendeur.id)?`
+            <div style="display:flex;align-items:center;justify-content:space-between;background:#eaf3de;border-radius:8px;padding:10px 14px;">
+              <span style="font-size:13px;color:#3b6d11;">✅ Activée pour ${STATE.vendeur.nom} sur cet appareil</span>
+              <button onclick="desactiverEmpreinteDigitale()" style="background:none;border:1px solid #a32d2d;color:#a32d2d;border-radius:6px;padding:4px 10px;font-size:12px;cursor:pointer;">Désactiver</button>
+            </div>
+          `:`
+            <button onclick="activerEmpreinteDigitale()" style="width:100%;padding:10px;background:#eaf3de;color:#3b6d11;border:1px solid #aed882;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">👆 Activer pour ${STATE.vendeur.nom} sur cet appareil</button>
+          `}
+        </div>
 
         <!-- Espace de stockage -->
         <div style="border-top:0.5px solid #e8e0e4;padding-top:14px;margin-bottom:14px;">
