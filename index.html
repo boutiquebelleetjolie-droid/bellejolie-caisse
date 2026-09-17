@@ -258,7 +258,7 @@ function resetTimerVerrouillage() {
 const VENDEURS = [
   { id:"V1", nom:"Élodie",        prenom:"",     code:"1234", role:"admin",    color:"#993556" },
   { id:"V2", nom:"Noëllyne", prenom:"", code:"2222", role:"vendeur", color:"#5566aa" },
-  { id:"V3", nom:"Céline",       prenom:"",     code:"2222", role:"vendeur",  color:"#2a8a5a" },
+  { id:"V3", nom:"Sabrina",      prenom:"",     code:"2222", role:"vendeur",  color:"#2a8a5a" },
   { id:"V4", nom:"Mode Test",    prenom:"",     code:"0000", role:"apprenti", color:"#e07c00" },
 ];
 
@@ -6094,7 +6094,7 @@ window.openProdModal = id => {
   STATE.showProdModal=true; render();
 };
 window.openBCModal  = id => { STATE.showBCModal=STATE.products.find(p=>p.id===id); STATE.etiquetteTailleVal=''; STATE.etiquetteCouleurVal=''; render(); };
-window.openStkModal = id => { STATE.showStkModal=STATE.products.find(p=>p.id===id); STATE.mvtType=STATE.vendeur.id==="V1"?"entree":"sortie"; STATE.mvtQty="1"; STATE.mvtTaille=""; STATE.mvtCouleur=""; STATE.mvtDefectueux=STATE.vendeur.id!=="V1"; render(); };
+window.openStkModal = id => { STATE.showStkModal=STATE.products.find(p=>p.id===id); STATE.mvtType="entree"; STATE.mvtQty="1"; STATE.mvtTaille=""; STATE.mvtCouleur=""; STATE.mvtDefectueux=false; render(); };
 window.deleteProd   = id => { if(confirm("Supprimer cet article ?"))setState({products:STATE.products.filter(p=>p.id!==id)}); };
 
 function renderProdModal() {
@@ -6701,17 +6701,16 @@ function renderStkModal() {
       <div class="modal-header"><span style="font-weight:500;">Stock — ${p.name}</span><button onclick="setState({showStkModal:null})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button></div>
       <div class="modal-body">
         <div style="display:flex;justify-content:space-between;background:#f5f0f2;padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:13px;"><span style="color:#888;">Stock actuel</span><span style="font-weight:500;">${p.stock} unités</span></div>
-        ${STATE.vendeur.id==="V1"?`
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
           <div onclick="STATE.mvtType='entree';render()" style="padding:10px;border-radius:8px;cursor:pointer;text-align:center;border:${STATE.mvtType==="entree"?"2px solid #993556":"1px solid #ddd"};color:${STATE.mvtType==="entree"?"#993556":"#555"};font-weight:${STATE.mvtType==="entree"?500:400};">⬆ Entrée</div>
-          <div onclick="STATE.mvtType='sortie';render()" style="padding:10px;border-radius:8px;cursor:pointer;text-align:center;border:${STATE.mvtType==="sortie"?"2px solid #993556":"1px solid #ddd"};color:${STATE.mvtType==="sortie"?"#993556":"#555"};font-weight:${STATE.mvtType==="sortie"?500:400};">⬇ Sortie</div>
+          <div onclick="STATE.mvtType='sortie';if(STATE.vendeur.id!=='V1')STATE.mvtDefectueux=true;render()" style="padding:10px;border-radius:8px;cursor:pointer;text-align:center;border:${STATE.mvtType==="sortie"?"2px solid #993556":"1px solid #ddd"};color:${STATE.mvtType==="sortie"?"#993556":"#555"};font-weight:${STATE.mvtType==="sortie"?500:400};">⬇ Sortie</div>
         </div>
-        `:`
+        ${STATE.mvtType==="sortie"&&STATE.vendeur.id!=="V1"?`
         <div style="background:#fcebeb;border:1px solid #e8a5a5;border-radius:8px;padding:10px;margin-bottom:10px;text-align:center;">
-          <span style="font-size:13px;color:#a32d2d;font-weight:500;">🔧 Signaler un article défectueux</span>
-          <div style="font-size:11px;color:#a32d2d;margin-top:2px;">Retire l'article du stock — la gérante en est informée automatiquement.</div>
+          <span style="font-size:13px;color:#a32d2d;font-weight:500;">🔧 Signalé comme article défectueux</span>
+          <div style="font-size:11px;color:#a32d2d;margin-top:2px;">Une sortie ne peut se faire que pour un article défectueux — la gérante en est informée automatiquement.</div>
         </div>
-        `}
+        `:""}
         <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Quantité</label>
         <input type="number" min="1" value="${STATE.mvtQty}" oninput="STATE.mvtQty=this.value" style="width:100%;box-sizing:border-box;margin-bottom:10px;"/>
         ${STATE.mvtType==="sortie"&&STATE.vendeur.id==="V1"?`
@@ -6760,8 +6759,9 @@ function renderStkModal() {
 window.saveMvt = () => {
   const q=parseInt(STATE.mvtQty)||0, p=STATE.showStkModal;
   if(q<=0) { alert("⚠️ Indique une quantité (au moins 1) avant de valider."); return; }
-  // Sécurité : les vendeuses ne peuvent faire qu'un signalement défectueux, jamais une entrée/sortie libre
-  if(STATE.vendeur.id!=="V1") { STATE.mvtType="sortie"; STATE.mvtDefectueux=true; }
+  // Sécurité : les vendeuses peuvent librement faire une entrée, mais une sortie n'est possible
+  // que si elle est signalée comme article défectueux (jamais une sortie libre/non tracée).
+  if(STATE.vendeur.id!=="V1" && STATE.mvtType==="sortie") STATE.mvtDefectueux=true;
   const delta = STATE.mvtType==="entree"?q:-q;
   STATE.products = ajusterStock(STATE.products, p.id, delta, STATE.mvtTaille, STATE.mvtCouleur);
   let msgDefectueux = "";
