@@ -7691,23 +7691,15 @@ function renderPaceWidget(periode) {
 
 // Répartition horaire réelle du CA, calculée sur l'historique des ventes du même jour de semaine
 // (fallback sur tous les jours si pas assez de données). Retourne {heure: %} sur les heures d'ouverture.
+// Répartition horaire du CA : matin très calme, creux à l'heure du déjeuner (moins marqué qu'avant),
+// montée en puissance l'après-midi, pic en fin de journée (18h-19h un peu plus fort qu'avant).
+// Basée sur le ressenti réel de la boutique plutôt que sur l'historique encore trop court depuis
+// la réouverture — un même profil est utilisé pour tous les jours ouverts, seules les heures
+// d'ouverture réelles de chaque jour comptent ensuite (le calcul se renormalise automatiquement).
+const REPARTITION_HORAIRE_FIXE = {10:5, 11:8, 12:10, 13:8, 14:10, 15:12, 16:14, 17:16, 18:17};
+
 function calculerRepartitionHoraire(weekday) {
-  const parHeureJour = {}, parHeureTout = {};
-  let totalJour = 0, totalTout = 0;
-  STATE.ventes.forEach(v=>{
-    if(v.test||v.annulee) return;
-    const dv = new Date(v.date);
-    const h = dv.getHours();
-    parHeureTout[h] = (parHeureTout[h]||0) + v.total;
-    totalTout += v.total;
-    if(dv.getDay()===weekday) { parHeureJour[h] = (parHeureJour[h]||0) + v.total; totalJour += v.total; }
-  });
-  const source = totalJour >= 200 ? parHeureJour : parHeureTout; // assez de recul sur ce jour précis ?
-  const total = totalJour >= 200 ? totalJour : totalTout;
-  if(total<=0) return null;
-  const pct = {};
-  Object.keys(source).forEach(h=>{ pct[h] = source[h]/total*100; });
-  return pct;
+  return REPARTITION_HORAIRE_FIXE;
 }
 
 // Widget "combien faire heure par heure" pour la journée en cours
