@@ -6012,6 +6012,13 @@ window.saveProd = () => {
   const nouveauStock = hasVariantes ? svTotal : parseInt(f.stock);
   const stockAugmente = STATE.editProdId && nouveauStock > stockActuel;
 
+  // Sécurité : les vendeuses (pas la gérante) ne peuvent qu'augmenter le stock manuellement,
+  // jamais le diminuer — évite qu'un article "disparu" soit masqué en ajustant le stock à la baisse.
+  if(STATE.vendeur.id!=="V1" && existant && nouveauStock < stockActuel) {
+    alert("⚠️ Tu ne peux pas diminuer le stock manuellement (seulement l'augmenter). Pour un article défectueux, perdu ou abîmé, préviens la gérante.");
+    return;
+  }
+
   // Générer un code-barre unique par variante
   const existingBV = existant?.barcodeVariantes || {};
   const barcodeVariantes = {};
