@@ -5448,8 +5448,13 @@ function renderHistoriqueArticleModal() {
           const dateStr = new Date(e.date).toLocaleDateString("fr-FR",{weekday:"short",day:"2-digit",month:"short",year:"numeric"});
           const heureStr = new Date(e.date).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
           const variante = [e.taille,e.couleur].filter(Boolean).join(" / ");
+          const estGerante = STATE.vendeur.id==="V1";
           const badge = e.annulee
-            ? `<span style="background:#f5f0f2;color:#888;font-size:10px;padding:2px 7px;border-radius:6px;font-weight:600;">ANNULÉE</span>`
+            ? (!estGerante
+                ? `<span style="background:#f5f0f2;color:#888;font-size:10px;padding:2px 7px;border-radius:6px;font-weight:600;">VENTE</span>`
+                : e.typeAnnulation==="complete"
+                  ? `<span style="background:#f5f0f2;color:#888;font-size:10px;padding:2px 7px;border-radius:6px;font-weight:600;" title="Stock remis à ce moment-là">ANNULÉE (complète)</span>`
+                  : `<span style="background:#fcebeb;color:#a32d2d;font-size:10px;padding:2px 7px;border-radius:6px;font-weight:600;" title="Le stock n'a PAS été remis lors de cette annulation">ANNULÉE (comptable)</span>`)
             : e.avoirId
               ? `<span style="background:#eef4fd;color:#185fa5;font-size:10px;padding:2px 7px;border-radius:6px;font-weight:600;">💳 PAYÉ EN AVOIR</span>`
               : e.retour
