@@ -651,6 +651,7 @@ let STATE = {
   evenementsPerso: ls("bj_evenements", []),
   evtOverrides: ls("bj_evt_overrides", {}),
   remiseProgressive: ls("bj_remise_progressive", { active:false, dateDebut:"", dateFin:"", paliers:[{qty:2,pct:10},{qty:3,pct:15},{qty:4,pct:20}] }),
+  promoChaussures: ls("bj_promo_chaussures", { active:false, testMode:false, dateDebut:"", dateFin:"", remisePct:30 }),
   memos:    ls("bj_memos",    []),
   tab: "caisse",
   // Caisse
@@ -1842,6 +1843,7 @@ window.exporterDonnees = () => {
     caisseJour:STATE.caisseJour||[], annulLignes:STATE.annulLignes||[], panierVides:STATE.panierVides||[],
     evenementsPerso:STATE.evenementsPerso||[], evtOverrides:STATE.evtOverrides||{},
     remiseProgressive:STATE.remiseProgressive||{},
+    promoChaussures:STATE.promoChaussures||{},
     reservations:STATE.reservations||[], historiquePromo:STATE.historiquePromo||[],
     depotsVente:STATE.depotsVente||[],
     depotsBanque:STATE.depotsBanque||[],
@@ -1997,6 +1999,7 @@ window.importerDonnees = (input) => {
       if(data.evenementsPerso) {STATE.evenementsPerso=data.evenementsPerso;lsSet("bj_evenements",data.evenementsPerso);}
       if(data.evtOverrides) {STATE.evtOverrides=data.evtOverrides;lsSet("bj_evt_overrides",data.evtOverrides);}
       if(data.remiseProgressive) {STATE.remiseProgressive=data.remiseProgressive;lsSet("bj_remise_progressive",data.remiseProgressive);}
+      if(data.promoChaussures) {STATE.promoChaussures=data.promoChaussures;lsSet("bj_promo_chaussures",data.promoChaussures);}
       if(data.reservations) {STATE.reservations=data.reservations;lsSet("bj_reservations",data.reservations);}
       if(data.depotsVente) {STATE.depotsVente=data.depotsVente;lsSet("bj_depots_vente",data.depotsVente);}
       if(data.depotsBanque) {STATE.depotsBanque=data.depotsBanque;lsSet("bj_depots_banque",data.depotsBanque);}
@@ -2138,8 +2141,37 @@ function calcPanier() {
     }
   }
 
-  const total = stTotal - remGlobal - remiseFidMontant - remiseProgMontant;
-  return {stTotal, stTotalSansRemise, remGlobal, fidPct, fidPctFinal, remiseFidMontant, fid20Escalade, fid15Escalade, nbUtilisationsFid20, nbUtilisationsFid15, remiseProgPct, remiseProgMontant, remiseProgPalier, total};
+  // ── Promo "chaussures" : achat d'une paire de chaussures -> -X% sur l'article le plus
+  // cher du panier hors chaussures (plein tarif uniquement, hors retours/avoirs/sac). ──
+  let promoChaussuresInfo = null;
+  const pc = STATE.promoChaussures;
+  if(pc && pc.active) {
+    const now = new Date();
+    const debutOk = pc.testMode || !pc.dateDebut || now >= new Date(pc.dateDebut+"T00:00:00");
+    const finOk = pc.testMode || !pc.dateFin || now <= new Date(pc.dateFin+"T23:59:59");
+    if(debutOk && finOk) {
+      const prodMapPC = {}; STATE.products.forEach(pr=>prodMapPC[pr.id]=pr);
+      const achatsPC = panier.filter(x=>!x.retour && !x.avoirId && x.ref!=="SAC-CAISSE" && x.name!=="Sac");
+      const aChaussure = achatsPC.some(x => prodMapPC[x.prodIdOriginal||x.id]?.category==="Chaussures");
+      if(aChaussure) {
+        // Article le plus cher hors chaussures, pas déjà en promo/remise
+        const candidats = achatsPC.filter(x => {
+          const p = prodMapPC[x.prodIdOriginal||x.id];
+          const dejaRemise = parseFloat(x.remise||0)>0 || x._promoAuto;
+          return p?.category!=="Chaussures" && !dejaRemise;
+        });
+        if(candidats.length) {
+          const cible = candidats.reduce((a,b)=>b.price>a.price?b:a);
+          const remiseUnitaire = cible.price * (pc.remisePct||30)/100;
+          promoChaussuresInfo = {ligneId: cible.id, nom: cible.name, remiseUnitaire, remiseTotale: remiseUnitaire*(cible.qty||1), remisePct: pc.remisePct||30};
+        }
+      }
+    }
+  }
+  const remiseChaussuresMontant = promoChaussuresInfo ? promoChaussuresInfo.remiseTotale : 0;
+
+  const total = stTotal - remGlobal - remiseFidMontant - remiseProgMontant - remiseChaussuresMontant;
+  return {stTotal, stTotalSansRemise, remGlobal, fidPct, fidPctFinal, remiseFidMontant, fid20Escalade, fid15Escalade, nbUtilisationsFid20, nbUtilisationsFid15, remiseProgPct, remiseProgMontant, remiseProgPalier, promoChaussuresInfo, remiseChaussuresMontant, total};
 }
 
 function getCaisseTotal()    { return calcPanier().total; } // peut être négatif
@@ -2467,7 +2499,7 @@ function renderAjoutEvenementModal() {
 
 function renderCaisse() {
   const panier = STATE.panier;
-  const {stTotal, remGlobal, fidPct, fidPctFinal, remiseFidMontant, fid20Escalade, fid15Escalade, remiseProgMontant, remiseProgPct, remiseProgPalier, total} = calcPanier();
+  const {stTotal, remGlobal, fidPct, fidPctFinal, remiseFidMontant, fid20Escalade, fid15Escalade, remiseProgMontant, remiseProgPct, remiseProgPalier, promoChaussuresInfo, remiseChaussuresMontant, total} = calcPanier();
 
   // ── Alertes caisse ──────────────────────────────────────────────────
   const now      = new Date();
@@ -2978,6 +3010,7 @@ function renderCaisse() {
           ${remGlobal>0?`<div style="display:flex;justify-content:space-between;color:#3b6d11;"><span>Remise globale (${STATE.remType==="pct"?STATE.remVal+"%":"fixe"})</span><span>-${eur(remGlobal)}</span></div>`:""}
           ${fidPctFinal>0?`<div style="display:flex;justify-content:space-between;color:#3b6d11;"><span>Fidélité -${fidPctFinal}%${(fid20Escalade||fid15Escalade)?' ⭐':''}</span><span>-${eur(remiseFidMontant)}</span></div>`:""}
           ${remiseProgMontant>0?`<div style="display:flex;justify-content:space-between;color:#993556;"><span>🎉 Offre quantité (${remiseProgPalier?.qty}+ art. -${remiseProgPct}%)</span><span>-${eur(remiseProgMontant)}</span></div>`:""}
+          ${remiseChaussuresMontant>0?`<div style="display:flex;justify-content:space-between;color:#993556;"><span>🩰 Promo chaussures (-${promoChaussuresInfo.remisePct}% sur ${promoChaussuresInfo.nom.slice(0,18)})</span><span>-${eur(remiseChaussuresMontant)}</span></div>`:""}
           <div style="display:flex;justify-content:space-between;font-weight:500;font-size:20px;padding-top:8px;border-top:0.5px solid #e8e0e4;margin-top:4px;">
             <span>${total<0?"Avoir à rendre":"Total TTC"}</span>
             <span style="color:${total<0?"#e07c00":"#993556"};">${total<0?eur(-total):eur(total)}</span>
@@ -3079,7 +3112,7 @@ function calculerPrixPayeReel(venteOrigine, ligneOrigine) {
     const r = i.remiseType==="pct" ? i.price*(parseFloat(i.remise||0)/100) : i.remiseType==="eur" ? parseFloat(i.remise||0)/i.qty : 0;
     return s+Math.max(0,i.price-r)*i.qty;
   },0);
-  const totalRemiseGlobaleVente = (parseFloat(venteOrigine.remise)||0) + (parseFloat(venteOrigine.remiseFid)||0) + (parseFloat(venteOrigine.remiseProg)||0);
+  const totalRemiseGlobaleVente = (parseFloat(venteOrigine.remise)||0) + (parseFloat(venteOrigine.remiseFid)||0) + (parseFloat(venteOrigine.remiseProg)||0) + (parseFloat(venteOrigine.remiseChaussures)||0);
   const tauxGlobal = sousTotalVente>0 ? totalRemiseGlobaleVente/sousTotalVente : 0;
   return Math.max(0, +(puApresRemiseArticle*(1-tauxGlobal)).toFixed(2));
 }
@@ -3958,6 +3991,7 @@ function renderTicketModal() {
           <div style="border-top:1px dashed #ccc;margin:6px 0;"></div>
           ${v.remise>0?`<div style="display:flex;justify-content:space-between;color:#2a6e1a;font-size:11px;"><span>${labelRemiseGlobale(v)}</span><span>-${eur(v.remise)}</span></div>`:""}
           ${v.remiseFid>0?`<div style="display:flex;justify-content:space-between;color:#2a6e1a;font-size:11px;"><span>Fidélité -20%</span><span>-${eur(v.remiseFid)}</span></div>`:""}
+          ${v.remiseChaussures>0?`<div style="display:flex;justify-content:space-between;color:#993556;font-size:11px;"><span>🩰 Promo chaussures${v.remiseChaussuresArticle?" ("+v.remiseChaussuresArticle.slice(0,16)+")":""}</span><span>-${eur(v.remiseChaussures)}</span></div>`:""}
           ${(()=>{
             const grossAchats = v.panier.filter(x=>!x.retour).reduce((s,i)=>s+i.price*i.qty,0);
             const netAchats = v.panier.filter(x=>!x.retour).reduce((s,i)=>s+calculerPrixPayeReel(v,i)*i.qty,0);
@@ -4440,11 +4474,12 @@ function renderPayModal() {
             <span style="color:${total<0?"#e07c00":"#993556"};">${total<0?"🎟️ "+eur(-total):eur(total)}</span>
           </div>
           ${(()=>{
-            const {remGlobal, fidPctFinal, remiseFidMontant, remiseProgMontant, remiseProgPct, remiseProgPalier} = calcPanier();
+            const {remGlobal, fidPctFinal, remiseFidMontant, remiseProgMontant, remiseProgPct, remiseProgPalier, promoChaussuresInfo, remiseChaussuresMontant} = calcPanier();
             const lignes = [];
             if(remGlobal>0) lignes.push(`<div style="display:flex;justify-content:space-between;color:#3b6d11;"><span>Remise globale (${STATE.remType==="pct"?STATE.remVal+"%":"fixe"})</span><span>-${eur(remGlobal)}</span></div>`);
             if(fidPctFinal>0) lignes.push(`<div style="display:flex;justify-content:space-between;color:#3b6d11;"><span>Fidélité -${fidPctFinal}%</span><span>-${eur(remiseFidMontant)}</span></div>`);
             if(remiseProgMontant>0) lignes.push(`<div style="display:flex;justify-content:space-between;color:#993556;"><span>🎉 Offre quantité (${remiseProgPalier?.qty}+ art. -${remiseProgPct}%)</span><span>-${eur(remiseProgMontant)}</span></div>`);
+            if(remiseChaussuresMontant>0) lignes.push(`<div style="display:flex;justify-content:space-between;color:#993556;"><span>🩰 Promo chaussures (-${promoChaussuresInfo.remisePct}% sur ${promoChaussuresInfo.nom.slice(0,18)})</span><span>-${eur(remiseChaussuresMontant)}</span></div>`);
             return lignes.length ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #e8e0e4;font-size:12px;display:flex;flex-direction:column;gap:4px;">${lignes.join("")}</div>` : "";
           })()}
         </div>
@@ -4575,7 +4610,7 @@ window.validerPaiement = () => {
     render(); return;
   }
 
-  const {stTotal, remGlobal, fidPct, remiseFidMontant, remiseProgMontant, remiseProgPct, total} = calcPanier();
+  const {stTotal, remGlobal, fidPct, remiseFidMontant, remiseProgMontant, remiseProgPct, promoChaussuresInfo, remiseChaussuresMontant, total} = calcPanier();
 
   // ── Vérification paiement mixte : les deux montants doivent totaliser exactement le total ──
   // (les deux modes peuvent être identiques, ex: deux clientes qui paient chacune leur part en carte)
@@ -4709,6 +4744,7 @@ window.validerPaiement = () => {
     boutiqueId: BOUTIQUE_CONFIG.id,   // Identifiant boutique pour future synchro multi-boutiques
     panier:[...STATE.panier], client:STATE.client, clientId:STATE.client?.id||null, vendeur:STATE.vendeur,
     remise:remGlobal, remiseFid:remiseFidMontant||0, remiseProg:remiseProgMontant||0,
+    remiseChaussures:remiseChaussuresMontant||0, remiseChaussuresArticle:promoChaussuresInfo?promoChaussuresInfo.nom:"",
     remType:STATE.remType||"", remVal:STATE.remVal||"", remiseMotif:STATE.remGlobalMotif||"",
     total:Math.max(0,total), mixed:STATE.payMixed,
     pays:JSON.parse(JSON.stringify(STATE.pays)),
@@ -13172,6 +13208,61 @@ function renderFidelite() {
 }
 
 // ─── ENVOI PROMOS ─────────────────────────────────────────────────
+function renderPromoChaussures() {
+  const pc = STATE.promoChaussures;
+  const now = new Date();
+  const enCours = pc.active && (pc.testMode || ((!pc.dateDebut || now>=new Date(pc.dateDebut+"T00:00:00")) && (!pc.dateFin || now<=new Date(pc.dateFin+"T23:59:59"))));
+
+  return `<div>
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;">
+      <button onclick="STATE.promoTab='articles';render()" style="padding:8px 18px;border-radius:8px;border:none;background:#f5f0f2;color:#333;cursor:pointer;font-size:13px;">🏷️ Promos articles</button>
+      <button onclick="STATE.promoTab='email';render()" style="padding:8px 18px;border-radius:8px;border:none;background:#f5f0f2;color:#333;cursor:pointer;font-size:13px;">📣 Emails promo</button>
+      <button onclick="STATE.promoTab='quantite';render()" style="padding:8px 18px;border-radius:8px;border:none;background:#f5f0f2;color:#333;cursor:pointer;font-size:13px;">🎉 Remise quantité</button>
+      <button onclick="STATE.promoTab='chaussures';render()" style="padding:8px 18px;border-radius:8px;border:none;background:#993556;color:#fff;cursor:pointer;font-weight:600;font-size:13px;">🩰 Promo chaussures</button>
+    </div>
+
+    <div style="font-weight:600;font-size:15px;margin-bottom:6px;">🩰 Promo chaussures — 2e article</div>
+    <div style="font-size:13px;color:#888;margin-bottom:16px;">S'applique automatiquement en caisse dès qu'une paire de chaussures est dans le panier : remise sur l'article le plus cher du panier (hors chaussures, plein tarif, hors sac).</div>
+
+    ${enCours?`<div style="background:#eaf3de;border:1px solid #b5d89a;border-radius:10px;padding:12px;margin-bottom:16px;font-size:13px;color:#3b6d11;font-weight:600;">✅ Offre active en ce moment en caisse</div>`:""}
+
+    <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:16px;">
+      <label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;cursor:pointer;">
+        <input type="checkbox" ${pc.active?"checked":""} onchange="STATE.promoChaussures.active=this.checked;sauvegarderPromoChaussures()" style="width:18px;height:18px;accent-color:#993556;"/>
+        <span style="font-size:14px;font-weight:600;">Activer la promo chaussures</span>
+      </label>
+
+      <label style="display:flex;align-items:center;gap:8px;margin-bottom:16px;cursor:pointer;background:#fff8e1;border:1px solid #fac775;border-radius:8px;padding:10px;">
+        <input type="checkbox" ${pc.testMode?"checked":""} onchange="STATE.promoChaussures.testMode=this.checked;sauvegarderPromoChaussures()" style="width:16px;height:16px;accent-color:#e07c00;"/>
+        <span style="font-size:12px;">🧪 Mode test — force l'offre active tout de suite, même hors dates (pense à décocher après ton test !)</span>
+      </label>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+        <div>
+          <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Date de début (optionnel)</label>
+          <input type="date" value="${pc.dateDebut||''}" onchange="STATE.promoChaussures.dateDebut=this.value;sauvegarderPromoChaussures()" style="width:100%;box-sizing:border-box;"/>
+        </div>
+        <div>
+          <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Date de fin (optionnel)</label>
+          <input type="date" value="${pc.dateFin||''}" onchange="STATE.promoChaussures.dateFin=this.value;sauvegarderPromoChaussures()" style="width:100%;box-sizing:border-box;"/>
+        </div>
+      </div>
+      <div style="font-size:11px;color:#aaa;margin-bottom:16px;">Laisse les dates vides pour une offre permanente, ou renseigne-les pour une opération ponctuelle (ex: un week-end précis).</div>
+
+      <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Remise sur le 2e article (le plus cher, hors chaussures)</label>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <input type="number" min="1" max="90" value="${pc.remisePct||30}" onchange="STATE.promoChaussures.remisePct=parseInt(this.value)||30;sauvegarderPromoChaussures()" style="width:80px;text-align:center;font-weight:600;color:#993556;"/>
+        <span style="font-size:14px;color:#555;">%</span>
+      </div>
+    </div>
+  </div>`;
+}
+
+window.sauvegarderPromoChaussures = () => {
+  lsSet("bj_promo_chaussures", STATE.promoChaussures);
+  render();
+};
+
 function renderRemiseProgressive() {
   const rp = STATE.remiseProgressive;
   const paliers = rp.paliers||[];
@@ -13183,6 +13274,7 @@ function renderRemiseProgressive() {
       <button onclick="STATE.promoTab='articles';render()" style="padding:8px 18px;border-radius:8px;border:none;background:#f5f0f2;color:#333;cursor:pointer;font-size:13px;">🏷️ Promos articles</button>
       <button onclick="STATE.promoTab='email';render()" style="padding:8px 18px;border-radius:8px;border:none;background:#f5f0f2;color:#333;cursor:pointer;font-size:13px;">📣 Emails promo</button>
       <button onclick="STATE.promoTab='quantite';render()" style="padding:8px 18px;border-radius:8px;border:none;background:#993556;color:#fff;cursor:pointer;font-weight:600;font-size:13px;">🎉 Remise quantité</button>
+      <button onclick="STATE.promoTab='chaussures';render()" style="padding:8px 18px;border-radius:8px;border:none;background:#f5f0f2;color:#333;cursor:pointer;font-size:13px;">🩰 Promo chaussures</button>
     </div>
 
     <div style="font-weight:600;font-size:15px;margin-bottom:6px;">🎉 Remise progressive par quantité</div>
@@ -13277,6 +13369,7 @@ function renderPromoArticles() {
       <button onclick="STATE.promoTab='articles';render()" style="padding:8px 18px;border-radius:8px;border:none;background:#993556;color:#fff;cursor:pointer;font-weight:600;font-size:13px;">🏷️ Promos articles</button>
       <button onclick="STATE.promoTab='email';render()" style="padding:8px 18px;border-radius:8px;border:none;background:#f5f0f2;color:#333;cursor:pointer;font-size:13px;">📣 Emails promo</button>
       <button onclick="STATE.promoTab='quantite';render()" style="padding:8px 18px;border-radius:8px;border:none;background:#f5f0f2;color:#333;cursor:pointer;font-size:13px;">🎉 Remise quantité</button>
+      <button onclick="STATE.promoTab='chaussures';render()" style="padding:8px 18px;border-radius:8px;border:none;background:#f5f0f2;color:#333;cursor:pointer;font-size:13px;">🩰 Promo chaussures</button>
     </div>
 
     <!-- Raccourci : promo rapide sur les invendus / articles +2 mois -->
@@ -13601,6 +13694,9 @@ function renderPromo() {
   }
   if(STATE.promoTab==="quantite") {
     return renderRemiseProgressive();
+  }
+  if(STATE.promoTab==="chaussures") {
+    return renderPromoChaussures();
   }
 
   const ejsOk = !!(STATE.emailjsServiceId&&STATE.emailjsTemplateId&&STATE.emailjsPublicKey);
