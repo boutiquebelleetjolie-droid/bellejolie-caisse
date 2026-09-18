@@ -5592,6 +5592,33 @@ function renderHistoriqueArticleModal() {
   </div>`;
 }
 
+window.diagnostiquerStockAberrant = () => {
+  const prods = STATE.products||[];
+  const stocks = prods.map(p=>p.stock||0).sort((a,b)=>a-b);
+  const mediane = stocks[Math.floor(stocks.length/2)] || 0;
+  // Seuils larges pour repérer un article très anormal par rapport au reste du catalogue
+  const seuilStock = Math.max(200, mediane*20);
+  const seuilPrix = 500;
+
+  const suspects = prods.filter(p =>
+    (p.stock||0) > seuilStock ||
+    (p.price||0) > seuilPrix ||
+    (p.prixAchat||0) > seuilPrix ||
+    ((p.price||0)>0 && (p.prixAchat||0)>0 && (p.prixAchat/p.price) > 1.3) // coût supérieur au prix de vente = suspect
+  );
+
+  if(suspects.length===0) {
+    alert("✅ Aucune anomalie évidente détectée (stock ou prix très élevés) sur les "+prods.length+" références.\n\nSi le total te semble quand même faux, le souci vient peut-être de plusieurs petits écarts cumulés plutôt que d'un seul article — dis-le-moi.");
+    return;
+  }
+
+  const detail = suspects.slice(0,15).map(p =>
+    `• ${p.name} (réf. ${p.ref||'—'}) — Stock: ${p.stock||0} · PV: ${eur(p.price||0)} · PA: ${eur(p.prixAchat||0)}`
+  ).join("\n");
+
+  alert("⚠️ "+suspects.length+" article(s) suspect(s) trouvé(s) :\n\n"+detail+(suspects.length>15?"\n\n… et "+(suspects.length-15)+" de plus.":"")+"\n\nVérifie leur fiche dans Stock (stock ou prix probablement mal saisi).");
+};
+
 function renderStockTableau(prods, isV1) {
   const cols = ["","Photo","Réf.","Article","Catégorie"];
   if(isV1) cols.push("PV TTC","PV HT","PA HT","PA TTC","🔒 Coeff","🔒 Marge brute","🔒 Coeff final","🔒 Marge finale","Stock","Actions");
@@ -5965,6 +5992,7 @@ function renderStock() {
     html += '<div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px 18px;margin-top:14px;">';
     html += '<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;flex-wrap:wrap;">';
     html += '<div style="font-weight:600;font-size:13px;color:#555;">📦 Récapitulatif du stock</div>';
+    html += '<button onclick="diagnostiquerStockAberrant()" style="background:#fcebeb;color:#a32d2d;border:1px solid #f0a5a5;border-radius:7px;padding:4px 10px;font-size:11px;cursor:pointer;">🔍 Détecter une anomalie</button>';
     html += '<div style="display:flex;gap:4px;margin-left:auto;">';
     ['tout','vente','reserve'].forEach(v=>{
       const labels={'tout':'Tout','vente':'En vente','reserve':'Réserve'+(filteredReserve.length?' ('+filteredReserve.length+')':'')+(alertesReserve?' ⚠️':'')};
