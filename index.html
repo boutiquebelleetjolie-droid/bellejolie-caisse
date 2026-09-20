@@ -562,6 +562,13 @@ function normStr(s) {
 
 // Le sac à 0,20€ ne doit compter que dans le chiffre d'affaires (l'argent réellement encaissé),
 // jamais dans les statistiques articles : IDV, panier moyen, prix moyen/article, meilleures ventes.
+// Un article est "Octobre Rose" soit entièrement (true), soit seulement pour certaines couleurs (tableau)
+function estOctobreRose(p, couleur) {
+  if(!p) return false;
+  if(p.octobreRose===true) return true;
+  if(Array.isArray(p.octobreRose)) return p.octobreRose.includes(couleur);
+  return false;
+}
 function estArticleSac(i) {
   return !!i && normStr(i.name||"").includes("sac") && (parseFloat(i.price)||0) <= 0.5;
 }
@@ -6106,6 +6113,12 @@ window.removeCouleur = (c) => {
   });
 };
 
+window.toggleCouleurOctobreRose = (couleur, coche) => {
+  const actuel = Array.isArray(STATE.prodForm.octobreRose) ? STATE.prodForm.octobreRose : [];
+  STATE.prodForm.octobreRose = coche ? [...actuel, couleur] : actuel.filter(c=>c!==couleur);
+  render();
+};
+
 // Photo — compressée automatiquement avant stockage (évite de saturer le stockage du navigateur)
 window.chargerPhoto = (input) => {
   const file=input.files[0]; if(!file) return;
@@ -6192,6 +6205,7 @@ window.saveProd = () => {
     stockVariantes:  f.stockVariantes||{},
     barcodeVariantes: barcodeVariantes,
     grandeTaille:   f.grandeTaille||false,
+    octobreRose:    f.octobreRose||false,
     enReserve:      f.enReserve||false,
     dateReserve:    f.enReserve ? (existant?.dateReserve || new Date().toISOString()) : null,
     createdAt:      existant?.createdAt || new Date().toISOString(),
@@ -6232,8 +6246,8 @@ window.openProdModal = id => {
   }
   STATE.editProdId=id;
   STATE._newCouleur = "";
-  if(id){const p=STATE.products.find(x=>x.id===id);STATE.prodForm={name:p.name,marque:p.marque||"",category:p.category,price:p.price,prixAchat:p.prixAchat||"",_coeffSaisi:"",stock:p.stock,ref:p.ref,barcode:p.barcode,tailles:p.tailles||[],couleurs:p.couleurs||[],photo:p.photo||"",stockVariantes:{...(p.stockVariantes||{})},grandeTaille:p.grandeTaille||false,dateAjout:(p.dateAjout||new Date().toISOString()).slice(0,10)};}
-  else STATE.prodForm={name:"",marque:"",category:"",price:"",prixAchat:"",_coeffSaisi:"",stock:0,ref:uid("REF-"),barcode:genBC(),tailles:[],couleurs:[],photo:"",stockVariantes:{},grandeTaille:false,enReserve:false,dateAjout:dateLocaleStr()};
+  if(id){const p=STATE.products.find(x=>x.id===id);STATE.prodForm={name:p.name,marque:p.marque||"",category:p.category,price:p.price,prixAchat:p.prixAchat||"",_coeffSaisi:"",stock:p.stock,ref:p.ref,barcode:p.barcode,tailles:p.tailles||[],couleurs:p.couleurs||[],photo:p.photo||"",stockVariantes:{...(p.stockVariantes||{})},grandeTaille:p.grandeTaille||false,octobreRose:p.octobreRose||false,dateAjout:(p.dateAjout||new Date().toISOString()).slice(0,10)};}
+  else STATE.prodForm={name:"",marque:"",category:"",price:"",prixAchat:"",_coeffSaisi:"",stock:0,ref:uid("REF-"),barcode:genBC(),tailles:[],couleurs:[],photo:"",stockVariantes:{},grandeTaille:false,octobreRose:false,enReserve:false,dateAjout:dateLocaleStr()};
   STATE.showProdModal=true; render();
 };
 window.openBCModal  = id => { STATE.showBCModal=STATE.products.find(p=>p.id===id); STATE.etiquetteTailleVal=''; STATE.etiquetteCouleurVal=''; render(); };
@@ -6394,7 +6408,14 @@ function renderProdModal() {
     +'<div style="grid-column:1/-1;"><label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Marque</label><input list="liste-marques" value="'+(f.marque||'')+'" oninput="STATE.prodForm.marque=this.value" placeholder="Ex: Naf Naf, Zara..." style="width:100%;box-sizing:border-box;margin-bottom:10px;"/>'
     +'<datalist id="liste-marques">'+[...new Set(STATE.products.map(p=>p.marque).filter(Boolean))].sort().map(m=>'<option value="'+m+'"></option>').join("")+'</datalist></div>'
     +'<div style="grid-column:1/-1;"><label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Date d\'entrée en stock</label><input type="date" value="'+(f.dateAjout||'')+'" onchange="STATE.prodForm.dateAjout=this.value" style="width:100%;box-sizing:border-box;margin-bottom:10px;"/></div>'
-    +'<div><label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Catégorie</label><select onchange="STATE.prodForm.category=this.value;render()" style="width:100%;box-sizing:border-box;margin-bottom:6px;"><option></option>'+catHTML+'</select>'      +(['Robes','Hauts','Pantalons','Jupes','Shorts','Vestes','Manteaux','Pulls & Gilets','Ensembles','Combinaisons'].includes(f.category)?'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#555;cursor:pointer;margin-bottom:10px;"><input type="checkbox" '+(f.grandeTaille?'checked':'')+' onchange="STATE.prodForm.grandeTaille=this.checked" style="width:16px;height:16px;"/> Grande taille (à partir du 42/44)</label>':'<div style="margin-bottom:6px;"></div>')      +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#854f0b;cursor:pointer;margin-bottom:10px;background:#fff3e8;border-radius:7px;padding:6px 10px;"><input type="checkbox" '+(f.enReserve?'checked':'')+' onchange="STATE.prodForm.enReserve=this.checked" style="width:16px;height:16px;"/> 📦 En réserve (pas encore en vente)</label>'      +'</div>'
+    +'<div><label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Catégorie</label><select onchange="STATE.prodForm.category=this.value;render()" style="width:100%;box-sizing:border-box;margin-bottom:6px;"><option></option>'+catHTML+'</select>'      +(['Robes','Hauts','Pantalons','Jupes','Shorts','Vestes','Manteaux','Pulls & Gilets','Ensembles','Combinaisons'].includes(f.category)?'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#555;cursor:pointer;margin-bottom:10px;"><input type="checkbox" '+(f.grandeTaille?'checked':'')+' onchange="STATE.prodForm.grandeTaille=this.checked" style="width:16px;height:16px;"/> Grande taille (à partir du 42/44)</label>':'<div style="margin-bottom:6px;"></div>')      +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#854f0b;cursor:pointer;margin-bottom:10px;background:#fff3e8;border-radius:7px;padding:6px 10px;"><input type="checkbox" '+(f.enReserve?'checked':'')+' onchange="STATE.prodForm.enReserve=this.checked" style="width:16px;height:16px;"/> 📦 En réserve (pas encore en vente)</label>'
+      +((f.couleurs||[]).length>0
+        ? '<div style="margin-bottom:10px;background:#fce4ec;border-radius:7px;padding:8px 10px;"><div style="font-size:13px;color:#c2185b;font-weight:500;margin-bottom:6px;">🎀 Octobre Rose — quelle(s) couleur(s) ?</div>'
+          +'<div style="display:flex;flex-wrap:wrap;gap:6px;">'
+          +(f.couleurs||[]).map(c=>'<label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#c2185b;background:#fff;border-radius:6px;padding:4px 8px;cursor:pointer;"><input type="checkbox" data-couleur-or="'+c+'" '+((Array.isArray(f.octobreRose)&&f.octobreRose.includes(c))?'checked':'')+' onchange="toggleCouleurOctobreRose(this.dataset.couleurOr,this.checked)" style="width:14px;height:14px;"/>'+c+'</label>').join("")
+          +'</div><div style="font-size:10px;color:#c2185b;opacity:0.75;margin-top:4px;">10% du CA de la/les couleur(s) cochée(s) sera reversé à l\'association.</div></div>'
+        : '<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#c2185b;cursor:pointer;margin-bottom:10px;background:#fce4ec;border-radius:7px;padding:6px 10px;"><input type="checkbox" '+(f.octobreRose===true?'checked':'')+' onchange="STATE.prodForm.octobreRose=this.checked" style="width:16px;height:16px;"/> 🎀 Octobre Rose (10% reversés à l\'association)</label>')
+      +'</div>'
     +'<div></div>'
     +(isV1?blocPrix:"")
     +(isV1?"":"<div><label style='font-size:12px;color:#888;display:block;margin-bottom:3px;'>Prix de vente TTC (€) *</label><input type='number' step='0.01' value='"+(f.price||"")+"' oninput='STATE.prodForm.price=this.value' placeholder='0.00' style='width:100%;box-sizing:border-box;margin-bottom:10px;'/></div>")
@@ -7937,6 +7958,7 @@ function renderStats() {
   STATE.products.forEach(p=>{ prodMapAll[p.id]=p; });
   const catMap = {};
   let caGrandeTaille = 0;
+  let caOctobreRose = 0;
   vf.forEach(v=>v.panier.filter(x=>!x.retour).forEach(i=>{
     const pid = i.prodIdOriginal || i.id;
     const p = prodMapAll[pid];
@@ -7944,6 +7966,16 @@ function renderStats() {
     const montantLigne = calculerPrixPayeReel(v, i) * (i.qty||1);
     catMap[cat] = (catMap[cat]||0) + montantLigne;
     if(p?.grandeTaille) caGrandeTaille += montantLigne;
+    if(estOctobreRose(p, i.couleur)) caOctobreRose += montantLigne;
+  }));
+  // Déduire le CA des retours sur des articles Octobre Rose, pour reverser un montant juste
+  vf.forEach(v=>v.panier.filter(x=>x.retour&&!x.avoirId).forEach(i=>{
+    const pid = i.prodIdOriginal || i.id;
+    const p = prodMapAll[pid];
+    if(estOctobreRose(p, i.couleur)) {
+      const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
+      caOctobreRose -= Math.max(0,i.price-remArt) * (i.qty||1);
+    }
   }));
   const catTriees = Object.entries(catMap).sort((a,b)=>b[1]-a[1]);
 
@@ -8133,6 +8165,17 @@ function renderStats() {
           </div>
         `:""}
       </div>
+      ${caOctobreRose>0?`
+      <div style="background:#fce4ec;border:0.5px solid #f5c2d6;border-radius:12px;padding:14px;">
+        <div style="font-weight:500;font-size:13px;margin-bottom:4px;color:#c2185b;">🎀 Octobre Rose</div>
+        <div style="font-size:22px;font-weight:700;color:#c2185b;margin-bottom:2px;">${eur(caOctobreRose)}</div>
+        <div style="font-size:11px;color:#c2185b;opacity:0.8;margin-bottom:8px;">CA réalisé sur les articles marqués Octobre Rose (retours déjà déduits)</div>
+        <div style="background:#fff;border-radius:8px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;">
+          <span style="font-size:12px;color:#555;">💗 10% à reverser à l'association</span>
+          <span style="font-size:16px;font-weight:700;color:#c2185b;">${eur(caOctobreRose*0.10)}</span>
+        </div>
+      </div>
+      `:""}
       <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;">
         <div style="font-weight:500;font-size:13px;margin-bottom:4px;">🔄 Dépôt-vente</div>
         <div style="font-size:22px;font-weight:700;color:#185fa5;margin-bottom:2px;">${eur(caDepotVente)}</div>
