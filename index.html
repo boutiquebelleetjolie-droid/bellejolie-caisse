@@ -563,8 +563,14 @@ function normStr(s) {
 // Le sac à 0,20€ ne doit compter que dans le chiffre d'affaires (l'argent réellement encaissé),
 // jamais dans les statistiques articles : IDV, panier moyen, prix moyen/article, meilleures ventes.
 // Un article est "Octobre Rose" soit entièrement (true), soit seulement pour certaines couleurs (tableau)
-function estOctobreRose(p, couleur) {
+// Un article est "Octobre Rose" soit entièrement (true), soit seulement pour certaines couleurs (tableau).
+// dateVente optionnelle : la remise/le suivi ne compte que pour une vente réalisée en octobre.
+function estOctobreRose(p, couleur, dateVente) {
   if(!p) return false;
+  if(dateVente) {
+    const d = new Date(dateVente);
+    if(d.getMonth()!==9) return false; // 9 = octobre (0-indexé) — hors campagne au-delà du 31/10
+  }
   if(p.octobreRose===true) return true;
   if(Array.isArray(p.octobreRose)) return p.octobreRose.includes(couleur);
   return false;
@@ -6206,6 +6212,8 @@ window.saveProd = () => {
     barcodeVariantes: barcodeVariantes,
     grandeTaille:   f.grandeTaille||false,
     octobreRose:    f.octobreRose||false,
+    artisanat:      f.artisanat||false,
+    nomArtisan:     f.nomArtisan||"",
     enReserve:      f.enReserve||false,
     dateReserve:    f.enReserve ? (existant?.dateReserve || new Date().toISOString()) : null,
     createdAt:      existant?.createdAt || new Date().toISOString(),
@@ -6246,8 +6254,8 @@ window.openProdModal = id => {
   }
   STATE.editProdId=id;
   STATE._newCouleur = "";
-  if(id){const p=STATE.products.find(x=>x.id===id);STATE.prodForm={name:p.name,marque:p.marque||"",category:p.category,price:p.price,prixAchat:p.prixAchat||"",_coeffSaisi:"",stock:p.stock,ref:p.ref,barcode:p.barcode,tailles:p.tailles||[],couleurs:p.couleurs||[],photo:p.photo||"",stockVariantes:{...(p.stockVariantes||{})},grandeTaille:p.grandeTaille||false,octobreRose:p.octobreRose||false,dateAjout:(p.dateAjout||new Date().toISOString()).slice(0,10)};}
-  else STATE.prodForm={name:"",marque:"",category:"",price:"",prixAchat:"",_coeffSaisi:"",stock:0,ref:uid("REF-"),barcode:genBC(),tailles:[],couleurs:[],photo:"",stockVariantes:{},grandeTaille:false,octobreRose:false,enReserve:false,dateAjout:dateLocaleStr()};
+  if(id){const p=STATE.products.find(x=>x.id===id);STATE.prodForm={name:p.name,marque:p.marque||"",category:p.category,price:p.price,prixAchat:p.prixAchat||"",_coeffSaisi:"",stock:p.stock,ref:p.ref,barcode:p.barcode,tailles:p.tailles||[],couleurs:p.couleurs||[],photo:p.photo||"",stockVariantes:{...(p.stockVariantes||{})},grandeTaille:p.grandeTaille||false,octobreRose:p.octobreRose||false,artisanat:p.artisanat||false,nomArtisan:p.nomArtisan||"",dateAjout:(p.dateAjout||new Date().toISOString()).slice(0,10)};}
+  else STATE.prodForm={name:"",marque:"",category:"",price:"",prixAchat:"",_coeffSaisi:"",stock:0,ref:uid("REF-"),barcode:genBC(),tailles:[],couleurs:[],photo:"",stockVariantes:{},grandeTaille:false,octobreRose:false,artisanat:false,nomArtisan:"",enReserve:false,dateAjout:dateLocaleStr()};
   STATE.showProdModal=true; render();
 };
 window.openBCModal  = id => { STATE.showBCModal=STATE.products.find(p=>p.id===id); STATE.etiquetteTailleVal=''; STATE.etiquetteCouleurVal=''; render(); };
@@ -6415,6 +6423,8 @@ function renderProdModal() {
           +(f.couleurs||[]).map(c=>'<label style="display:flex;align-items:center;gap:5px;font-size:12px;color:#c2185b;background:#fff;border-radius:6px;padding:4px 8px;cursor:pointer;"><input type="checkbox" data-couleur-or="'+c+'" '+((Array.isArray(f.octobreRose)&&f.octobreRose.includes(c))?'checked':'')+' onchange="toggleCouleurOctobreRose(this.dataset.couleurOr,this.checked)" style="width:14px;height:14px;"/>'+c+'</label>').join("")
           +'</div><div style="font-size:10px;color:#c2185b;opacity:0.75;margin-top:4px;">10% du CA de la/les couleur(s) cochée(s) sera reversé à l\'association.</div></div>'
         : '<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#c2185b;cursor:pointer;margin-bottom:10px;background:#fce4ec;border-radius:7px;padding:6px 10px;"><input type="checkbox" '+(f.octobreRose===true?'checked':'')+' onchange="STATE.prodForm.octobreRose=this.checked" style="width:16px;height:16px;"/> 🎀 Octobre Rose (10% reversés à l\'association)</label>')
+      +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#6a3d9a;cursor:pointer;margin-bottom:6px;background:#f3e8fc;border-radius:7px;padding:6px 10px;"><input type="checkbox" '+(f.artisanat?'checked':'')+' onchange="STATE.prodForm.artisanat=this.checked;render()" style="width:16px;height:16px;"/> 🎨 Produit d\'artisan</label>'
+      +(f.artisanat?'<div style="margin-bottom:10px;"><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Nom de l\'artisan / atelier</label><input value="'+(f.nomArtisan||'')+'" oninput="STATE.prodForm.nomArtisan=this.value" placeholder="Ex: Atelier Claire M." style="width:100%;box-sizing:border-box;"/></div>':'')
       +'</div>'
     +'<div></div>'
     +(isV1?blocPrix:"")
@@ -7966,13 +7976,13 @@ function renderStats() {
     const montantLigne = calculerPrixPayeReel(v, i) * (i.qty||1);
     catMap[cat] = (catMap[cat]||0) + montantLigne;
     if(p?.grandeTaille) caGrandeTaille += montantLigne;
-    if(estOctobreRose(p, i.couleur)) caOctobreRose += montantLigne;
+    if(estOctobreRose(p, i.couleur, v.date)) caOctobreRose += montantLigne;
   }));
   // Déduire le CA des retours sur des articles Octobre Rose, pour reverser un montant juste
   vf.forEach(v=>v.panier.filter(x=>x.retour&&!x.avoirId).forEach(i=>{
     const pid = i.prodIdOriginal || i.id;
     const p = prodMapAll[pid];
-    if(estOctobreRose(p, i.couleur)) {
+    if(estOctobreRose(p, i.couleur, v.date)) {
       const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
       caOctobreRose -= Math.max(0,i.price-remArt) * (i.qty||1);
     }
@@ -7993,6 +8003,21 @@ function renderStats() {
     }
   }));
   const topClientsDepot = Object.entries(clientsDepotVenteM).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+  // ── Artisanat : CA généré + répartition par artisan ──────────────
+  let caArtisanat = 0;
+  const artisansM = {};
+  vf.forEach(v=>v.panier.filter(x=>!x.retour).forEach(i=>{
+    const pid = i.prodIdOriginal || i.id;
+    const p = prodMapAll[pid];
+    if(p?.artisanat) {
+      const montant = calculerPrixPayeReel(v, i) * (i.qty||1);
+      caArtisanat += montant;
+      const nomArt = p.nomArtisan?.trim() || "Artisan non renseigné";
+      artisansM[nomArt] = (artisansM[nomArt]||0) + montant;
+    }
+  }));
+  const topArtisans = Object.entries(artisansM).sort((a,b)=>b[1]-a[1]);
 
   // ── Graphique 7 jours ─────────────────────────────────────────
   const jours=[];
@@ -8191,6 +8216,23 @@ function renderStats() {
           </div>
         `).join("")}
       </div>
+      ${caArtisanat>0?`
+      <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;">
+        <div style="font-weight:500;font-size:13px;margin-bottom:4px;">🎨 Produits d'artisans</div>
+        <div style="font-size:22px;font-weight:700;color:#6a3d9a;margin-bottom:2px;">${eur(caArtisanat)}</div>
+        <div style="font-size:11px;color:#888;margin-bottom:12px;">${ca>0?((caArtisanat/ca*100).toFixed(1)+"% du CA total"):"—"} · déjà inclus dans le CA ci-dessus</div>
+        <div style="font-weight:500;font-size:12px;margin-bottom:8px;border-top:0.5px solid #f0ebee;padding-top:10px;">Répartition par artisan</div>
+        ${topArtisans.map(([nom,montant],i)=>`
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:0.5px solid #e8e0e4;font-size:12px;">
+            <div style="display:flex;gap:8px;align-items:center;">
+              <span style="width:18px;height:18px;border-radius:50%;background:#f3e8fc;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:500;color:#6a3d9a;">${i+1}</span>
+              <span>${nom}</span>
+            </div>
+            <span style="font-weight:500;">${eur(montant)}</span>
+          </div>
+        `).join("")}
+      </div>
+      `:""}
       <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;">
         <div style="font-weight:500;font-size:13px;margin-bottom:12px;">Modes de paiement</div>
         ${Object.keys(payM).length===0?`<div style="color:#aaa;font-size:13px;">Aucune vente</div>`:Object.entries(payM).sort((a,b)=>b[1]-a[1]).map(([m,v])=>`
