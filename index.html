@@ -8004,8 +8004,9 @@ function renderStats() {
   }));
   const topClientsDepot = Object.entries(clientsDepotVenteM).sort((a,b)=>b[1]-a[1]).slice(0,5);
 
-  // ── Artisanat : CA généré + répartition par artisan ──────────────
+  // ── Artisanat : CA généré + répartition par artisan (montant + nb ventes) ──
   let caArtisanat = 0;
+  let nbArtisanat = 0;
   const artisansM = {};
   vf.forEach(v=>v.panier.filter(x=>!x.retour).forEach(i=>{
     const pid = i.prodIdOriginal || i.id;
@@ -8013,11 +8014,27 @@ function renderStats() {
     if(p?.artisanat) {
       const montant = calculerPrixPayeReel(v, i) * (i.qty||1);
       caArtisanat += montant;
+      nbArtisanat += (i.qty||1);
       const nomArt = p.nomArtisan?.trim() || "Artisan non renseigné";
-      artisansM[nomArt] = (artisansM[nomArt]||0) + montant;
+      if(!artisansM[nomArt]) artisansM[nomArt] = {montant:0, qty:0};
+      artisansM[nomArt].montant += montant;
+      artisansM[nomArt].qty += (i.qty||1);
     }
   }));
-  const topArtisans = Object.entries(artisansM).sort((a,b)=>b[1]-a[1]);
+  // Déduire les retours (montant ET quantité) pour un décompte net juste
+  vf.forEach(v=>v.panier.filter(x=>x.retour&&!x.avoirId).forEach(i=>{
+    const pid = i.prodIdOriginal || i.id;
+    const p = prodMapAll[pid];
+    if(p?.artisanat) {
+      const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
+      const montantRetour = Math.max(0,i.price-remArt) * (i.qty||1);
+      caArtisanat -= montantRetour;
+      nbArtisanat -= (i.qty||1);
+      const nomArt = p.nomArtisan?.trim() || "Artisan non renseigné";
+      if(artisansM[nomArt]) { artisansM[nomArt].montant -= montantRetour; artisansM[nomArt].qty -= (i.qty||1); }
+    }
+  }));
+  const topArtisans = Object.entries(artisansM).sort((a,b)=>b[1].montant-a[1].montant);
 
   // ── Graphique 7 jours ─────────────────────────────────────────
   const jours=[];
@@ -8220,15 +8237,15 @@ function renderStats() {
       <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;">
         <div style="font-weight:500;font-size:13px;margin-bottom:4px;">🎨 Produits d'artisans</div>
         <div style="font-size:22px;font-weight:700;color:#6a3d9a;margin-bottom:2px;">${eur(caArtisanat)}</div>
-        <div style="font-size:11px;color:#888;margin-bottom:12px;">${ca>0?((caArtisanat/ca*100).toFixed(1)+"% du CA total"):"—"} · déjà inclus dans le CA ci-dessus</div>
+        <div style="font-size:11px;color:#888;margin-bottom:12px;">${nbArtisanat} article${nbArtisanat>1?"s":""} vendu${nbArtisanat>1?"s":""} · ${ca>0?((caArtisanat/ca*100).toFixed(1)+"% du CA total"):"—"}</div>
         <div style="font-weight:500;font-size:12px;margin-bottom:8px;border-top:0.5px solid #f0ebee;padding-top:10px;">Répartition par artisan</div>
-        ${topArtisans.map(([nom,montant],i)=>`
+        ${topArtisans.map(([nom,d],i)=>`
           <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:0.5px solid #e8e0e4;font-size:12px;">
             <div style="display:flex;gap:8px;align-items:center;">
               <span style="width:18px;height:18px;border-radius:50%;background:#f3e8fc;display:inline-flex;align-items:center;justify-content:center;font-size:10px;font-weight:500;color:#6a3d9a;">${i+1}</span>
-              <span>${nom}</span>
+              <span>${nom} <span style="color:#aaa;">(${d.qty} vte${d.qty>1?"s":""})</span></span>
             </div>
-            <span style="font-weight:500;">${eur(montant)}</span>
+            <span style="font-weight:500;">${eur(d.montant)}</span>
           </div>
         `).join("")}
       </div>
