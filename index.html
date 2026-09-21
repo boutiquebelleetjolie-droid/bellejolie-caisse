@@ -700,6 +700,7 @@ let STATE = {
   // Inventaire
   invMode: false,
   etiqSelection: {},
+  showFusionArticles: false, fusionIdA: null, fusionIdB: null, fusionRecherche: "",
   showLotEtiq: false,
   etiquetteTailleVal: "",
   etiquetteCouleurVal: "",
@@ -1419,6 +1420,7 @@ function renderApp() {
   ${STATE.showDefectueux   ? renderDefectueuxModal() : ""}
   ${STATE.showHistoriqueArticle ? renderHistoriqueArticleModal() : ""}
   ${STATE.showRegistrePersonnel ? renderRegistrePersonnelModal() : ""}
+  ${STATE.showFusionArticles ? renderFusionArticlesModal() : ""}
   ${STATE.showCorrectionVente ? renderCorrectionVenteModal() : ""}
   ${STATE.showProdModal    ? renderProdModal()       : ""}
   ${STATE.showClientModal  ? renderClientModal()     : ""}
@@ -5605,6 +5607,112 @@ function renderHistoriqueArticleModal() {
   </div>`;
 }
 
+// ── FUSIONNER DEUX ARTICLES (doublons) : reporte tout l'historique de ventes sur un seul ──
+function renderFusionArticlesModal() {
+  const q = normStr(STATE.fusionRecherche||"");
+  const resultats = q.length<2 ? [] : STATE.products.filter(p=>normStr(p.name+" "+p.ref+" "+(p.marque||"")).includes(q)).slice(0,8);
+  const pA = STATE.products.find(p=>p.id===STATE.fusionIdA);
+  const pB = STATE.products.find(p=>p.id===STATE.fusionIdB);
+
+  const carteArticle = (p, lettre) => !p ? `
+    <div style="border:1.5px dashed #ddd;border-radius:10px;padding:14px;text-align:center;color:#aaa;font-size:12px;flex:1;">Article ${lettre} — recherche et clique sur un résultat ci-dessous</div>
+  ` : `
+    <div style="border:1.5px solid #993556;border-radius:10px;padding:14px;flex:1;position:relative;">
+      <button onclick="STATE.fusion${lettre==='A'?'IdA':'IdB'}=null;render()" style="position:absolute;top:6px;right:6px;background:none;border:none;color:#aaa;cursor:pointer;font-size:16px;">×</button>
+      <div style="font-size:11px;color:#993556;font-weight:600;margin-bottom:4px;">Article ${lettre}</div>
+      <div style="font-weight:500;font-size:13px;margin-bottom:2px;">${p.name}</div>
+      <div style="font-size:11px;color:#888;">Réf. ${p.ref} · ${p.category||"—"}</div>
+      <div style="font-size:12px;margin-top:6px;">Stock : <strong>${p.stock||0}</strong> · PV : <strong>${eur(p.price||0)}</strong></div>
+    </div>
+  `;
+
+  const pretAFusionner = pA && pB && pA.id!==pB.id;
+
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)setState({showFusionArticles:false})">
+    <div class="modal" style="max-width:560px;">
+      <div class="modal-header">
+        <span style="font-weight:500;">🔗 Fusionner deux articles (doublons)</span>
+        <button onclick="setState({showFusionArticles:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
+      </div>
+      <div class="modal-body">
+        <div style="background:#fff8e1;border:1px solid #f0dcb0;border-radius:9px;padding:9px 12px;font-size:12px;color:#854f0b;margin-bottom:14px;line-height:1.5;">
+          ℹ️ Utile quand le même article existe en double (deux références différentes). Tout l'historique de ventes des deux articles est reporté sur celui que tu choisis de garder, puis l'autre est supprimé — rien n'est perdu dans les stats.
+        </div>
+
+        <div style="display:flex;gap:10px;margin-bottom:14px;">
+          ${carteArticle(pA,'A')}
+          ${carteArticle(pB,'B')}
+        </div>
+
+        ${(!pA||!pB)?`
+        <input type="text" value="${STATE.fusionRecherche||''}" oninput="STATE.fusionRecherche=this.value;render()" placeholder="Rechercher un article (nom, référence, marque)..." style="width:100%;box-sizing:border-box;margin-bottom:10px;"/>
+        <div style="max-height:220px;overflow-y:auto;">
+          ${resultats.length===0 && q.length>=2 ? `<div style="color:#aaa;font-size:12px;text-align:center;padding:10px;">Aucun résultat</div>` : ""}
+          ${resultats.map(p=>`
+            <div onclick="${!pA?`STATE.fusionIdA='${p.id}'`:`STATE.fusionIdB='${p.id}'`};STATE.fusionRecherche='';render()" style="padding:8px 10px;border-bottom:0.5px solid #f0ebee;cursor:pointer;font-size:13px;">
+              <strong>${p.name}</strong> <span style="color:#888;">— réf. ${p.ref} · stock ${p.stock||0} · ${eur(p.price||0)}</span>
+            </div>
+          `).join("")}
+        </div>
+        `:""}
+
+        ${pretAFusionner?`
+        <div style="border-top:0.5px solid #e8e0e4;margin-top:14px;padding-top:14px;">
+          <div style="font-size:13px;font-weight:500;margin-bottom:8px;">Lequel veux-tu garder ?</div>
+          <div style="display:flex;gap:10px;margin-bottom:14px;">
+            <button onclick="fusionnerArticles('${pA.id}','${pB.id}')" style="flex:1;padding:12px;background:#eaf3de;border:1px solid #aed882;border-radius:9px;cursor:pointer;text-align:left;">
+              <div style="font-size:12px;color:#3b6d11;font-weight:600;">✅ Garder A</div>
+              <div style="font-size:12px;color:#555;">${pA.name}</div>
+            </button>
+            <button onclick="fusionnerArticles('${pB.id}','${pA.id}')" style="flex:1;padding:12px;background:#eaf3de;border:1px solid #aed882;border-radius:9px;cursor:pointer;text-align:left;">
+              <div style="font-size:12px;color:#3b6d11;font-weight:600;">✅ Garder B</div>
+              <div style="font-size:12px;color:#555;">${pB.name}</div>
+            </button>
+          </div>
+          <div style="font-size:11px;color:#888;">L'article gardé récupère le stock total des deux (${(pA.stock||0)+(pB.stock||0)} unités) et tout l'historique de ventes. L'autre article sera supprimé.</div>
+        </div>
+        `:""}
+      </div>
+    </div>
+  </div>`;
+}
+
+window.fusionnerArticles = (idGarde, idSupprime) => {
+  const pGarde = STATE.products.find(p=>p.id===idGarde);
+  const pSupprime = STATE.products.find(p=>p.id===idSupprime);
+  if(!pGarde || !pSupprime) return;
+  if(!confirm(`Fusionner "${pSupprime.name}" (réf. ${pSupprime.ref}) dans "${pGarde.name}" (réf. ${pGarde.ref}) ?\n\nTout l'historique de ventes sera reporté sur "${pGarde.name}", et "${pSupprime.name}" sera supprimé définitivement.\n\nCette action est irréversible.`)) return;
+
+  // 1. Reporter l'historique de ventes (toutes les lignes qui pointent vers l'article supprimé)
+  STATE.ventes = STATE.ventes.map(v => ({
+    ...v,
+    panier: (v.panier||[]).map(it => {
+      const refId = it.prodIdOriginal || it.id;
+      if(refId !== idSupprime) return it;
+      return { ...it, prodIdOriginal: idGarde, id: it.id===idSupprime ? idGarde : it.id };
+    })
+  }));
+  lsSet("bj_ventes", STATE.ventes);
+
+  // 2. Reporter les mouvements défectueux
+  if(STATE.mouvementsDefectueux?.length) {
+    STATE.mouvementsDefectueux = STATE.mouvementsDefectueux.map(m =>
+      m.productId===idSupprime ? {...m, productId:idGarde} : m
+    );
+    lsSet("bj_mouvements_defectueux", STATE.mouvementsDefectueux);
+  }
+
+  // 3. Fusionner le stock (somme des deux) sur l'article gardé
+  STATE.products = STATE.products
+    .map(p => p.id===idGarde ? {...p, stock:(pGarde.stock||0)+(pSupprime.stock||0)} : p)
+    .filter(p => p.id!==idSupprime);
+  lsSet("bj_products", STATE.products);
+
+  setState({showFusionArticles:false, fusionIdA:null, fusionIdB:null});
+  alert(`✅ Fusion terminée. "${pGarde.name}" a maintenant tout l'historique des deux articles (stock : ${(pGarde.stock||0)+(pSupprime.stock||0)} unités).`);
+};
+
 window.diagnostiquerStockAberrant = () => {
   const prods = STATE.products||[];
   const stocks = prods.map(p=>p.stock||0).sort((a,b)=>a-b);
@@ -5861,6 +5969,7 @@ function renderStock() {
   if(STATE.vendeur.role!=="apprenti") html += '<button onclick="openProdModal(null)" class="btn-primary" style="width:auto;padding:8px 16px;">+ Nouvel article</button>';
   if(isV1) html += '<button onclick="STATE.stockTab=\'reception\';render()" class="btn-ghost" style="white-space:nowrap;">📦 Réception facture</button>';
   if(isV1) html += '<button onclick="ouvrirApercuExtractionMarque()" class="btn-ghost" style="white-space:nowrap;">🔧 Extraire les marques</button>';
+  if(isV1) html += '<button onclick="setState({showFusionArticles:true,fusionIdA:null,fusionIdB:null,fusionRecherche:\'\'})" class="btn-ghost" style="white-space:nowrap;">🔗 Fusionner des articles</button>';
   if(isV1) html += '<button onclick="STATE.showDefectueux=true;render()" class="btn-ghost" style="white-space:nowrap;color:#a32d2d;border-color:#f0959599;">🔧 Défectueux</button>';
   const dateEtiq = STATE.dateEtiq || dateLocaleStr();
   const articlesJour = STATE.products.filter(p => (p.dateAjout||"").slice(0,10)===dateEtiq);
