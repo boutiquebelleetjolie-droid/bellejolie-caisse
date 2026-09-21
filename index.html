@@ -718,6 +718,7 @@ let STATE = {
   etiqSelection: {},
   showFusionArticles: false, fusionIdA: null, fusionIdB: null, fusionRecherche: "",
   showVueBoutiques: false, vueBoutiquesData: null, vueBoutiquesChargement: false,
+  showStockAutreBoutique: false, stockAutreBoutiqueData: null, stockAutreBoutiqueChargement: false, stockAutreBoutiqueRecherche: "",
   showLotEtiq: false,
   etiquetteTailleVal: "",
   etiquetteCouleurVal: "",
@@ -1441,6 +1442,7 @@ function renderApp() {
   ${STATE.showRegistrePersonnel ? renderRegistrePersonnelModal() : ""}
   ${STATE.showFusionArticles ? renderFusionArticlesModal() : ""}
   ${STATE.showVueBoutiques ? renderVueBoutiquesModal() : ""}
+  ${STATE.showStockAutreBoutique ? renderStockAutreBoutiqueModal() : ""}
   ${STATE.showCorrectionVente ? renderCorrectionVenteModal() : ""}
   ${STATE.showProdModal    ? renderProdModal()       : ""}
   ${STATE.showClientModal  ? renderClientModal()     : ""}
@@ -5830,6 +5832,70 @@ function renderVueBoutiquesModal() {
   </div>`;
 }
 
+// ── VOIR LE STOCK DE L'AUTRE BOUTIQUE (accessible à toutes les vendeuses) ──
+window.ouvrirStockAutreBoutique = async () => {
+  STATE.showStockAutreBoutique = true;
+  STATE.stockAutreBoutiqueData = null;
+  STATE.stockAutreBoutiqueChargement = true;
+  STATE.stockAutreBoutiqueRecherche = "";
+  render();
+  if(!_fbDb) { STATE.stockAutreBoutiqueChargement = false; render(); return; }
+  try {
+    const autres = BOUTIQUES.filter(b=>b.id!==BOUTIQUE_ID_ACTUEL);
+    const resultats = await Promise.all(autres.map(async b => {
+      const cleP = b.id==="boutique_1" ? "bj_products" : "bj_products__"+b.id;
+      const docP = await _fbDb.collection("bellejolie").doc(cleP).get();
+      const products = docP.exists ? (docP.data().value||[]) : [];
+      return { id:b.id, nom:b.nom, products };
+    }));
+    STATE.stockAutreBoutiqueData = resultats;
+  } catch(err) {
+    console.error("Erreur consultation stock autre boutique:", err);
+    STATE.stockAutreBoutiqueData = "erreur";
+  }
+  STATE.stockAutreBoutiqueChargement = false;
+  render();
+};
+
+function renderStockAutreBoutiqueModal() {
+  const data = STATE.stockAutreBoutiqueData;
+  const q = normStr(STATE.stockAutreBoutiqueRecherche||"");
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)setState({showStockAutreBoutique:false})">
+    <div class="modal" style="max-width:560px;max-height:85vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <span style="font-weight:500;">🔍 Stock de l'autre boutique</span>
+        <button onclick="setState({showStockAutreBoutique:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
+      </div>
+      <div class="modal-body" style="overflow-y:auto;flex:1;">
+        <div style="font-size:11px;color:#888;margin-bottom:10px;">Lecture en direct depuis le cloud, en consultation seule (impossible de vendre ou modifier depuis ici).</div>
+        ${STATE.stockAutreBoutiqueChargement?`<div style="text-align:center;color:#aaa;padding:30px 0;">Chargement…</div>`
+          : data==="erreur" ? `<div style="text-align:center;color:#a32d2d;padding:20px 0;">⚠️ Erreur de chargement. Vérifie ta connexion et réessaie.</div>`
+          : !data ? "" : data.map(b=>{
+            const liste = (b.products||[]).filter(p=>!q || normStr(p.name+" "+p.ref+" "+(p.marque||"")).includes(q));
+            return `
+            <div style="margin-bottom:16px;">
+              <div style="font-weight:600;font-size:13px;margin-bottom:8px;">🏬 ${b.nom} <span style="color:#aaa;font-weight:400;">(${b.products.length} référence${b.products.length>1?"s":""})</span></div>
+              <input type="text" value="${STATE.stockAutreBoutiqueRecherche||''}" oninput="STATE.stockAutreBoutiqueRecherche=this.value;render()" placeholder="Rechercher un article..." style="width:100%;box-sizing:border-box;margin-bottom:8px;"/>
+              <div style="max-height:280px;overflow-y:auto;border:0.5px solid #e8e0e4;border-radius:10px;">
+                ${liste.length===0?`<div style="padding:14px;color:#aaa;font-size:12px;text-align:center;">${q?"Aucun résultat":"Aucun article"}</div>`:
+                liste.slice(0,100).map(p=>`
+                  <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:0.5px solid #f0ebee;font-size:12px;">
+                    <div><strong>${p.name}</strong><div style="color:#888;font-size:10px;">Réf. ${p.ref}${p.category?" · "+p.category:""}</div></div>
+                    <div style="text-align:right;">
+                      <div style="font-weight:600;">${p.stock||0} en stock</div>
+                      <div style="color:#888;font-size:10px;">${eur(p.price||0)}</div>
+                    </div>
+                  </div>
+                `).join("")}
+              </div>
+            </div>`;
+          }).join("")}
+      </div>
+    </div>
+  </div>`;
+}
+
 window.diagnostiquerStockAberrant = () => {
   const prods = STATE.products||[];
   const stocks = prods.map(p=>p.stock||0).sort((a,b)=>a-b);
@@ -6084,6 +6150,7 @@ function renderStock() {
   html += '<input value="'+(STATE.searchProd||"")+'" id="stock-search" oninput="STATE.searchProd=this.value;clearTimeout(window._spTimer);window._spTimer=setTimeout(renderStockOnly,300)" placeholder="Rechercher..." style="flex:1;min-width:160px;"/>';
   if(nbEtiq>0) html += renderBoutonLotEtiq(nbEtiq);
   if(STATE.vendeur.role!=="apprenti") html += '<button onclick="openProdModal(null)" class="btn-primary" style="width:auto;padding:8px 16px;">+ Nouvel article</button>';
+  if(BOUTIQUES.length>1) html += '<button onclick="ouvrirStockAutreBoutique()" class="btn-ghost" style="white-space:nowrap;">🔍 Stock de l\'autre boutique</button>';
   if(isV1) html += '<button onclick="STATE.stockTab=\'reception\';render()" class="btn-ghost" style="white-space:nowrap;">📦 Réception facture</button>';
   if(isV1) html += '<button onclick="ouvrirApercuExtractionMarque()" class="btn-ghost" style="white-space:nowrap;">🔧 Extraire les marques</button>';
   if(isV1) html += '<button onclick="setState({showFusionArticles:true,fusionIdA:null,fusionIdB:null,fusionRecherche:\'\'})" class="btn-ghost" style="white-space:nowrap;">🔗 Fusionner des articles</button>';
