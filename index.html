@@ -99,7 +99,12 @@ const BOUTIQUES = [
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
 ];
 // Identifiant de la boutique de CET appareil : réglage 100% local, jamais synchronisé entre appareils.
-let BOUTIQUE_ID_ACTUEL = localStorage.getItem("bj_boutique_id") || "boutique_1";
+// Un paramètre d'URL (?boutique=boutique_2) permet d'ouvrir UN ONGLET précis sur une boutique
+// précise, indépendamment du réglage par défaut de l'appareil — utile pour avoir les deux
+// boutiques ouvertes EN MÊME TEMPS (deux onglets) sur le même ordinateur si besoin.
+const _paramsURL = new URLSearchParams(window.location.search);
+const _boutiqueDepuisURL = _paramsURL.get("boutique");
+let BOUTIQUE_ID_ACTUEL = _boutiqueDepuisURL || localStorage.getItem("bj_boutique_id") || "boutique_1";
 function boutiqueActuelle() { return BOUTIQUES.find(b=>b.id===BOUTIQUE_ID_ACTUEL) || BOUTIQUES[0]; }
 // Clé Firestore réellement utilisée pour une donnée "locale" à une boutique : suffixée par la boutique
 // sauf pour boutique_1 (garde les mêmes clés qu'avant, pour ne jamais rien casser sur la boutique existante).
@@ -185,7 +190,7 @@ function demarrerSyncTempsReel() {
       if(CLES_SYNC_PROTEGEES.has(stateKey) && !data.value && STATE[stateKey]) return; // ne pas écraser un réglage configuré par du vide venu d'ailleurs
       // Appliquer la mise à jour venue d'un autre appareil
       try {
-        localStorage.setItem(storageKey, JSON.stringify(data.value));
+        localStorage.setItem(cleFirestore(storageKey), JSON.stringify(data.value));
         if(stateKey==="__vendeurs__") {
           (data.value||[]).forEach((sv,i)=>{ if(VENDEURS[i]&&sv.code) VENDEURS[i].code=sv.code; });
         } else {
@@ -209,20 +214,19 @@ const DB = {
   moteur: "local",
 
   get(key, def) {
-    // LOCAL
+    // LOCAL — la clé réelle utilisée est propre à la boutique de CET onglet (cleFirestore),
+    // pour que deux onglets sur deux boutiques différentes, même sur le même navigateur,
+    // ne se marchent jamais dessus en local (chacun sa clé, boutique_1 gardant les clés
+    // historiques inchangées).
     if(this.moteur === "local") {
-      try { const v=localStorage.getItem(key); return v?JSON.parse(v):def; } catch{return def;}
+      try { const v=localStorage.getItem(cleFirestore(key)); return v?JSON.parse(v):def; } catch{return def;}
     }
-    // FIREBASE (futur) :
-    // return firestoreGet(BOUTIQUE_CONFIG.id, key) || def;
   },
 
   set(key, val) {
-    // Tagguer automatiquement les données locales avec l'ID boutique
-    // (utile pour Firebase pour filtrer par boutique)
     if(this.moteur === "local") {
       try {
-        localStorage.setItem(key, JSON.stringify(val));
+        localStorage.setItem(cleFirestore(key), JSON.stringify(val));
         firestorePush(key, val); // sauvegarde cloud en tâche de fond, ne bloque jamais l'appli
       } catch(err) {
         console.error("Échec de sauvegarde localStorage pour la clé '"+key+"':", err);
