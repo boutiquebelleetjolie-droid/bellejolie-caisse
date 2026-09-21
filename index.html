@@ -88,10 +88,26 @@ const BOUTIQUE_CONFIG = {
   siret:    "",
   // Données "globales" partagées entre boutiques (clients, avoirs, fidélité)
   // Données "locales" propres à cette boutique (ventes, stock, Z de caisse, réservations)
-  // Cette distinction sera utilisée lors de la migration vers Firebase
   DONNEES_GLOBALES: ["bj_clients","bj_avoirs","bj_promotions"],
   DONNEES_LOCALES:  ["bj_products","bj_ventes","bj_caisse_jour","bj_reservations","bj_annul_lignes","bj_attente","bj_depots_vente","bj_depots_banque","bj_solde_depot_reporte","bj_mouvements_defectueux","bj_ouvertures","bj_registre_personnel"],
 };
+
+// Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
+// L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
+const BOUTIQUES = [
+  { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
+  { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
+];
+// Identifiant de la boutique de CET appareil : réglage 100% local, jamais synchronisé entre appareils.
+let BOUTIQUE_ID_ACTUEL = localStorage.getItem("bj_boutique_id") || "boutique_1";
+function boutiqueActuelle() { return BOUTIQUES.find(b=>b.id===BOUTIQUE_ID_ACTUEL) || BOUTIQUES[0]; }
+// Clé Firestore réellement utilisée pour une donnée "locale" à une boutique : suffixée par la boutique
+// sauf pour boutique_1 (garde les mêmes clés qu'avant, pour ne jamais rien casser sur la boutique existante).
+function cleFirestore(key) {
+  if(BOUTIQUE_ID_ACTUEL==="boutique_1") return key; // comportement historique inchangé
+  if(BOUTIQUE_CONFIG.DONNEES_GLOBALES.includes(key)) return key; // toujours partagé, peu importe la boutique
+  return key + "__" + BOUTIQUE_ID_ACTUEL; // donnée locale d'un site secondaire : document Firestore séparé
+}
 
 // ════════════════════════════════════════════════════════════════
 // COUCHE DE STOCKAGE — aujourd'hui localStorage, demain Firebase
@@ -124,7 +140,7 @@ if(!DEVICE_ID) { DEVICE_ID = "dev_"+Math.random().toString(36).slice(2)+Date.now
 function firestorePush(key, val) {
   if(!_fbDb) return;
   const maintenant = new Date().toISOString();
-  _fbDb.collection("bellejolie").doc(key).set({ value: val, maj: maintenant, device: DEVICE_ID })
+  _fbDb.collection("bellejolie").doc(cleFirestore(key)).set({ value: val, maj: maintenant, device: DEVICE_ID })
     .then(() => { try { localStorage.setItem("bj_dernier_push_local", maintenant); } catch{} })
     .catch(err => console.error("Firestore push error pour '"+key+"':", err));
 }
@@ -154,7 +170,7 @@ window._syncBannerTimeout = null;
 function demarrerSyncTempsReel() {
   if(!_fbDb) return;
   Object.entries(CLES_SYNC_TEMPS_REEL).forEach(([storageKey, stateKey]) => {
-    _fbDb.collection("bellejolie").doc(storageKey).onSnapshot(doc => {
+    _fbDb.collection("bellejolie").doc(cleFirestore(storageKey)).onSnapshot(doc => {
       if(!doc.exists) return;
       const data = doc.data();
       if(!data || data.device === DEVICE_ID) return; // c'est notre propre écriture, on ignore
@@ -701,6 +717,7 @@ let STATE = {
   invMode: false,
   etiqSelection: {},
   showFusionArticles: false, fusionIdA: null, fusionIdB: null, fusionRecherche: "",
+  showVueBoutiques: false, vueBoutiquesData: null, vueBoutiquesChargement: false,
   showLotEtiq: false,
   etiquetteTailleVal: "",
   etiquetteCouleurVal: "",
@@ -1383,6 +1400,8 @@ function renderApp() {
       <div style="font-size:12px;color:#888;">${STATE.vendeur.nom}</div>
       ${STATE.vendeur.id==="V1"?`<button onclick="showVendeurSettings()" style="background:none;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px;color:#666;">⚙️ PIN</button>`:""}
       ${STATE.vendeur.id==="V1"?`<button onclick="setState({showRegistrePersonnel:true})" style="background:none;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px;color:#666;">👥 Personnel</button>`:""}
+      ${BOUTIQUE_ID_ACTUEL!=="boutique_1"?`<span style="background:#fbeaf0;color:#993556;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:600;">🏬 ${boutiqueActuelle().nom}</span>`:""}
+      ${STATE.vendeur.id==="V1"&&BOUTIQUES.length>1?`<button onclick="ouvrirVueToutesBoutiques()" style="background:none;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px;color:#666;">🏬🏬 Toutes boutiques</button>`:""}
     </div>
   </div>
   ${STATE.vendeur.role==="apprenti"?`
@@ -1421,6 +1440,7 @@ function renderApp() {
   ${STATE.showHistoriqueArticle ? renderHistoriqueArticleModal() : ""}
   ${STATE.showRegistrePersonnel ? renderRegistrePersonnelModal() : ""}
   ${STATE.showFusionArticles ? renderFusionArticlesModal() : ""}
+  ${STATE.showVueBoutiques ? renderVueBoutiquesModal() : ""}
   ${STATE.showCorrectionVente ? renderCorrectionVenteModal() : ""}
   ${STATE.showProdModal    ? renderProdModal()       : ""}
   ${STATE.showClientModal  ? renderClientModal()     : ""}
@@ -1606,6 +1626,14 @@ window.logout = () => {
 window.showVendeurSettings = () => { STATE.vendeurForm = JSON.parse(JSON.stringify(VENDEURS)); setState({showVendeurSettings:true}); };
 
 // ─── PARAMÈTRES VENDEURS ────────────────────────────────────────
+window.changerBoutiqueAppareil = (nouvelId) => {
+  if(nouvelId===BOUTIQUE_ID_ACTUEL) return;
+  const b = BOUTIQUES.find(x=>x.id===nouvelId);
+  if(!confirm(`Configurer CET appareil pour "${b.nom}" ?\n\nLa page va se recharger. Le stock, les ventes et le CA affichés seront désormais ceux de cette boutique (les clients/avoirs restent communs).`)) { render(); return; }
+  localStorage.setItem("bj_boutique_id", nouvelId);
+  location.reload();
+};
+
 function renderVendeurSettings() {
   const vf = STATE.vendeurForm || JSON.parse(JSON.stringify(VENDEURS));
   const ejsOk = !!(STATE.emailjsServiceId&&STATE.emailjsTemplateId&&STATE.emailjsPublicKey);
@@ -1617,6 +1645,17 @@ function renderVendeurSettings() {
         <button onclick="setState({showVendeurSettings:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
       </div>
       <div class="modal-body">
+
+        <!-- Boutique de cet appareil (multi-site) -->
+        ${STATE.vendeur.id==="V1"?`
+        <div style="border:1px solid #e8b8c8;background:#fbeaf0;border-radius:10px;padding:12px 14px;margin-bottom:16px;">
+          <div style="font-weight:500;font-size:13px;margin-bottom:4px;">🏬 Boutique de cet appareil</div>
+          <div style="font-size:11px;color:#888;margin-bottom:8px;">Stock, ventes et CA sont propres à chaque boutique. Les clients/avoirs restent communs. Réglage propre à CET appareil — à faire une seule fois par appareil, changer ici applique un rechargement.</div>
+          <select onchange="changerBoutiqueAppareil(this.value)" style="width:100%;box-sizing:border-box;font-weight:500;">
+            ${BOUTIQUES.map(b=>`<option value="${b.id}" ${b.id===BOUTIQUE_ID_ACTUEL?"selected":""}>${b.nom}</option>`).join("")}
+          </select>
+        </div>
+        `:""}
 
         <!-- Vendeurs & PIN -->
         <div style="font-weight:500;font-size:13px;margin-bottom:10px;">👤 Vendeurs & codes PIN</div>
@@ -5712,6 +5751,84 @@ window.fusionnerArticles = (idGarde, idSupprime) => {
   setState({showFusionArticles:false, fusionIdA:null, fusionIdB:null});
   alert(`✅ Fusion terminée. "${pGarde.name}" a maintenant tout l'historique des deux articles (stock : ${(pGarde.stock||0)+(pSupprime.stock||0)} unités).`);
 };
+
+// ── VUE TOUTES BOUTIQUES (lecture seule, en direct depuis Firestore) ──────
+window.ouvrirVueToutesBoutiques = async () => {
+  STATE.showVueBoutiques = true;
+  STATE.vueBoutiquesData = null;
+  STATE.vueBoutiquesChargement = true;
+  render();
+  if(!_fbDb) { STATE.vueBoutiquesChargement = false; render(); return; }
+  try {
+    const resultats = await Promise.all(BOUTIQUES.map(async b => {
+      const cleV = b.id==="boutique_1" ? "bj_ventes" : "bj_ventes__"+b.id;
+      const cleP = b.id==="boutique_1" ? "bj_products" : "bj_products__"+b.id;
+      const [docV, docP] = await Promise.all([
+        _fbDb.collection("bellejolie").doc(cleV).get(),
+        _fbDb.collection("bellejolie").doc(cleP).get(),
+      ]);
+      const ventes = docV.exists ? (docV.data().value||[]) : [];
+      const products = docP.exists ? (docP.data().value||[]) : [];
+      const now = new Date();
+      const moisEnCours = ventes.filter(v=>!v.test&&!v.annulee && new Date(v.date).getFullYear()===now.getFullYear() && new Date(v.date).getMonth()===now.getMonth());
+      const caMois = moisEnCours.reduce((s,v)=>s+v.total,0);
+      const caTotal = ventes.filter(v=>!v.test&&!v.annulee).reduce((s,v)=>s+v.total,0);
+      const stockUnites = products.reduce((s,p)=>s+(p.stock||0),0);
+      return { id:b.id, nom:b.nom, caMois, caTotal, nbVentesMois:moisEnCours.length, nbRefs:products.length, stockUnites };
+    }));
+    STATE.vueBoutiquesData = resultats;
+  } catch(err) {
+    console.error("Erreur vue toutes boutiques:", err);
+    STATE.vueBoutiquesData = "erreur";
+  }
+  STATE.vueBoutiquesChargement = false;
+  render();
+};
+
+function renderVueBoutiquesModal() {
+  const data = STATE.vueBoutiquesData;
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)setState({showVueBoutiques:false})">
+    <div class="modal" style="max-width:560px;">
+      <div class="modal-header">
+        <span style="font-weight:500;">🏬 Vue toutes boutiques</span>
+        <button onclick="setState({showVueBoutiques:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
+      </div>
+      <div class="modal-body">
+        <div style="font-size:11px;color:#888;margin-bottom:14px;">Lecture en direct depuis le cloud — indépendant de la boutique configurée sur cet appareil.</div>
+        ${STATE.vueBoutiquesChargement?`<div style="text-align:center;color:#aaa;padding:30px 0;">Chargement…</div>`
+          : data==="erreur" ? `<div style="text-align:center;color:#a32d2d;padding:20px 0;">⚠️ Erreur de chargement. Vérifie ta connexion et réessaie.</div>`
+          : !data ? "" : `
+          <div style="display:flex;flex-direction:column;gap:10px;">
+            ${data.map(b=>`
+              <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;">
+                <div style="font-weight:600;font-size:14px;margin-bottom:8px;">🏬 ${b.nom}</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                  <div style="background:#fbeaf0;border-radius:8px;padding:8px 10px;">
+                    <div style="font-size:16px;font-weight:700;color:#993556;">${eur(b.caMois)}</div>
+                    <div style="font-size:10px;color:#888;">CA ce mois (${b.nbVentesMois} vte${b.nbVentesMois>1?"s":""})</div>
+                  </div>
+                  <div style="background:#eaf3de;border-radius:8px;padding:8px 10px;">
+                    <div style="font-size:16px;font-weight:700;color:#3b6d11;">${eur(b.caTotal)}</div>
+                    <div style="font-size:10px;color:#888;">CA total historique</div>
+                  </div>
+                  <div style="background:#eef4fd;border-radius:8px;padding:8px 10px;">
+                    <div style="font-size:16px;font-weight:700;color:#185fa5;">${b.nbRefs}</div>
+                    <div style="font-size:10px;color:#888;">Références en stock</div>
+                  </div>
+                  <div style="background:#f5f0f2;border-radius:8px;padding:8px 10px;">
+                    <div style="font-size:16px;font-weight:700;color:#555;">${b.stockUnites}</div>
+                    <div style="font-size:10px;color:#888;">Unités en stock</div>
+                  </div>
+                </div>
+              </div>
+            `).join("")}
+          </div>
+          `}
+      </div>
+    </div>
+  </div>`;
+}
 
 window.diagnostiquerStockAberrant = () => {
   const prods = STATE.products||[];
