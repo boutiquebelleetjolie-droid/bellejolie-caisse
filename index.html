@@ -88,7 +88,7 @@ const BOUTIQUE_CONFIG = {
   siret:    "",
   // Données "globales" partagées entre boutiques (clients, avoirs, fidélité)
   // Données "locales" propres à cette boutique (ventes, stock, Z de caisse, réservations)
-  DONNEES_GLOBALES: ["bj_clients","bj_avoirs","bj_promotions"],
+  DONNEES_GLOBALES: ["bj_clients","bj_avoirs","bj_promotions","bj_transferts"],
   DONNEES_LOCALES:  ["bj_products","bj_ventes","bj_caisse_jour","bj_reservations","bj_annul_lignes","bj_attente","bj_depots_vente","bj_depots_banque","bj_solde_depot_reporte","bj_mouvements_defectueux","bj_ouvertures","bj_registre_personnel"],
 };
 
@@ -107,6 +107,12 @@ function cleFirestore(key) {
   if(BOUTIQUE_ID_ACTUEL==="boutique_1") return key; // comportement historique inchangé
   if(BOUTIQUE_CONFIG.DONNEES_GLOBALES.includes(key)) return key; // toujours partagé, peu importe la boutique
   return key + "__" + BOUTIQUE_ID_ACTUEL; // donnée locale d'un site secondaire : document Firestore séparé
+}
+// Même résolution mais pour une boutique ARBITRAIRE (utile pour écrire chez une autre boutique que la sienne)
+function cleFirestorePour(boutiqueId, key) {
+  if(boutiqueId==="boutique_1") return key;
+  if(BOUTIQUE_CONFIG.DONNEES_GLOBALES.includes(key)) return key;
+  return key + "__" + boutiqueId;
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -164,6 +170,7 @@ const CLES_SYNC_TEMPS_REEL = {
   bj_vendeurs: "__vendeurs__", // cas spécial : met à jour les codes PIN de VENDEURS, pas un champ STATE
   bj_registre_personnel: "registrePersonnel",
   bj_lien_avis_google: "lienAvisGoogle",
+  bj_transferts: "transferts",
 };
 const CLES_SYNC_PROTEGEES = new Set(["emailjsServiceId","emailjsTemplateId","emailjsPublicKey"]); // ne jamais écraser par une valeur vide venue d'un autre appareil
 window._syncBannerTimeout = null;
@@ -668,6 +675,8 @@ let STATE = {
   fondFermeture: {},      // Z de caisse journaliers
   transferts:      ls("bj_transferts",       []),
   reservations:    ls("bj_reservations",    []),
+  transferts:      ls("bj_transferts",      []),
+  showHistoriqueTransferts: false,
   depotsVente:     ls("bj_depots_vente",    []),
   showModalReservation: false,
   resaClient:null, resaArticles:[], resaSearch:"", resaProdSearch:"", resaNote:"", resaScanMode:false,
@@ -719,6 +728,7 @@ let STATE = {
   showFusionArticles: false, fusionIdA: null, fusionIdB: null, fusionRecherche: "",
   showVueBoutiques: false, vueBoutiquesData: null, vueBoutiquesChargement: false,
   showStockAutreBoutique: false, stockAutreBoutiqueData: null, stockAutreBoutiqueChargement: false, stockAutreBoutiqueRecherche: "",
+  showTransfertBoutique: false, transfertForm: null,
   showLotEtiq: false,
   etiquetteTailleVal: "",
   etiquetteCouleurVal: "",
@@ -768,6 +778,7 @@ function setState(patch) {
   if(patch.lienAvisGoogle !== undefined) lsSet("bj_lien_avis_google", STATE.lienAvisGoogle);
   if(patch.ouvertures !== undefined) lsSet("bj_ouvertures", STATE.ouvertures);
   if(patch.reservations  !== undefined) lsSet("bj_reservations",  STATE.reservations);
+  if(patch.transferts    !== undefined) lsSet("bj_transferts",    STATE.transferts);
   if(patch.transferts  !== undefined) lsSet("bj_transferts",   STATE.transferts);
   if(patch.memos    !== undefined) lsSet("bj_memos",    STATE.memos);
   if(patch.emailjsServiceId  !== undefined) lsSet("bj_ejs_service",  STATE.emailjsServiceId);
@@ -1443,6 +1454,8 @@ function renderApp() {
   ${STATE.showFusionArticles ? renderFusionArticlesModal() : ""}
   ${STATE.showVueBoutiques ? renderVueBoutiquesModal() : ""}
   ${STATE.showStockAutreBoutique ? renderStockAutreBoutiqueModal() : ""}
+  ${STATE.showTransfertBoutique ? renderTransfertBoutiqueModal() : ""}
+  ${STATE.showHistoriqueTransferts ? renderHistoriqueTransfertsModal() : ""}
   ${STATE.showCorrectionVente ? renderCorrectionVenteModal() : ""}
   ${STATE.showProdModal    ? renderProdModal()       : ""}
   ${STATE.showClientModal  ? renderClientModal()     : ""}
@@ -5833,6 +5846,151 @@ function renderVueBoutiquesModal() {
 }
 
 // ── VOIR LE STOCK DE L'AUTRE BOUTIQUE (accessible à toutes les vendeuses) ──
+// ── TRANSFÉRER UN ARTICLE (+ réservation) VERS UNE AUTRE BOUTIQUE ──────────
+window.ouvrirTransfertBoutique = (prodId) => {
+  const p = STATE.products.find(x=>x.id===prodId);
+  if(!p) return;
+  const autres = BOUTIQUES.filter(b=>b.id!==BOUTIQUE_ID_ACTUEL);
+  STATE.transfertForm = {
+    prodId, qty:1, taille:"", couleur:"",
+    boutiqueDestId: autres[0]?.id||"",
+    clientRecherche:"", clientChoisi:null,
+    note:"",
+  };
+  STATE.showTransfertBoutique = true;
+  render();
+};
+
+function renderTransfertBoutiqueModal() {
+  const f = STATE.transfertForm;
+  const p = STATE.products.find(x=>x.id===f.prodId);
+  if(!p) return "";
+  const autres = BOUTIQUES.filter(b=>b.id!==BOUTIQUE_ID_ACTUEL);
+  const qClient = normStr(f.clientRecherche||"");
+  const resultatsClients = qClient.length<2 ? [] : STATE.clients.filter(c=>normStr(c.prenom+" "+c.nom+" "+(c.tel||"")).includes(qClient)).slice(0,6);
+
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)setState({showTransfertBoutique:false})">
+    <div class="modal" style="max-width:480px;">
+      <div class="modal-header">
+        <span style="font-weight:500;">📦↔️ Transférer vers une autre boutique</span>
+        <button onclick="setState({showTransfertBoutique:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
+      </div>
+      <div class="modal-body">
+        <div style="background:#f5f0f2;border-radius:9px;padding:10px 14px;margin-bottom:14px;">
+          <div style="font-weight:500;font-size:13px;">${p.name}</div>
+          <div style="font-size:11px;color:#888;">Réf. ${p.ref} · Stock actuel ici : ${p.stock||0}</div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+          <div>
+            <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Quantité</label>
+            <input type="number" min="1" max="${p.stock||1}" value="${f.qty}" oninput="STATE.transfertForm.qty=parseInt(this.value)||1" style="width:100%;box-sizing:border-box;"/>
+          </div>
+          <div>
+            <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Vers quelle boutique</label>
+            <select onchange="STATE.transfertForm.boutiqueDestId=this.value" style="width:100%;box-sizing:border-box;">
+              ${autres.map(b=>`<option value="${b.id}">${b.nom}</option>`).join("")}
+            </select>
+          </div>
+        </div>
+
+        ${(p.tailles?.length||p.couleurs?.length)?`
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+          ${p.tailles?.length?`<div><label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Taille</label><select onchange="STATE.transfertForm.taille=this.value"><option value="">—</option>${p.tailles.map(t=>`<option value="${t}">${t}</option>`).join("")}</select></div>`:""}
+          ${p.couleurs?.length?`<div><label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Couleur</label><select onchange="STATE.transfertForm.couleur=this.value"><option value="">—</option>${p.couleurs.map(c=>`<option value="${c}">${c}</option>`).join("")}</select></div>`:""}
+        </div>
+        `:""}
+
+        <div style="border-top:0.5px solid #e8e0e4;padding-top:12px;margin-bottom:10px;">
+          <div style="font-size:13px;font-weight:500;margin-bottom:6px;">👤 Réserver pour une cliente à l'arrivée ? (optionnel)</div>
+          ${f.clientChoisi?`
+            <div style="display:flex;justify-content:space-between;align-items:center;background:#eaf3de;border-radius:8px;padding:8px 12px;">
+              <span style="font-size:13px;">${f.clientChoisi.prenom} ${f.clientChoisi.nom}</span>
+              <button onclick="STATE.transfertForm.clientChoisi=null;render()" style="background:none;border:none;color:#a32d2d;cursor:pointer;">×</button>
+            </div>
+          `:`
+            <input type="text" value="${f.clientRecherche||''}" oninput="STATE.transfertForm.clientRecherche=this.value;render()" placeholder="Rechercher une cliente (nom, tél)..." style="width:100%;box-sizing:border-box;"/>
+            ${resultatsClients.map(c=>`
+              <div onclick='STATE.transfertForm.clientChoisi=${JSON.stringify(c).replace(/'/g,"&apos;")};STATE.transfertForm.clientRecherche="";render()' style="padding:7px 10px;border-bottom:0.5px solid #f0ebee;cursor:pointer;font-size:13px;">${c.prenom} ${c.nom} <span style="color:#888;">${c.tel||""}</span></div>
+            `).join("")}
+          `}
+        </div>
+
+        <div style="margin-bottom:14px;">
+          <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Note (optionnel)</label>
+          <input type="text" value="${f.note||''}" oninput="STATE.transfertForm.note=this.value" placeholder="Ex: à garder au comptoir" style="width:100%;box-sizing:border-box;"/>
+        </div>
+
+        <button onclick="validerTransfertBoutique()" class="btn-primary" style="width:100%;">📦 Confirmer le transfert</button>
+      </div>
+    </div>
+  </div>`;
+}
+
+window.validerTransfertBoutique = async () => {
+  const f = STATE.transfertForm;
+  const p = STATE.products.find(x=>x.id===f.prodId);
+  const bDest = BOUTIQUES.find(b=>b.id===f.boutiqueDestId);
+  if(!p || !bDest) return;
+  if(f.qty<=0 || f.qty>(p.stock||0)) { alert("⚠️ Quantité invalide par rapport au stock disponible."); return; }
+  if(!_fbDb) { alert("⚠️ Pas de connexion au cloud, impossible de transférer."); return; }
+  if(!confirm(`Transférer ${f.qty}× "${p.name}" vers "${bDest.nom}" ?${f.clientChoisi?`\n\nUne réservation sera créée là-bas pour ${f.clientChoisi.prenom} ${f.clientChoisi.nom}.`:""}`)) return;
+
+  try {
+    // 1. Retirer du stock ICI (boutique actuelle)
+    STATE.products = ajusterStock(STATE.products, p.id, -f.qty, f.taille||null, f.couleur||null);
+    lsSet("bj_products", STATE.products);
+
+    // 2. Lire le stock de la boutique de destination, trouver/créer l'article (correspondance par référence), incrémenter
+    const cleProdDest = cleFirestorePour(bDest.id, "bj_products");
+    const docProdDest = await _fbDb.collection("bellejolie").doc(cleProdDest).get();
+    let produitsDest = docProdDest.exists ? (docProdDest.data().value||[]) : [];
+    const idx = produitsDest.findIndex(x=>x.ref===p.ref);
+    if(idx>=0) {
+      produitsDest[idx] = {...produitsDest[idx], stock:(produitsDest[idx].stock||0)+f.qty};
+    } else {
+      produitsDest = [...produitsDest, {...p, id:uid("PROD"), stock:f.qty, reserveQty:0}];
+    }
+    await _fbDb.collection("bellejolie").doc(cleProdDest).set({value:produitsDest, maj:new Date().toISOString(), device:DEVICE_ID});
+
+    // 3. Créer la réservation là-bas si une cliente a été choisie
+    if(f.clientChoisi) {
+      const cleResaDest = cleFirestorePour(bDest.id, "bj_reservations");
+      const docResaDest = await _fbDb.collection("bellejolie").doc(cleResaDest).get();
+      const resasDest = docResaDest.exists ? (docResaDest.data().value||[]) : [];
+      const now = new Date();
+      const expiration = new Date(now); expiration.setDate(now.getDate()+7);
+      const nouvelleResa = {
+        id: uid("RSV"), date: now.toISOString(), expiration: expiration.toISOString(),
+        clientId: f.clientChoisi.id, clientNom: f.clientChoisi.prenom+" "+f.clientChoisi.nom,
+        clientEmail: f.clientChoisi.email||"", clientTel: f.clientChoisi.tel||"",
+        articles: [{id: idx>=0?produitsDest[idx].id:produitsDest[produitsDest.length-1].id, name:p.name, price:p.price, qty:f.qty, taille:f.taille||null, couleur:f.couleur||null}],
+        note: "🔄 Transfert depuis "+boutiqueActuelle().nom+(f.note?" — "+f.note:""),
+        statut: "active", rappelEnvoye: false, vendeur: STATE.vendeur.nom,
+      };
+      await _fbDb.collection("bellejolie").doc(cleResaDest).set({value:[...resasDest, nouvelleResa], maj:new Date().toISOString(), device:DEVICE_ID});
+    }
+
+    // 4. Historique partagé des transferts (visible des deux côtés)
+    const nouveauTransfert = {
+      id: uid("TRF"), date: new Date().toISOString(), article: p.name, ref: p.ref, qty: f.qty,
+      taille: f.taille||null, couleur: f.couleur||null,
+      boutiqueOrigine: boutiqueActuelle().nom, boutiqueDestination: bDest.nom,
+      client: f.clientChoisi ? f.clientChoisi.prenom+" "+f.clientChoisi.nom : null,
+      creePar: STATE.vendeur.nom,
+    };
+    STATE.transferts = [...(STATE.transferts||[]), nouveauTransfert];
+    lsSet("bj_transferts", STATE.transferts);
+
+    setState({showTransfertBoutique:false});
+    alert(`✅ Transfert effectué : ${f.qty}× "${p.name}" envoyé(s) vers ${bDest.nom}.`);
+  } catch(err) {
+    console.error("Erreur transfert boutique:", err);
+    alert("❌ Erreur pendant le transfert : "+(err.message||err)+"\n\nVérifie ta connexion et réessaie. Le stock d'ici n'a peut-être été retiré qu'en partie, vérifie avant de recommencer.");
+  }
+};
+
 window.ouvrirStockAutreBoutique = async () => {
   STATE.showStockAutreBoutique = true;
   STATE.stockAutreBoutiqueData = null;
@@ -5856,6 +6014,33 @@ window.ouvrirStockAutreBoutique = async () => {
   STATE.stockAutreBoutiqueChargement = false;
   render();
 };
+
+function renderHistoriqueTransfertsModal() {
+  const liste = [...(STATE.transferts||[])].sort((a,b)=>new Date(b.date)-new Date(a.date));
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)setState({showHistoriqueTransferts:false})">
+    <div class="modal" style="max-width:520px;max-height:80vh;display:flex;flex-direction:column;">
+      <div class="modal-header">
+        <span style="font-weight:500;">📦↔️ Historique des transferts</span>
+        <button onclick="setState({showHistoriqueTransferts:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
+      </div>
+      <div class="modal-body" style="overflow-y:auto;flex:1;">
+        ${liste.length===0?`<div style="text-align:center;color:#aaa;padding:24px 0;">Aucun transfert pour le moment.</div>`:
+        liste.map(t=>`
+          <div style="padding:10px 0;border-bottom:0.5px solid #f0ebee;font-size:13px;">
+            <div style="display:flex;justify-content:space-between;margin-bottom:3px;">
+              <strong>${t.qty}× ${t.article}</strong>
+              <span style="color:#888;font-size:11px;">${new Date(t.date).toLocaleDateString("fr-FR")} ${new Date(t.date).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</span>
+            </div>
+            <div style="color:#666;font-size:12px;">🏬 ${t.boutiqueOrigine} → ${t.boutiqueDestination}${t.taille?" · T."+t.taille:""}${t.couleur?" · "+t.couleur:""}</div>
+            ${t.client?`<div style="color:#993556;font-size:12px;">👤 Réservé pour ${t.client}</div>`:""}
+            <div style="color:#aaa;font-size:11px;">Par ${t.creePar}</div>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  </div>`;
+}
 
 function renderStockAutreBoutiqueModal() {
   const data = STATE.stockAutreBoutiqueData;
@@ -6021,6 +6206,7 @@ prods.forEach(p=>{
   t += '<td style="padding:9px 6px;font-weight:500;color:'+stockColor+';">'+stockLabel+'</td>';
   t += '<td style="padding:9px 6px;"><div style="display:flex;gap:4px;">';
   t += '<button onclick="openStkModal(\''+p.id+'\')" class="btn-ghost">Stock</button>';
+  if(isV1 && BOUTIQUES.length>1) t += '<button onclick="ouvrirTransfertBoutique(\''+p.id+'\')" class="btn-ghost" title="Transférer vers une autre boutique">📦↔️</button>';
   t += '<button onclick="openBCModal(\''+p.id+'\')" class="btn-ghost">Étiquette</button>';
   // Bouton lot stock : uniquement si l'article a des variantes avec stock
   const svLot = p.stockVariantes||{};
@@ -6151,6 +6337,7 @@ function renderStock() {
   if(nbEtiq>0) html += renderBoutonLotEtiq(nbEtiq);
   if(STATE.vendeur.role!=="apprenti") html += '<button onclick="openProdModal(null)" class="btn-primary" style="width:auto;padding:8px 16px;">+ Nouvel article</button>';
   if(BOUTIQUES.length>1) html += '<button onclick="ouvrirStockAutreBoutique()" class="btn-ghost" style="white-space:nowrap;">🔍 Stock de l\'autre boutique</button>';
+  if(BOUTIQUES.length>1) html += '<button onclick="setState({showHistoriqueTransferts:true})" class="btn-ghost" style="white-space:nowrap;">📦↔️ Transferts</button>';
   if(isV1) html += '<button onclick="STATE.stockTab=\'reception\';render()" class="btn-ghost" style="white-space:nowrap;">📦 Réception facture</button>';
   if(isV1) html += '<button onclick="ouvrirApercuExtractionMarque()" class="btn-ghost" style="white-space:nowrap;">🔧 Extraire les marques</button>';
   if(isV1) html += '<button onclick="setState({showFusionArticles:true,fusionIdA:null,fusionIdB:null,fusionRecherche:\'\'})" class="btn-ghost" style="white-space:nowrap;">🔗 Fusionner des articles</button>';
