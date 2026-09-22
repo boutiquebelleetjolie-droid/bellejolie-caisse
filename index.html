@@ -5788,12 +5788,35 @@ window.ouvrirVueToutesBoutiques = async () => {
       ]);
       const ventes = docV.exists ? (docV.data().value||[]) : [];
       const products = docP.exists ? (docP.data().value||[]) : [];
+      const prodMap = {}; products.forEach(p=>prodMap[p.id]=p);
       const now = new Date();
       const moisEnCours = ventes.filter(v=>!v.test&&!v.annulee && new Date(v.date).getFullYear()===now.getFullYear() && new Date(v.date).getMonth()===now.getMonth());
       const caMois = moisEnCours.reduce((s,v)=>s+v.total,0);
       const caTotal = ventes.filter(v=>!v.test&&!v.annulee).reduce((s,v)=>s+v.total,0);
       const stockUnites = products.reduce((s,p)=>s+(p.stock||0),0);
-      return { id:b.id, nom:b.nom, caMois, caTotal, nbVentesMois:moisEnCours.length, nbRefs:products.length, stockUnites };
+      const panierMoyenMois = moisEnCours.length>0 ? caMois/moisEnCours.length : 0;
+
+      // Top articles du mois (par quantité)
+      const artM = {};
+      moisEnCours.forEach(v=>(v.panier||[]).filter(i=>!i.retour).forEach(i=>{
+        const nom = prodMap[i.prodIdOriginal||i.id]?.name || i.name || "Article";
+        artM[nom] = (artM[nom]||0) + (i.qty||1);
+      }));
+      const topArticlesMois = Object.entries(artM).sort((a,b)=>b[1]-a[1]).slice(0,5);
+
+      // Répartition par catégorie du mois
+      const catM = {};
+      moisEnCours.forEach(v=>(v.panier||[]).filter(i=>!i.retour).forEach(i=>{
+        const cat = prodMap[i.prodIdOriginal||i.id]?.category || "Autre";
+        catM[cat] = (catM[cat]||0) + (i.price||0)*(i.qty||1);
+      }));
+      const topCategoriesMois = Object.entries(catM).sort((a,b)=>b[1]-a[1]).slice(0,3);
+
+      // Modes de paiement du mois
+      const modeM = {};
+      moisEnCours.forEach(v=>{ modeM[v.payMode||"?"] = (modeM[v.payMode||"?"]||0) + v.total; });
+
+      return { id:b.id, nom:b.nom, caMois, caTotal, nbVentesMois:moisEnCours.length, nbRefs:products.length, stockUnites, panierMoyenMois, topArticlesMois, topCategoriesMois, modeM };
     }));
     STATE.vueBoutiquesData = resultats;
   } catch(err) {
@@ -5822,7 +5845,7 @@ function renderVueBoutiquesModal() {
             ${data.map(b=>`
               <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;">
                 <div style="font-weight:600;font-size:14px;margin-bottom:8px;">🏬 ${b.nom}</div>
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
                   <div style="background:#fbeaf0;border-radius:8px;padding:8px 10px;">
                     <div style="font-size:16px;font-weight:700;color:#993556;">${eur(b.caMois)}</div>
                     <div style="font-size:10px;color:#888;">CA ce mois (${b.nbVentesMois} vte${b.nbVentesMois>1?"s":""})</div>
@@ -5840,6 +5863,24 @@ function renderVueBoutiquesModal() {
                     <div style="font-size:10px;color:#888;">Unités en stock</div>
                   </div>
                 </div>
+                <div style="font-size:12px;color:#888;margin-bottom:10px;">🧺 Panier moyen ce mois : <strong style="color:#333;">${eur(b.panierMoyenMois)}</strong></div>
+
+                ${b.topArticlesMois.length>0?`
+                <div style="font-size:11px;font-weight:600;color:#555;margin-bottom:4px;border-top:0.5px solid #f0ebee;padding-top:8px;">🏆 Top articles du mois</div>
+                ${b.topArticlesMois.map(([nom,qty],i)=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;"><span>${i+1}. ${nom}</span><span style="color:#888;">${qty}×</span></div>`).join("")}
+                `:""}
+
+                ${b.topCategoriesMois.length>0?`
+                <div style="font-size:11px;font-weight:600;color:#555;margin:8px 0 4px;border-top:0.5px solid #f0ebee;padding-top:8px;">📊 Catégories du mois</div>
+                ${b.topCategoriesMois.map(([cat,montant])=>`<div style="display:flex;justify-content:space-between;font-size:12px;padding:2px 0;"><span>${cat}</span><span style="color:#888;">${eur(montant)}</span></div>`).join("")}
+                `:""}
+
+                ${Object.keys(b.modeM).length>0?`
+                <div style="font-size:11px;font-weight:600;color:#555;margin:8px 0 4px;border-top:0.5px solid #f0ebee;padding-top:8px;">💳 Modes de paiement du mois</div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                  ${Object.entries(b.modeM).map(([mode,montant])=>`<span style="background:#f5f0f2;border-radius:6px;padding:3px 8px;font-size:11px;">${mode} : ${eur(montant)}</span>`).join("")}
+                </div>
+                `:""}
               </div>
             `).join("")}
           </div>
