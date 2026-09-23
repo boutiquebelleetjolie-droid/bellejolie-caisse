@@ -147,32 +147,59 @@ try {
 let DEVICE_ID = localStorage.getItem("bj_device_id");
 if(!DEVICE_ID) { DEVICE_ID = "dev_"+Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem("bj_device_id", DEVICE_ID); }
 
+// ── Fusion des ventes entre appareils ─────────────────────────────
+// Les ventes ne sont jamais "remplacées" par la liste d'un autre appareil : on fait l'union par
+// identifiant. Une vente connue d'un appareil ne peut donc plus disparaître parce qu'un autre
+// appareil, resté en retard, renvoie une liste plus ancienne. Pour une même vente présente des
+// deux côtés, la version la plus récemment modifiée gagne (à égalité : celle qui arrive).
+// Les ventes volontairement supprimées sont mémorisées (bj_ventes_suppr) pour ne pas revenir.
+function versionVente(v) {
+  return Math.max(0, ...[v.modifLe, v.restauree, v.dateAnnulation, v.date].filter(Boolean).map(d=>new Date(d).getTime()||0));
+}
+function ventesSupprimeesSet() {
+  try { return new Set(STATE.ventesSuppr||[]); } catch { return new Set(JSON.parse(localStorage.getItem(cleFirestore("bj_ventes_suppr"))||"[]")); }
+}
+function fusionnerListesVentes(base, arrivee) {
+  const suppr = ventesSupprimeesSet();
+  const m = new Map();
+  (base||[]).forEach(v=>{ if(v&&v.id&&!suppr.has(v.id)) m.set(v.id, v); });
+  (arrivee||[]).forEach(v=>{
+    if(!v||!v.id||suppr.has(v.id)) return;
+    const ex = m.get(v.id);
+    if(!ex || versionVente(v) >= versionVente(ex)) m.set(v.id, v);
+  });
+  return [...m.values()].sort((a,b)=>new Date(a.date)-new Date(b.date));
+}
+function signatureVentes(l) { return (l||[]).map(v=>v.id+":"+versionVente(v)).join("|"); }
+function marquerVentesSupprimees(ids) {
+  STATE.ventesSuppr = [...new Set([...(STATE.ventesSuppr||[]), ...ids])];
+  lsSet("bj_ventes_suppr", STATE.ventesSuppr);
+}
+
 // Pousse une clé vers Firestore, en arrière-plan, sans jamais bloquer ni faire planter l'appli
 function firestorePush(key, val) {
   if(!_fbDb) return;
   const maintenant = new Date().toISOString();
   const cle = cleFirestore(key);
 
-  // Garde-fou anti-écrasement pour bj_ventes : l'historique des ventes ne doit quasiment
-  // jamais RACCOURCIR (seules les annulations le vident, rarement de plus de 1-2 d'un coup).
-  // Si la version qu'on s'apprête à pousser a beaucoup moins de ventes que celle déjà sur le
-  // cloud, c'est le signe d'un appareil resté en retard sur la synchro qui s'apprête à écraser
-  // des ventes plus récentes qu'il ne connaît pas encore — on bloque et on alerte au lieu
-  // d'écraser silencieusement (déjà arrivé une fois avec les codes PIN, puis avec des ventes).
+  // Ventes : fusion avec la version du cloud avant d'envoyer (jamais d'écrasement)
   if(key==="bj_ventes" && Array.isArray(val)) {
-    _fbDb.collection("bellejolie").doc(cle).get().then(doc => {
-      const actuelServeur = doc.exists ? (doc.data().value||[]) : [];
-      if(actuelServeur.length > val.length + 2) {
-        console.error(`⚠️ Push bj_ventes BLOQUÉ : version locale (${val.length} ventes) bien plus courte que celle du cloud (${actuelServeur.length} ventes). Rechargement nécessaire avant de continuer.`);
-        alert("⚠️ Problème de synchronisation détecté !\n\nCet appareil a une version des ventes moins complète que celle déjà enregistrée dans le cloud ("+val.length+" contre "+actuelServeur.length+"). Pour éviter de perdre des ventes plus récentes, la sauvegarde a été bloquée.\n\n➡️ Recharge complètement la page (Ctrl+Maj+R) avant de continuer à vendre.");
-        return; // on n'écrase pas
+    const ref = _fbDb.collection("bellejolie").doc(cle);
+    ref.get().then(doc => {
+      const serveur = doc.exists ? (doc.data().value||[]) : [];
+      const fusion = fusionnerListesVentes(serveur, val);
+      if(signatureVentes(fusion)!==signatureVentes(val)) {
+        // Le cloud connaissait des ventes que cet appareil ignorait : on les récupère ici aussi
+        STATE.ventes = fusion;
+        try { localStorage.setItem(cle, JSON.stringify(fusion)); } catch{}
+        setTimeout(render, 0);
       }
-      _fbDb.collection("bellejolie").doc(cle).set({ value: val, maj: maintenant, device: DEVICE_ID })
-        .then(() => { try { localStorage.setItem("bj_dernier_push_local", maintenant); } catch{} })
-        .catch(err => console.error("Firestore push error pour '"+key+"':", err));
-    }).catch(() => {
-      // Vérification impossible (hors-ligne, etc.) : on pousse quand même pour ne pas bloquer le travail en cours
-      _fbDb.collection("bellejolie").doc(cle).set({ value: val, maj: maintenant, device: DEVICE_ID }).catch(()=>{});
+      return ref.set({ value: fusion, maj: maintenant, device: DEVICE_ID });
+    }).then(() => { try { localStorage.setItem("bj_dernier_push_local", maintenant); } catch{} })
+    .catch(err => {
+      console.error("Firestore push (fusion) error pour 'bj_ventes':", err);
+      // Hors-ligne : on envoie quand même ; les autres appareils referont la fusion à réception
+      ref.set({ value: val, maj: maintenant, device: DEVICE_ID }).catch(()=>{});
     });
     return;
   }
@@ -202,6 +229,7 @@ const CLES_SYNC_TEMPS_REEL = {
   bj_registre_personnel: "registrePersonnel",
   bj_lien_avis_google: "lienAvisGoogle",
   bj_transferts: "transferts",
+  bj_ventes_suppr: "ventesSuppr",
 };
 const CLES_SYNC_PROTEGEES = new Set(["emailjsServiceId","emailjsTemplateId","emailjsPublicKey"]); // ne jamais écraser par une valeur vide venue d'un autre appareil
 window._syncBannerTimeout = null;
@@ -214,6 +242,18 @@ function demarrerSyncTempsReel() {
       if(!data || data.device === DEVICE_ID) return; // c'est notre propre écriture, on ignore
       if(doc.metadata.hasPendingWrites) return; // écriture locale pas encore confirmée par le serveur, on ignore
       if(CLES_SYNC_PROTEGEES.has(stateKey) && !data.value && STATE[stateKey]) return; // ne pas écraser un réglage configuré par du vide venu d'ailleurs
+      // Ventes : fusion (jamais de remplacement), et on renvoie au cloud ce qu'il avait perdu
+      if(storageKey==="bj_ventes") {
+        try {
+          const recu = data.value||[];
+          const fusion = fusionnerListesVentes(STATE.ventes||[], recu);
+          STATE.ventes = fusion;
+          localStorage.setItem(cleFirestore(storageKey), JSON.stringify(fusion));
+          if(signatureVentes(fusion)!==signatureVentes(recu)) firestorePush("bj_ventes", fusion);
+          render(); afficherBandeauSyncDiscret();
+        } catch(err) { console.error("Erreur fusion ventes:", err); }
+        return;
+      }
       // Appliquer la mise à jour venue d'un autre appareil
       try {
         localStorage.setItem(cleFirestore(storageKey), JSON.stringify(data.value));
@@ -221,6 +261,11 @@ function demarrerSyncTempsReel() {
           (data.value||[]).forEach((sv,i)=>{ if(VENDEURS[i]&&sv.code) VENDEURS[i].code=sv.code; });
         } else {
           STATE[stateKey] = data.value;
+        }
+        if(storageKey==="bj_ventes_suppr") {
+          const suppr = new Set(data.value||[]);
+          const filtre = (STATE.ventes||[]).filter(v=>!suppr.has(v.id));
+          if(filtre.length!==(STATE.ventes||[]).length) { STATE.ventes = filtre; localStorage.setItem(cleFirestore("bj_ventes"), JSON.stringify(filtre)); }
         }
         render();
         afficherBandeauSyncDiscret();
@@ -684,6 +729,7 @@ let STATE = {
   products: ls("bj_products", INITIAL_PRODUCTS),
   clients:  ls("bj_clients",  []),
   ventes:   ls("bj_ventes",   []),
+  ventesSuppr: ls("bj_ventes_suppr", []),
   avoirs:      ls("bj_avoirs",      []),
   promotions:    ls("bj_promotions",    []),
   ticketsAttente:        ls("bj_attente",       []),
@@ -5805,14 +5851,18 @@ window.fusionnerArticles = (idGarde, idSupprime) => {
   if(!confirm(`Fusionner "${pSupprime.name}" (réf. ${pSupprime.ref}) dans "${pGarde.name}" (réf. ${pGarde.ref}) ?\n\nTout l'historique de ventes sera reporté sur "${pGarde.name}", et "${pSupprime.name}" sera supprimé définitivement.\n\nCette action est irréversible.`)) return;
 
   // 1. Reporter l'historique de ventes (toutes les lignes qui pointent vers l'article supprimé)
-  STATE.ventes = STATE.ventes.map(v => ({
-    ...v,
-    panier: (v.panier||[]).map(it => {
-      const refId = it.prodIdOriginal || it.id;
-      if(refId !== idSupprime) return it;
-      return { ...it, prodIdOriginal: idGarde, id: it.id===idSupprime ? idGarde : it.id };
-    })
-  }));
+  const maintenantFusion = new Date().toISOString();
+  STATE.ventes = STATE.ventes.map(v => {
+    if(!(v.panier||[]).some(it=>(it.prodIdOriginal||it.id)===idSupprime)) return v;
+    return {
+      ...v, modifLe: maintenantFusion, // marque la vente comme modifiée, pour que cette version l'emporte à la synchro
+      panier: (v.panier||[]).map(it => {
+        const refId = it.prodIdOriginal || it.id;
+        if(refId !== idSupprime) return it;
+        return { ...it, prodIdOriginal: idGarde, id: it.id===idSupprime ? idGarde : it.id };
+      })
+    };
+  });
   lsSet("bj_ventes", STATE.ventes);
 
   // 2. Reporter les mouvements défectueux
@@ -9323,6 +9373,7 @@ window.supprimerCorrectionVente = (id) => {
     lsSet("bj_caisse_jour", STATE.caisseJour);
   }
 
+  marquerVentesSupprimees([id]);
   STATE.ventes = STATE.ventes.filter(x=>x.id!==id);
   lsSet("bj_ventes", STATE.ventes);
   render();
@@ -17144,11 +17195,9 @@ if(savedVendeurs) savedVendeurs.forEach((sv,i)=>{ if(VENDEURS[i]&&sv.code){VENDE
 (function() {
   const DELAI_PURGE = 24*60*60*1000;
   const avant = STATE.ventes.length;
-  STATE.ventes = STATE.ventes.filter(v => {
-    if(!v.annulee) return true;
-    const dateRef = v.dateAnnulation || v.date;
-    return (Date.now() - new Date(dateRef).getTime()) < DELAI_PURGE;
-  });
+  const aPurger = STATE.ventes.filter(v => v.annulee && (Date.now() - new Date(v.dateAnnulation || v.date).getTime()) >= DELAI_PURGE).map(v=>v.id);
+  if(aPurger.length) marquerVentesSupprimees(aPurger);
+  STATE.ventes = STATE.ventes.filter(v => !aPurger.includes(v.id));
   if(STATE.ventes.length !== avant) {
     lsSet("bj_ventes", STATE.ventes);
     console.log("Purge tickets annulés (>24h) :", avant-STATE.ventes.length, "supprimé(s)");
