@@ -13466,7 +13466,7 @@ window.imprimerZ = (z) => {
   const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Z caisse ${z.date}</title>
   <style>body{font-family:Arial,sans-serif;padding:20px;max-width:380px;margin:0 auto;font-size:13px;}h1{color:#993556;font-size:15px;}table{width:100%;border-collapse:collapse;}td{padding:6px 0;border-bottom:1px solid #f0ebee;}.bold{font-weight:700;}.total{font-weight:700;font-size:15px;color:#993556;}@media print{body{padding:5mm;}}</style>
   </head><body onload="window.print()">
-  <img src="${LOGO_B64}" style="height:60px;display:block;margin:0 auto 8px;" alt="Belle&Jolie"/><h1 style="text-align:center;">Z de Caisse${(z.corrections||[]).length?" — CORRIGÉ":""}</h1>
+  <img src="${LOGO_B64}" style="height:60px;display:block;margin:0 auto 8px;" alt="Belle&Jolie"/><h1 style="text-align:center;">Z de Caisse</h1>
   <p><strong>${new Date(z.date).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</strong><br/>Clôturé ${new Date(z.heure).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})} par ${z.vendeur}</p>
   <hr/><table>
     <tr><td>Nb ventes</td><td class="bold">${z.nbVentes}</td></tr>
@@ -13488,9 +13488,6 @@ window.imprimerZ = (z) => {
     <tr><td>Écart</td><td style="color:${Math.abs(z.ecart||0)>5?"red":"green"};font-weight:700;">${eur(z.ecart||0)}</td></tr>
   </table>
   ${z.note?`<hr/><p><em>${z.note}</em></p>`:""}
-  ${(z.corrections||[]).length?`<hr/><h2 style="font-size:12px;color:#a32d2d;">⚠️ Corrections après clôture</h2><table>
-    ${z.corrections.map(c=>`<tr><td style="font-size:11px;">${new Date(c.date).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} — ${c.motif} (${c.par}) · ticket #${String(c.venteId||"").slice(-6)}</td><td class="bold" style="color:${c.montant<0?"#a32d2d":"#3b6d11"};">${c.montant>0?"+":""}${eur(c.montant)}</td></tr>`).join("")}
-  </table><p style="font-size:10px;color:#888;">Chiffres ci-dessus déjà corrigés. Réimprimé le ${new Date().toLocaleString("fr-FR")}.</p>`:""}
   </body></html>`;
   const w=window.open("","_blank","width=500,height:700");if(w){w.document.write(html);w.document.close();}
 };
