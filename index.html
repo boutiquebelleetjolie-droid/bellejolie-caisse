@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "23/09 · v6 (allégé)";
+const APP_VERSION = "23/09 · v7 (ressaisie)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -4933,6 +4933,10 @@ function renderPayModal() {
             ⚠️ Le total est négatif (${eur(-total)} à rembourser).<br>Fermez et utilisez le bouton "Créer le bon d'avoir".
           </div>
         `:`
+          ${STATE.vendeur.id==="V1"?`<label style="display:flex;align-items:center;gap:8px;background:#fff3e8;border:1px solid #f0dcb0;border-radius:8px;padding:8px 10px;margin-bottom:8px;cursor:pointer;font-size:12px;color:#854f0b;">
+            <input type="checkbox" ${STATE.ressaisieSansStock?"checked":""} onchange="STATE.ressaisieSansStock=this.checked;render()" style="width:16px;height:16px;"/>
+            🩹 Ressaisie d'une vente perdue — ne pas retirer le stock (déjà décompté)
+          </label>`:""}
           <button onclick="validerPaiement()" class="btn-primary">
             ✅ Valider — ${eur(total)}
           </button>
@@ -5119,6 +5123,7 @@ window.validerPaiement = () => {
     panier:[...STATE.panier], client:STATE.client, clientId:STATE.client?.id||null, vendeur:STATE.vendeur,
     remise:remGlobal, remiseFid:remiseFidMontant||0, remiseProg:remiseProgMontant||0,
     remiseChaussures:remiseChaussuresMontant||0, remiseChaussuresArticle:promoChaussuresInfo?promoChaussuresInfo.nom:"",
+    ...(STATE.ressaisieSansStock && STATE.vendeur.id==="V1" ? {ressaisie:true} : {}),
     remType:STATE.remType||"", remVal:STATE.remVal||"", remiseMotif:STATE.remGlobalMotif||"",
     total:Math.max(0,total), mixed:STATE.payMixed,
     pays:JSON.parse(JSON.stringify(STATE.pays)),
@@ -5136,7 +5141,10 @@ window.validerPaiement = () => {
   lsSet("bj_ventes", STATE.ventes);
 
   // Décrémenter stock articles achetés (pas les retours, pas les réservations déjà déduites)
+  const _ressaisie = STATE.ressaisieSansStock && STATE.vendeur.id==="V1";
+  STATE.ressaisieSansStock = false; // l'option ne vaut que pour cette vente
   STATE.panier.filter(x=>!x.retour).forEach(it=>{
+    if(_ressaisie) return; // Ressaisie d'une vente perdue : le stock avait déjà été décompté
     if(it.resaId) return; // Stock déjà déduit à la réservation
     const pid = it.prodIdOriginal || it.id;
     STATE.products = ajusterStock(STATE.products, pid, -it.qty, it.taille, it.couleur);
