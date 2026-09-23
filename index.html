@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "23/09 · v5 (ventes par ticket)";
+const APP_VERSION = "23/09 · v6 (allégé)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -179,6 +179,71 @@ function marquerVentesSupprimees(ids) {
   if(_fbDb) ids.forEach(id => _fbDb.collection("bellejolie").doc(prefixeJournal()+id).delete().catch(()=>{}));
 }
 
+// ── Allègement des tickets : une ligne vendue n'a pas besoin de la photo ni des tableaux de
+// variantes de l'article (ils représentaient la moitié du poids des ventes).
+const CHAMPS_LOURDS_LIGNE = ["photo","barcodeVariantes","stockVariantes"];
+function allegerVentes(liste) {
+  let change = false;
+  (liste||[]).forEach(v => {
+    if(!v || !Array.isArray(v.panier)) return;
+    if(v.panier.some(it => it && CHAMPS_LOURDS_LIGNE.some(k => k in it))) {
+      v.panier = v.panier.map(it => { if(!it) return it; const c = {...it}; CHAMPS_LOURDS_LIGNE.forEach(k=>delete c[k]); return c; });
+      change = true;
+    }
+  });
+  return change;
+}
+
+// ── Photos des articles : stockées à part dans le cloud (photo__<boutique>__<id>) ──
+function prefixePhotos() { return "photo__"+BOUTIQUE_ID_ACTUEL+"__"; }
+function produitsSansPhotos(liste) {
+  return (liste||[]).map(p => { if(!p) return p; const {photo, ...r} = p; return {...r, aPhoto: p.photo ? true : !!p.aPhoto}; });
+}
+function envoyerPhotosProduits(liste) {
+  if(!_fbDb) return;
+  const cle = "bj_photo_sig__"+BOUTIQUE_ID_ACTUEL;
+  let sigs = {}; try { sigs = JSON.parse(localStorage.getItem(cle)||"{}"); } catch{}
+  const col = _fbDb.collection("bellejolie");
+  (liste||[]).forEach(p => {
+    if(!p || !p.id) return;
+    const sig = p.photo ? p.photo.length+":"+p.photo.slice(-24) : "";
+    let op = null;
+    if(sig && sigs[p.id]!==sig) op = col.doc(prefixePhotos()+p.id).set({ value:p.photo, maj:new Date().toISOString(), device:DEVICE_ID });
+    else if(!sig && sigs[p.id] && p.aPhoto===false) op = col.doc(prefixePhotos()+p.id).delete(); // photo retirée volontairement
+    if(!op) return;
+    op.then(() => { if(sig) sigs[p.id]=sig; else delete sigs[p.id]; try { localStorage.setItem(cle, JSON.stringify(sigs)); } catch{} })
+      .catch(err => console.error("Photo non envoyée pour "+p.id, err));
+  });
+}
+function attacherPhotosLocales(liste) {
+  const loc = new Map((STATE.products||[]).filter(p=>p && p.photo).map(p=>[p.id, p.photo]));
+  return (liste||[]).map(p => (p && !p.photo && p.aPhoto!==false && loc.has(p.id)) ? {...p, photo: loc.get(p.id)} : p);
+}
+async function chargerPhotosManquantes() {
+  if(!_fbDb || window._chargementPhotos) return;
+  if(!(STATE.products||[]).some(p => p && p.aPhoto && !p.photo)) return;
+  window._chargementPhotos = true;
+  try {
+    const FP = firebase.firestore.FieldPath.documentId();
+    const pre = prefixePhotos();
+    const snap = await _fbDb.collection("bellejolie").where(FP, ">=", pre).where(FP, "<", pre+"\uf8ff").get();
+    const map = {}; snap.forEach(d => { const x = d.data(); if(x && x.value) map[d.id.slice(pre.length)] = x.value; });
+    let n = 0;
+    STATE.products = STATE.products.map(p => (p && p.aPhoto && !p.photo && map[p.id]) ? (n++, {...p, photo: map[p.id]}) : p);
+    if(n) { try { localStorage.setItem(cleFirestore("bj_products"), JSON.stringify(STATE.products)); } catch{} render(); }
+  } catch(err) { console.error("Chargement des photos impossible:", err); }
+  window._chargementPhotos = false;
+}
+
+// ── Surveillance de la taille des documents cloud (limite Firestore : 1 Mo) ──
+const _alertesTaille = {};
+function alerterTailleCloud(key, message) {
+  if(_alertesTaille[key]) return;
+  _alertesTaille[key] = true;
+  console.error(message);
+  setTimeout(() => alert(message), 0);
+}
+
 // ── Journal des tickets : une copie de chaque vente dans son propre document cloud ──
 // Contrairement à la liste bj_ventes (un seul document, réécrit en entier), un ticket du journal
 // ne peut pas être effacé par un appareil en retard qui renvoie une liste périmée.
@@ -215,7 +280,9 @@ async function synchroniserJournalAuDemarrage() {
   if(!_fbDb) return;
   try {
     const journal = await lireJournalVentes();
-    const jMap = new Map(journal.map(v=>[v.id, v]));
+    const jMap = new Map(journal.map(v=>[v.id, JSON.parse(JSON.stringify(v))]));
+    allegerVentes(journal);
+    allegerVentes(STATE.ventes||[]);
     const avant = signatureVentes(STATE.ventes||[]);
     const fusion = fusionnerListesVentes(journal, STATE.ventes||[]);
     const cleSig = "bj_journal_sig__"+BOUTIQUE_ID_ACTUEL;
@@ -246,6 +313,7 @@ function ecouterJournalVentes() {
     const recues = [];
     snap.docChanges().forEach(ch => { if(ch.type!=="removed") { const x = ch.doc.data(); if(x && x.value) recues.push(x.value); } });
     if(!recues.length) return;
+    allegerVentes(recues);
     const fusion = fusionnerListesVentes(STATE.ventes||[], recues);
     if(signatureVentes(fusion)!==signatureVentes(STATE.ventes||[])) {
       STATE.ventes = fusion;
@@ -295,9 +363,22 @@ function firestorePush(key, val) {
     return;
   }
 
-  _fbDb.collection("bellejolie").doc(cle).set({ value: val, maj: maintenant, device: DEVICE_ID })
+  // Articles : les photos partent dans des documents séparés, la liste reste légère
+  let aEnvoyer = val;
+  if(key==="bj_products" && Array.isArray(val)) {
+    aEnvoyer = produitsSansPhotos(val);
+    envoyerPhotosProduits(val);
+  }
+  let taille = 0; try { taille = JSON.stringify(aEnvoyer).length; } catch{}
+  if(taille > 900000) alerterTailleCloud(key, "⚠️ Les données « "+key+" » approchent la limite du cloud ("+Math.round(taille/1024)+" Ko sur 1024). Préviens l'assistant pour éviter un blocage.");
+  _fbDb.collection("bellejolie").doc(cle).set({ value: aEnvoyer, maj: maintenant, device: DEVICE_ID })
     .then(() => { try { localStorage.setItem("bj_dernier_push_local", maintenant); } catch{} })
-    .catch(err => console.error("Firestore push error pour '"+key+"':", err));
+    .catch(err => {
+      console.error("Firestore push error pour '"+key+"':", err);
+      const msg = String(err && (err.message||err));
+      if(/exceed|too large|maximum|invalid-argument/i.test(msg))
+        alerterTailleCloud("refus_"+key, "⚠️ La sauvegarde cloud de « "+key+" » a été REFUSÉE (données trop volumineuses). Tout reste enregistré sur cet appareil, mais les autres appareils ne voient plus les changements. Préviens l'assistant.");
+    });
 }
 
 // Récupère toutes les clés depuis Firestore (utilisé pour la restauration manuelle)
@@ -333,10 +414,22 @@ function demarrerSyncTempsReel() {
       if(!data || data.device === DEVICE_ID) return; // c'est notre propre écriture, on ignore
       if(doc.metadata.hasPendingWrites) return; // écriture locale pas encore confirmée par le serveur, on ignore
       if(CLES_SYNC_PROTEGEES.has(stateKey) && !data.value && STATE[stateKey]) return; // ne pas écraser un réglage configuré par du vide venu d'ailleurs
+      // Articles : la liste du cloud n'a pas les photos, on rattache celles déjà présentes ici
+      if(storageKey==="bj_products") {
+        try {
+          const recus = attacherPhotosLocales(data.value||[]);
+          STATE.products = recus;
+          localStorage.setItem(cleFirestore(storageKey), JSON.stringify(recus));
+          render(); afficherBandeauSyncDiscret();
+          chargerPhotosManquantes();
+        } catch(err) { console.error("Erreur application articles:", err); }
+        return;
+      }
       // Ventes : fusion (jamais de remplacement), et on renvoie au cloud ce qu'il avait perdu
       if(storageKey==="bj_ventes") {
         try {
           const recu = data.value||[];
+          allegerVentes(recu);
           const fusion = fusionnerListesVentes(STATE.ventes||[], recu);
           STATE.ventes = fusion;
           localStorage.setItem(cleFirestore(storageKey), JSON.stringify(fusion));
@@ -388,6 +481,7 @@ const DB = {
   set(key, val) {
     if(this.moteur === "local") {
       try {
+        if(key==="bj_ventes") allegerVentes(val);
         localStorage.setItem(cleFirestore(key), JSON.stringify(val));
         firestorePush(key, val); // sauvegarde cloud en tâche de fond, ne bloque jamais l'appli
       } catch(err) {
@@ -2154,6 +2248,9 @@ window.restaurerDepuisCloud = async () => {
     const pre = prefixeJournal();
     const ventesJournal = Object.keys(data).filter(k=>k.startsWith(pre)).map(k=>data[k]).filter(Boolean);
     data["bj_ventes"] = fusionnerListesVentes(data["bj_ventes"]||[], ventesJournal);
+    allegerVentes(data["bj_ventes"]);
+    const preP = prefixePhotos();
+    if(Array.isArray(data["bj_products"])) data["bj_products"] = data["bj_products"].map(pr => (pr && !pr.photo && data[preP+pr.id]) ? {...pr, photo: data[preP+pr.id]} : pr);
     cles.forEach(k => { if(data[k]!==undefined) { localStorage.setItem(k, JSON.stringify(data[k])); compte++; } });
     alert("✅ "+compte+" éléments restaurés depuis le cloud !\n\nL'application va se recharger.");
     location.reload();
@@ -6204,7 +6301,7 @@ window.validerTransfertBoutique = async () => {
     if(idx>=0) {
       produitsDest[idx] = {...produitsDest[idx], stock:(produitsDest[idx].stock||0)+f.qty};
     } else {
-      produitsDest = [...produitsDest, {...p, id:uid("PROD"), stock:f.qty, reserveQty:0}];
+      produitsDest = [...produitsDest, {...p, id:uid("PROD"), stock:f.qty, reserveQty:0, photo:"", aPhoto:false}];
     }
     await _fbDb.collection("bellejolie").doc(cleProdDest).set({value:produitsDest, maj:new Date().toISOString(), device:DEVICE_ID});
 
@@ -6939,6 +7036,7 @@ window.saveProd = () => {
     tailles:        tailles,
     couleurs:       couleurs,
     photo:          f.photo||"",
+    aPhoto:         !!f.photo,
     prixAchat:       f.prixAchat ? parseFloat(f.prixAchat) : (existant?.prixAchat||null),
     dateAjout:       f.dateAjout ? new Date(f.dateAjout+"T12:00:00").toISOString() : (existant?.dateAjout || new Date().toISOString()),
     dernierReassort: stockAugmente ? new Date().toISOString() : (existant?.dernierReassort||null),
@@ -17315,6 +17413,7 @@ demarrerSyncTempsReel();
 // Journal des tickets (stockage cloud des ventes, un document par vente) : synchro + écoute temps réel
 synchroniserJournalAuDemarrage();
 ecouterJournalVentes();
+setTimeout(() => { envoyerPhotosProduits(STATE.products||[]); chargerPhotosManquantes(); }, 3000);
 
 // ── DEMANDE D'AVIS GOOGLE (envoyée quelques jours après un achat) ──────
 window.verifierDemandesAvis = () => {
