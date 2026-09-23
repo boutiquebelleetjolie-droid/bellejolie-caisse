@@ -1796,6 +1796,10 @@ function renderVendeurSettings() {
               <input type="file" accept=".json" onchange="importerDonnees(this)" style="display:none;"/>
             </label>
           </div>
+          <label style="display:block;padding:10px;background:#fff3e8;color:#854f0b;border:1px solid #f0dcb0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;text-align:center;margin-bottom:10px;">
+            🩹 Récupérer des ventes manquantes depuis une sauvegarde
+            <input type="file" accept=".json" onchange="recupererVentesDepuisSauvegarde(this)" style="display:none;"/>
+          </label>
           <!-- Sauvegarde auto par email -->
           <div style="background:#f5f0f2;border-radius:8px;padding:10px;margin-bottom:8px;">
             <div style="font-size:12px;font-weight:500;margin-bottom:6px;">📧 Sauvegarde automatique par email</div>
@@ -2015,6 +2019,38 @@ window.restaurerDepuisCloud = async () => {
     console.error("Erreur restauration cloud:", err);
     alert("❌ Erreur lors de la restauration : "+(err?.message||err));
   }
+};
+
+// Récupération ciblée : n'ajoute QUE les ventes présentes dans la sauvegarde et absentes ici.
+// Ne touche à rien d'autre (stock, clients, réglages restent tels quels).
+window.recupererVentesDepuisSauvegarde = (input) => {
+  const file = input.files[0]; if(!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      const ventesSauv = data.ventes || [];
+      const idsActuels = new Set((STATE.ventes||[]).map(v=>v.id));
+      const manquantes = ventesSauv.filter(v => v && v.id && !idsActuels.has(v.id));
+      if(manquantes.length===0) { alert("✅ Aucune vente manquante : toutes les ventes de ce fichier sont déjà présentes."); input.value=""; return; }
+      const detail = manquantes.slice(0,20).map(v =>
+        "• "+new Date(v.date).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})+" — "+eur(v.total)+" ("+(v.payMode||"?")+") : "+(v.panier||[]).map(i=>(i.qty||1)+"× "+i.name).join(", ")
+      ).join("\n");
+      const total = manquantes.reduce((s,v)=>s+(v.annulee||v.test?0:v.total),0);
+      if(!confirm(manquantes.length+" vente(s) manquante(s) trouvée(s) — "+eur(total)+" :\n\n"+detail+(manquantes.length>20?"\n…":"")+"\n\nLes ajouter à l'historique ? (rien d'autre n'est modifié)")) { input.value=""; return; }
+      STATE.ventes = [...STATE.ventes, ...manquantes].sort((a,b)=>new Date(a.date)-new Date(b.date));
+      lsSet("bj_ventes", STATE.ventes);
+      // Prévenir si une correction manuelle existe déjà pour ces dates (sinon CA compté deux fois)
+      const joursRecup = new Set(manquantes.map(v=>dateLocaleStr(new Date(v.date))));
+      const corrections = STATE.ventes.filter(v=>v.correctionManuelle && joursRecup.has(dateLocaleStr(new Date(v.date))));
+      render();
+      alert("✅ "+manquantes.length+" vente(s) récupérée(s)."
+        +(corrections.length?"\n\n⚠️ Une vente 'reconstituée' manuellement existe pour le(s) même(s) jour(s) : supprime-la dans Bilan → Corrections manuelles existantes, sinon le CA sera compté deux fois.":"")
+        +"\n\nℹ️ Le stock n'a pas été modifié : vérifie que les articles listés ont bien été décomptés.");
+    } catch(err) { alert("❌ Fichier illisible : "+err.message); }
+    input.value = "";
+  };
+  reader.readAsText(file);
 };
 
 window.importerDonnees = (input) => {
@@ -9719,7 +9755,7 @@ function renderAnnulations() {
               <td style="padding:8px;text-align:right;font-weight:600;color:#993556;">${eur(v.total)}</td>
               <td style="padding:8px;text-align:center;"><span style="font-size:11px;padding:2px 7px;background:#e6f1fb;color:#185fa5;border-radius:10px;">${mL[v.payMode]||v.payMode}</span></td>
               <td style="padding:8px;text-align:center;">
-                ${new Date(v.date).toDateString()===new Date().toDateString() ? `
+                ${venteAnnulableDelai(v) ? `
                 <div style="display:flex;flex-direction:column;gap:4px;">
                   <button onclick="confirmerAnnulationComplete('${v.id}')"
                     style="background:#fcebeb;color:#a32d2d;border:1px solid #f09595;border-radius:7px;padding:5px 8px;font-size:11px;cursor:pointer;font-weight:500;white-space:nowrap;"
@@ -9740,7 +9776,7 @@ function renderAnnulations() {
       </table>
       </div>`}
     </div>
-    <div style="font-size:11px;color:#aaa;margin:-10px 0 16px;">⚠️ Seules les ventes d'aujourd'hui peuvent être annulées.</div>
+    <div style="font-size:11px;color:#aaa;margin:-10px 0 16px;">⚠️ Seules les ventes des 72 dernières heures peuvent être annulées.</div>
 
     <!-- Ventes déjà annulées -->
     ${annulees.length>0?`
@@ -9927,6 +9963,7 @@ window.restaurerVenteAnnulee = (venteId) => {
     // Annulation comptable : rien d'autre n'avait été touché, simple bascule
     if(!confirm("Annuler cette annulation comptable et remettre le ticket comme vente active ?")) return;
     STATE.ventes = STATE.ventes.map(x=>x.id===venteId?{...x, annulee:false, typeAnnulation:null, dateAnnulation:null, annuleePar:null, restauree:new Date().toISOString(), restrauréePar:STATE.vendeur.nom}:x);
+    ajusterZApresAnnulation(v, +1, "Restauration d'une vente annulée");
     lsSet("bj_ventes", STATE.ventes);
     render();
     return;
@@ -9985,10 +10022,42 @@ window.restaurerVenteAnnulee = (venteId) => {
 
   // 5. Réactiver la vente
   STATE.ventes = STATE.ventes.map(x=>x.id===venteId?{...x, annulee:false, typeAnnulation:null, dateAnnulation:null, annuleePar:null, restauree:new Date().toISOString(), restrauréePar:STATE.vendeur.nom}:x);
+    ajusterZApresAnnulation(v, +1, "Restauration d'une vente annulée");
   lsSet("bj_ventes", STATE.ventes);
   render();
   alert("✅ La vente a été restaurée comme active.");
 };
+
+// Une vente reste annulable pendant 72h après sa création
+const DELAI_ANNULATION_MS = 72*60*60*1000;
+function venteAnnulableDelai(v) { return (Date.now() - new Date(v.date).getTime()) <= DELAI_ANNULATION_MS; }
+
+// Répercute une annulation (signe=-1) ou une restauration (signe=+1) sur le Z déjà clôturé du jour
+// de la vente, pour que le ticket Z réimprimé reflète la correction. Ajustement par différence
+// (jamais un recalcul complet, qui écraserait un Z juste si des ventes avaient été perdues).
+function ajusterZApresAnnulation(v, signe, motif) {
+  const dateZ = dateLocaleStr(new Date(v.date));
+  const z = (STATE.caisseJour||[]).find(x=>x.date===dateZ);
+  if(!z) return false; // journée pas encore clôturée : le Z sera calculé normalement à la clôture
+  const parts = v.mixed && Array.isArray(v.pays) ? v.pays.map(p=>({mode:p.mode, montant:parseFloat(p.montant||0)})) : [{mode:v.payMode, montant:v.total}];
+  const especes = parts.filter(p=>p.mode==="especes").reduce((s,p)=>s+p.montant,0);
+  const payM = {...(z.payM||{})};
+  parts.forEach(p=>{ payM[p.mode] = Math.max(0,(payM[p.mode]||0) + signe*p.montant); });
+  const dejaDepose = (STATE.depotsBanque||[]).some(d=>(d.jours||[]).some(j=>j.date===dateZ));
+  STATE.caisseJour = STATE.caisseJour.map(x=>x.date!==dateZ ? x : {
+    ...x,
+    caTTC: Math.max(0,(x.caTTC||0) + signe*v.total),
+    caHT: Math.max(0,(x.caHT||0) + signe*v.total/1.20),
+    tvaCol: Math.max(0,(x.tvaCol||0) + signe*(v.total-v.total/1.20)),
+    nbVentes: Math.max(0,(x.nbVentes||0) + signe),
+    payM,
+    especes: Math.max(0,(x.especes||0) + signe*especes),
+    aDeposer: dejaDepose ? x.aDeposer : Math.max(0,(x.aDeposer||0) + signe*especes),
+    corrections: [...(x.corrections||[]), {date:new Date().toISOString(), par:STATE.vendeur.nom, venteId:v.id, montant:signe*v.total, motif}],
+  });
+  lsSet("bj_caisse_jour", STATE.caisseJour);
+  return true;
+}
 
 // ── ANNULATION COMPLÈTE : stock + fidélité + avoir ─────────────────────
 window.confirmerAnnulationComplete = (venteId) => {
@@ -10215,8 +10284,8 @@ window.validerRetourHistorique = (venteId, articlesIds) => {
 window.annulerVente = (venteId, complet) => {
   const v = STATE.ventes.find(x=>x.id===venteId);
   if(!v||v.annulee) return;
-  if(new Date(v.date).toDateString() !== new Date().toDateString()) {
-    alert("⚠️ Seules les ventes d'aujourd'hui peuvent être annulées.");
+  if(!venteAnnulableDelai(v)) {
+    alert("⚠️ Seules les ventes des 72 dernières heures peuvent être annulées.");
     return;
   }
 
@@ -10229,6 +10298,8 @@ window.annulerVente = (venteId, complet) => {
     annuleePar: STATE.vendeur.nom,
   }:x);
   lsSet("bj_ventes", STATE.ventes);
+  // Si la journée est déjà clôturée, corriger le Z pour que sa réimpression reflète l'annulation
+  ajusterZApresAnnulation(v, -1, "Annulation "+(complet?"complète":"comptable"));
 
   let avoirCree = null;
 
@@ -13395,7 +13466,7 @@ window.imprimerZ = (z) => {
   const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Z caisse ${z.date}</title>
   <style>body{font-family:Arial,sans-serif;padding:20px;max-width:380px;margin:0 auto;font-size:13px;}h1{color:#993556;font-size:15px;}table{width:100%;border-collapse:collapse;}td{padding:6px 0;border-bottom:1px solid #f0ebee;}.bold{font-weight:700;}.total{font-weight:700;font-size:15px;color:#993556;}@media print{body{padding:5mm;}}</style>
   </head><body onload="window.print()">
-  <img src="${LOGO_B64}" style="height:60px;display:block;margin:0 auto 8px;" alt="Belle&Jolie"/><h1 style="text-align:center;">Z de Caisse</h1>
+  <img src="${LOGO_B64}" style="height:60px;display:block;margin:0 auto 8px;" alt="Belle&Jolie"/><h1 style="text-align:center;">Z de Caisse${(z.corrections||[]).length?" — CORRIGÉ":""}</h1>
   <p><strong>${new Date(z.date).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"})}</strong><br/>Clôturé ${new Date(z.heure).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})} par ${z.vendeur}</p>
   <hr/><table>
     <tr><td>Nb ventes</td><td class="bold">${z.nbVentes}</td></tr>
@@ -13417,6 +13488,9 @@ window.imprimerZ = (z) => {
     <tr><td>Écart</td><td style="color:${Math.abs(z.ecart||0)>5?"red":"green"};font-weight:700;">${eur(z.ecart||0)}</td></tr>
   </table>
   ${z.note?`<hr/><p><em>${z.note}</em></p>`:""}
+  ${(z.corrections||[]).length?`<hr/><h2 style="font-size:12px;color:#a32d2d;">⚠️ Corrections après clôture</h2><table>
+    ${z.corrections.map(c=>`<tr><td style="font-size:11px;">${new Date(c.date).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})} — ${c.motif} (${c.par}) · ticket #${String(c.venteId||"").slice(-6)}</td><td class="bold" style="color:${c.montant<0?"#a32d2d":"#3b6d11"};">${c.montant>0?"+":""}${eur(c.montant)}</td></tr>`).join("")}
+  </table><p style="font-size:10px;color:#888;">Chiffres ci-dessus déjà corrigés. Réimprimé le ${new Date().toLocaleString("fr-FR")}.</p>`:""}
   </body></html>`;
   const w=window.open("","_blank","width=500,height:700");if(w){w.document.write(html);w.document.close();}
 };
