@@ -94,6 +94,8 @@ const BOUTIQUE_CONFIG = {
 
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
+// Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
+const APP_VERSION = "23/09 · v4 (journal des tickets)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -17261,6 +17263,12 @@ render();
 
 // Démarrer la synchronisation temps réel avec les autres appareils
 demarrerSyncTempsReel();
+(function(){
+  const b=document.createElement("div");
+  b.textContent="Version "+APP_VERSION+(BOUTIQUE_ID_ACTUEL!=="boutique_1"?" · "+BOUTIQUE_ID_ACTUEL:"");
+  b.style.cssText="position:fixed;right:6px;bottom:4px;font-size:10px;color:#aaa;background:rgba(255,255,255,0.8);padding:1px 6px;border-radius:5px;z-index:9999;pointer-events:none;";
+  document.body.appendChild(b);
+})();
 
 // Journal des tickets : copie de sécurité de toutes les ventes connues ici, puis réparation
 // automatique de la liste si des ventes du journal y manquent (après la 1re synchro).
