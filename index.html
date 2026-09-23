@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "23/09 · v4 (journal des tickets)";
+const APP_VERSION = "23/09 · v5 (ventes par ticket)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -176,6 +176,7 @@ function signatureVentes(l) { return (l||[]).map(v=>v.id+":"+versionVente(v)).jo
 function marquerVentesSupprimees(ids) {
   STATE.ventesSuppr = [...new Set([...(STATE.ventesSuppr||[]), ...ids])];
   lsSet("bj_ventes_suppr", STATE.ventesSuppr);
+  if(_fbDb) ids.forEach(id => _fbDb.collection("bellejolie").doc(prefixeJournal()+id).delete().catch(()=>{}));
 }
 
 // ── Journal des tickets : une copie de chaque vente dans son propre document cloud ──
@@ -185,11 +186,18 @@ function marquerVentesSupprimees(ids) {
 function prefixeJournal() { return "journal__"+BOUTIQUE_ID_ACTUEL+"__"; }
 function signatureJournal(v) { return versionVente(v)+":"+JSON.stringify(v).length; }
 function journaliserVentes(liste) {
-  if(!_fbDb) return;
+  if(!_fbDb || !window._journalPret) return; // la synchro de démarrage écrira tout ce qu'il faut
   const cleSig = "bj_journal_sig__"+BOUTIQUE_ID_ACTUEL;
   let sigs = {}; try { sigs = JSON.parse(localStorage.getItem(cleSig)||"{}"); } catch{}
+  const maintenantJ = new Date().toISOString();
   const aEcrire = (liste||[]).filter(v => v && v.id && sigs[v.id]!==signatureJournal(v));
   if(!aEcrire.length) return;
+  // Une vente déjà journalisée qui a changé ici (retour, annulation, avoir...) est horodatée,
+  // pour que cette version l'emporte sur les autres appareils.
+  aEcrire.forEach(v => { if(sigs[v.id]) v.modifLe = maintenantJ; });
+  ecrireJournal(aEcrire, sigs, cleSig);
+}
+function ecrireJournal(aEcrire, sigs, cleSig) {
   const col = _fbDb.collection("bellejolie");
   for(let i=0; i<aEcrire.length; i+=400) {
     const lot = aEcrire.slice(i, i+400);
@@ -201,9 +209,54 @@ function journaliserVentes(liste) {
     }).catch(err => console.error("Journal des tickets : échec d'écriture", err));
   }
 }
-async function lireJournalVentes() {
+// Au démarrage : lit le journal, le fusionne avec la liste locale, puis n'écrit dans le journal
+// que les ventes absentes ou plus récentes ici (jamais d'écrasement aveugle par une copie périmée).
+async function synchroniserJournalAuDemarrage() {
+  if(!_fbDb) return;
+  try {
+    const journal = await lireJournalVentes();
+    const jMap = new Map(journal.map(v=>[v.id, v]));
+    const avant = signatureVentes(STATE.ventes||[]);
+    const fusion = fusionnerListesVentes(journal, STATE.ventes||[]);
+    const cleSig = "bj_journal_sig__"+BOUTIQUE_ID_ACTUEL;
+    const sigs = {};
+    fusion.forEach(v => { const j = jMap.get(v.id); if(j && signatureJournal(j)===signatureJournal(v)) sigs[v.id] = signatureJournal(v); });
+    try { localStorage.setItem(cleSig, JSON.stringify(sigs)); } catch{}
+    if(signatureVentes(fusion)!==avant) {
+      STATE.ventes = fusion;
+      try { localStorage.setItem(cleFirestore("bj_ventes"), JSON.stringify(fusion)); } catch{}
+      render();
+    }
+    window._journalPret = true;
+    const aEcrire = fusion.filter(v => sigs[v.id]!==signatureJournal(v));
+    if(aEcrire.length) ecrireJournal(aEcrire, sigs, cleSig);
+    console.log("Journal : "+journal.length+" tickets lus, "+aEcrire.length+" écrits");
+  } catch(err) {
+    console.error("Synchro du journal impossible:", err);
+    window._journalPret = true;
+    setTimeout(synchroniserJournalAuDemarrage, 30000); // réessayer plus tard
+  }
+}
+// Écoute en temps réel des tickets des autres appareils
+function ecouterJournalVentes() {
+  if(!_fbDb) return;
   const FP = firebase.firestore.FieldPath.documentId();
   const pre = prefixeJournal();
+  _fbDb.collection("bellejolie").where(FP, ">=", pre).where(FP, "<", pre+"\uf8ff").onSnapshot(snap => {
+    const recues = [];
+    snap.docChanges().forEach(ch => { if(ch.type!=="removed") { const x = ch.doc.data(); if(x && x.value) recues.push(x.value); } });
+    if(!recues.length) return;
+    const fusion = fusionnerListesVentes(STATE.ventes||[], recues);
+    if(signatureVentes(fusion)!==signatureVentes(STATE.ventes||[])) {
+      STATE.ventes = fusion;
+      try { localStorage.setItem(cleFirestore("bj_ventes"), JSON.stringify(fusion)); } catch{}
+      render(); afficherBandeauSyncDiscret();
+    }
+  }, err => console.error("Écoute du journal impossible:", err));
+}
+async function lireJournalVentes(boutiqueId) {
+  const FP = firebase.firestore.FieldPath.documentId();
+  const pre = boutiqueId ? "journal__"+boutiqueId+"__" : prefixeJournal();
   const snap = await _fbDb.collection("bellejolie").where(FP, ">=", pre).where(FP, "<", pre+"\uf8ff").get();
   const res = []; snap.forEach(d => { const x = d.data(); if(x && x.value) res.push(x.value); });
   return res;
@@ -234,27 +287,11 @@ function firestorePush(key, val) {
   const maintenant = new Date().toISOString();
   const cle = cleFirestore(key);
 
-  // Ventes : fusion avec la version du cloud avant d'envoyer (jamais d'écrasement)
+  // Ventes : chaque vente vit dans son propre document du journal. L'ancien document unique
+  // "bj_ventes" n'est plus écrit : il dépassait la limite de 1 Mo du cloud et était refusé.
   if(key==="bj_ventes" && Array.isArray(val)) {
-    const ref = _fbDb.collection("bellejolie").doc(cle);
-    ref.get().then(doc => {
-      const serveur = doc.exists ? (doc.data().value||[]) : [];
-      const fusion = fusionnerListesVentes(serveur, val);
-      if(signatureVentes(fusion)!==signatureVentes(val)) {
-        // Le cloud connaissait des ventes que cet appareil ignorait : on les récupère ici aussi
-        STATE.ventes = fusion;
-        try { localStorage.setItem(cle, JSON.stringify(fusion)); } catch{}
-        setTimeout(render, 0);
-      }
-      journaliserVentes(fusion);
-      return ref.set({ value: fusion, maj: maintenant, device: DEVICE_ID });
-    }).then(() => { try { localStorage.setItem("bj_dernier_push_local", maintenant); } catch{} })
-    .catch(err => {
-      console.error("Firestore push (fusion) error pour 'bj_ventes':", err);
-      // Hors-ligne : on envoie quand même ; les autres appareils referont la fusion à réception
-      ref.set({ value: val, maj: maintenant, device: DEVICE_ID }).catch(()=>{});
-      journaliserVentes(val);
-    });
+    journaliserVentes(val);
+    try { localStorage.setItem("bj_dernier_push_local", maintenant); } catch{}
     return;
   }
 
@@ -303,7 +340,7 @@ function demarrerSyncTempsReel() {
           const fusion = fusionnerListesVentes(STATE.ventes||[], recu);
           STATE.ventes = fusion;
           localStorage.setItem(cleFirestore(storageKey), JSON.stringify(fusion));
-          if(signatureVentes(fusion)!==signatureVentes(recu)) firestorePush("bj_ventes", fusion);
+          journaliserVentes(fusion);
           render(); afficherBandeauSyncDiscret();
         } catch(err) { console.error("Erreur fusion ventes:", err); }
         return;
@@ -2113,6 +2150,10 @@ window.restaurerDepuisCloud = async () => {
     const data = await firestorePullAll();
     const cles = ["bj_products","bj_clients","bj_ventes","bj_avoirs","bj_depenses","bj_memos","bj_caisse_jour","bj_annul_lignes","bj_promotions","bj_attente","bj_inventaires","bj_reservations","bj_depots_vente","bj_depots_banque","bj_solde_depot_reporte","bj_mouvements_defectueux","bj_ouvertures","bj_ejs_service","bj_ejs_template","bj_ejs_key","bj_evenements","bj_evt_overrides","bj_remise_progressive"];
     let compte = 0;
+    // Les ventes sont dans le journal (un document par vente) : on les réunit avec l'ancien document
+    const pre = prefixeJournal();
+    const ventesJournal = Object.keys(data).filter(k=>k.startsWith(pre)).map(k=>data[k]).filter(Boolean);
+    data["bj_ventes"] = fusionnerListesVentes(data["bj_ventes"]||[], ventesJournal);
     cles.forEach(k => { if(data[k]!==undefined) { localStorage.setItem(k, JSON.stringify(data[k])); compte++; } });
     alert("✅ "+compte+" éléments restaurés depuis le cloud !\n\nL'application va se recharger.");
     location.reload();
@@ -5953,7 +5994,8 @@ window.ouvrirVueToutesBoutiques = async () => {
         _fbDb.collection("bellejolie").doc(cleV).get(),
         _fbDb.collection("bellejolie").doc(cleP).get(),
       ]);
-      const ventes = docV.exists ? (docV.data().value||[]) : [];
+      const ventesJournal = await lireJournalVentes(b.id).catch(()=>[]);
+      const ventes = fusionnerListesVentes(docV.exists ? (docV.data().value||[]) : [], ventesJournal);
       const products = docP.exists ? (docP.data().value||[]) : [];
       const prodMap = {}; products.forEach(p=>prodMap[p.id]=p);
       const now = new Date();
@@ -17270,12 +17312,9 @@ demarrerSyncTempsReel();
   document.body.appendChild(b);
 })();
 
-// Journal des tickets : copie de sécurité de toutes les ventes connues ici, puis réparation
-// automatique de la liste si des ventes du journal y manquent (après la 1re synchro).
-setTimeout(() => {
-  journaliserVentes(STATE.ventes||[]);
-  reparerVentesDepuisJournal(true);
-}, 6000);
+// Journal des tickets (stockage cloud des ventes, un document par vente) : synchro + écoute temps réel
+synchroniserJournalAuDemarrage();
+ecouterJournalVentes();
 
 // ── DEMANDE D'AVIS GOOGLE (envoyée quelques jours après un achat) ──────
 window.verifierDemandesAvis = () => {
