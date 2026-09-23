@@ -176,6 +176,56 @@ function marquerVentesSupprimees(ids) {
   lsSet("bj_ventes_suppr", STATE.ventesSuppr);
 }
 
+// ── Journal des tickets : une copie de chaque vente dans son propre document cloud ──
+// Contrairement à la liste bj_ventes (un seul document, réécrit en entier), un ticket du journal
+// ne peut pas être effacé par un appareil en retard qui renvoie une liste périmée.
+// Sert à réparer automatiquement la liste au démarrage si des ventes y ont disparu.
+function prefixeJournal() { return "journal__"+BOUTIQUE_ID_ACTUEL+"__"; }
+function signatureJournal(v) { return versionVente(v)+":"+JSON.stringify(v).length; }
+function journaliserVentes(liste) {
+  if(!_fbDb) return;
+  const cleSig = "bj_journal_sig__"+BOUTIQUE_ID_ACTUEL;
+  let sigs = {}; try { sigs = JSON.parse(localStorage.getItem(cleSig)||"{}"); } catch{}
+  const aEcrire = (liste||[]).filter(v => v && v.id && sigs[v.id]!==signatureJournal(v));
+  if(!aEcrire.length) return;
+  const col = _fbDb.collection("bellejolie");
+  for(let i=0; i<aEcrire.length; i+=400) {
+    const lot = aEcrire.slice(i, i+400);
+    const batch = _fbDb.batch();
+    lot.forEach(v => batch.set(col.doc(prefixeJournal()+v.id), { value:v, date:v.date||"", maj:new Date().toISOString(), device:DEVICE_ID }));
+    batch.commit().then(() => {
+      lot.forEach(v => { sigs[v.id] = signatureJournal(v); });
+      try { localStorage.setItem(cleSig, JSON.stringify(sigs)); } catch{}
+    }).catch(err => console.error("Journal des tickets : échec d'écriture", err));
+  }
+}
+async function lireJournalVentes() {
+  const FP = firebase.firestore.FieldPath.documentId();
+  const pre = prefixeJournal();
+  const snap = await _fbDb.collection("bellejolie").where(FP, ">=", pre).where(FP, "<", pre+"\uf8ff").get();
+  const res = []; snap.forEach(d => { const x = d.data(); if(x && x.value) res.push(x.value); });
+  return res;
+}
+window.reparerVentesDepuisJournal = async (silencieux) => {
+  if(!_fbDb) { if(!silencieux) alert("⚠️ Pas de connexion au cloud."); return; }
+  try {
+    const journal = await lireJournalVentes();
+    const avant = new Set((STATE.ventes||[]).map(v=>v.id));
+    const fusion = fusionnerListesVentes(journal, STATE.ventes||[]); // à égalité, la version locale l'emporte
+    const retrouvees = fusion.filter(v=>!avant.has(v.id));
+    if(retrouvees.length) {
+      STATE.ventes = fusion;
+      lsSet("bj_ventes", fusion);
+      render();
+      console.log("Journal : "+retrouvees.length+" vente(s) réintégrée(s)");
+      if(!silencieux) alert("✅ "+retrouvees.length+" vente(s) retrouvée(s) dans le journal et réintégrée(s) :\n\n"+retrouvees.slice(0,15).map(v=>"• "+new Date(v.date).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})+" — "+eur(v.total)).join("\n"));
+    } else if(!silencieux) alert("✅ Aucune vente manquante : la liste est complète par rapport au journal ("+journal.length+" tickets journalisés).");
+  } catch(err) {
+    console.error("Lecture du journal impossible:", err);
+    if(!silencieux) alert("❌ Lecture du journal impossible : "+(err.message||err));
+  }
+};
+
 // Pousse une clé vers Firestore, en arrière-plan, sans jamais bloquer ni faire planter l'appli
 function firestorePush(key, val) {
   if(!_fbDb) return;
@@ -194,12 +244,14 @@ function firestorePush(key, val) {
         try { localStorage.setItem(cle, JSON.stringify(fusion)); } catch{}
         setTimeout(render, 0);
       }
+      journaliserVentes(fusion);
       return ref.set({ value: fusion, maj: maintenant, device: DEVICE_ID });
     }).then(() => { try { localStorage.setItem("bj_dernier_push_local", maintenant); } catch{} })
     .catch(err => {
       console.error("Firestore push (fusion) error pour 'bj_ventes':", err);
       // Hors-ligne : on envoie quand même ; les autres appareils referont la fusion à réception
       ref.set({ value: val, maj: maintenant, device: DEVICE_ID }).catch(()=>{});
+      journaliserVentes(val);
     });
     return;
   }
@@ -1846,6 +1898,7 @@ function renderVendeurSettings() {
             🩹 Récupérer des ventes manquantes depuis une sauvegarde
             <input type="file" accept=".json" onchange="recupererVentesDepuisSauvegarde(this)" style="display:none;"/>
           </label>
+          <button onclick="reparerVentesDepuisJournal(false)" style="width:100%;padding:10px;background:#eef4fd;color:#185fa5;border:1px solid #b3d0f0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:10px;">🛟 Vérifier / réparer les ventes depuis le journal</button>
           <!-- Sauvegarde auto par email -->
           <div style="background:#f5f0f2;border-radius:8px;padding:10px;margin-bottom:8px;">
             <div style="font-size:12px;font-weight:500;margin-bottom:6px;">📧 Sauvegarde automatique par email</div>
@@ -17208,6 +17261,13 @@ render();
 
 // Démarrer la synchronisation temps réel avec les autres appareils
 demarrerSyncTempsReel();
+
+// Journal des tickets : copie de sécurité de toutes les ventes connues ici, puis réparation
+// automatique de la liste si des ventes du journal y manquent (après la 1re synchro).
+setTimeout(() => {
+  journaliserVentes(STATE.ventes||[]);
+  reparerVentesDepuisJournal(true);
+}, 6000);
 
 // ── DEMANDE D'AVIS GOOGLE (envoyée quelques jours après un achat) ──────
 window.verifierDemandesAvis = () => {
