@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "24/09 · v10 (encaissements)";
+const APP_VERSION = "24/09 · v11 (rapprochement TPE)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -403,6 +403,7 @@ const CLES_SYNC_TEMPS_REEL = {
   bj_transferts: "transferts",
   bj_ventes_suppr: "ventesSuppr",
   bj_retouches: "retouches",
+  bj_releve_tpe: "releveTPE",
 };
 const CLES_SYNC_PROTEGEES = new Set(["emailjsServiceId","emailjsTemplateId","emailjsPublicKey"]); // ne jamais écraser par une valeur vide venue d'un autre appareil
 window._syncBannerTimeout = null;
@@ -917,6 +918,7 @@ let STATE = {
   ventes:   ls("bj_ventes",   []),
   ventesSuppr: ls("bj_ventes_suppr", []),
   retouches: ls("bj_retouches", []),
+  releveTPE: ls("bj_releve_tpe", {}),
   showRetoucheForm: false, retoucheForm: null, showSuiviRetouches: false, filtreRetouches: "encours",
   avoirs:      ls("bj_avoirs",      []),
   promotions:    ls("bj_promotions",    []),
@@ -1044,6 +1046,7 @@ function setState(patch) {
   if(patch.reservations  !== undefined) lsSet("bj_reservations",  STATE.reservations);
   if(patch.transferts    !== undefined) lsSet("bj_transferts",    STATE.transferts);
   if(patch.retouches     !== undefined) lsSet("bj_retouches",     STATE.retouches);
+  if(patch.releveTPE     !== undefined) lsSet("bj_releve_tpe",    STATE.releveTPE);
   if(patch.transferts  !== undefined) lsSet("bj_transferts",   STATE.transferts);
   if(patch.memos    !== undefined) lsSet("bj_memos",    STATE.memos);
   if(patch.emailjsServiceId  !== undefined) lsSet("bj_ejs_service",  STATE.emailjsServiceId);
@@ -2311,6 +2314,7 @@ window.exporterDonnees = () => {
     mouvementsDefectueux:STATE.mouvementsDefectueux||[],
     registrePersonnel:STATE.registrePersonnel||[],
     retouches:STATE.retouches||[],
+    releveTPE:STATE.releveTPE||{},
     ouvertures:STATE.ouvertures||{},
     // Config EmailJS incluse pour ne pas la perdre si le navigateur efface ses données
     emailjsServiceId:STATE.emailjsServiceId||"", emailjsTemplateId:STATE.emailjsTemplateId||"", emailjsPublicKey:STATE.emailjsPublicKey||"",
@@ -2508,6 +2512,7 @@ window.importerDonnees = (input) => {
       if(data.mouvementsDefectueux) {STATE.mouvementsDefectueux=data.mouvementsDefectueux;lsSet("bj_mouvements_defectueux",data.mouvementsDefectueux);}
       if(data.registrePersonnel) {STATE.registrePersonnel=data.registrePersonnel;lsSet("bj_registre_personnel",data.registrePersonnel);}
       if(data.retouches) {STATE.retouches=data.retouches;lsSet("bj_retouches",data.retouches);}
+      if(data.releveTPE) {STATE.releveTPE=data.releveTPE;lsSet("bj_releve_tpe",data.releveTPE);}
       if(data.ouvertures) {STATE.ouvertures=data.ouvertures;lsSet("bj_ouvertures",data.ouvertures);}
       if(data.historiquePromo){STATE.historiquePromo=data.historiquePromo;lsSet("bj_historique_promo",data.historiquePromo);}
       // Config EmailJS : restaurée si présente dans la sauvegarde (évite de la reperdre si le navigateur efface ses données)
@@ -9526,33 +9531,63 @@ function encaissementsParMode(v) {
   else if(v.payMode in res) res[v.payMode] += v.total;
   return res;
 }
+window.saisirTPE = (dateStr, valeur) => {
+  const v = parseFloat(String(valeur).replace(",", ".").replace(/\s/g,""));
+  const r = {...(STATE.releveTPE||{})};
+  if(isNaN(v)) delete r[dateStr]; else r[dateStr] = Math.round(v*100)/100;
+  setState({releveTPE: r});
+};
 function renderSuiviEncaissementsMois(mois, annee) {
   const modes = [["cb","💳 CB","#185fa5","#eef4fd"],["especes","💶 Espèces","#3b6d11","#eaf3de"],["cheque","📝 Chèque","#854f0b","#faeeda"],["avoir","🎟️ Avoir","#993556","#fbeaf0"],["cadeau","🎁 Carte cadeau","#6a3d9a","#f3e8fc"]];
   const vf = (STATE.ventes||[]).filter(v => { if(v.test||v.annulee) return false; const d=new Date(v.date); return d.getMonth()===mois && d.getFullYear()===annee; });
+  const vide = () => ({cb:0, especes:0, cheque:0, avoir:0, cadeau:0, nb:0});
   const parJour = {};
   const tot = {cb:0, especes:0, cheque:0, avoir:0, cadeau:0};
   vf.forEach(v => {
     const j = new Date(v.date).getDate();
-    if(!parJour[j]) parJour[j] = {cb:0, especes:0, cheque:0, avoir:0, cadeau:0, nb:0};
+    if(!parJour[j]) parJour[j] = vide();
     const e = encaissementsParMode(v);
     Object.keys(e).forEach(k => { parJour[j][k] += e[k]; tot[k] += e[k]; });
     parJour[j].nb++;
   });
   const total = Object.values(tot).reduce((a,b)=>a+b,0);
-  const jours = Object.keys(parJour).map(Number).sort((a,b)=>a-b);
   const ouvert = !!STATE._suiviEncOuvert;
+  const tpe = STATE.releveTPE||{};
+  const cleJour = j => annee+"-"+String(mois+1).padStart(2,"0")+"-"+String(j).padStart(2,"0");
+  // Jours affichés : tout le mois (jusqu'à aujourd'hui pour le mois en cours)
+  const now = new Date();
+  const dernier = (now.getFullYear()===annee && now.getMonth()===mois) ? now.getDate() : new Date(annee, mois+1, 0).getDate();
+  const jours = []; for(let j=1;j<=dernier;j++) if(parJour[j] || tpe[cleJour(j)]!==undefined || new Date(annee,mois,j).getDay()!==0) jours.push(j);
+  // Rapprochement global sur les jours où le terminal a été saisi
+  let tpeSaisi = 0, cbMemesJours = 0, nbJoursTPE = 0, joursEcart = 0;
+  jours.forEach(j => { const t = tpe[cleJour(j)]; if(t!==undefined) { nbJoursTPE++; tpeSaisi += t; const c = parJour[j]?parJour[j].cb:0; cbMemesJours += c; if(Math.abs(t-c)>0.009) joursEcart++; } });
   let cumul = 0;
   const lignes = jours.map(j => {
-    const d = parJour[j];
+    const d = parJour[j] || vide();
     const tj = modes.reduce((s,[k])=>s+d[k],0);
     cumul += tj;
+    const cle = cleJour(j);
+    const t = tpe[cle];
+    const ecart = t!==undefined ? t - d.cb : null;
+    const ecartOk = ecart!==null && Math.abs(ecart)<=0.009;
     const date = new Date(annee, mois, j).toLocaleDateString("fr-FR",{weekday:"short", day:"numeric"});
-    return `<tr style="border-bottom:0.5px solid #f0ebee;">
-      <td style="padding:6px;white-space:nowrap;">${date}</td>
-      ${modes.map(([k])=>`<td style="padding:6px;text-align:right;color:${d[k]?"#333":"#ccc"};">${d[k]?eur(d[k]):"—"}</td>`).join("")}
+    const detailOuvert = STATE._jourDetailEnc===cle;
+    const ticketsCB = detailOuvert ? vf.filter(v=>new Date(v.date).getDate()===j).map(v=>({v, cb:encaissementsParMode(v).cb})).filter(x=>x.cb>0).sort((a,b)=>new Date(a.v.date)-new Date(b.v.date)) : [];
+    return `<tr style="border-bottom:0.5px solid #f0ebee;${ecart!==null&&!ecartOk?"background:#fff5f5;":""}">
+      <td style="padding:6px;white-space:nowrap;"><span onclick="STATE._jourDetailEnc=STATE._jourDetailEnc==='${cle}'?null:'${cle}';render()" style="cursor:pointer;text-decoration:underline dotted;">${date}</span></td>
+      <td style="padding:6px;text-align:right;color:${d.cb?"#185fa5":"#ccc"};font-weight:600;">${d.cb?eur(d.cb):"—"}</td>
+      <td style="padding:4px;text-align:right;"><input type="text" inputmode="decimal" value="${t!==undefined?String(t).replace(".",","):""}" placeholder="terminal" onchange="saisirTPE('${cle}', this.value)" style="width:78px;text-align:right;font-size:12px;padding:4px;"/></td>
+      <td style="padding:6px;text-align:right;font-weight:700;color:${ecart===null?"#ccc":ecartOk?"#3b6d11":"#a32d2d"};">${ecart===null?"—":ecartOk?"✓":(ecart>0?"+":"")+eur(ecart)}</td>
+      ${modes.slice(1).map(([k])=>`<td style="padding:6px;text-align:right;color:${d[k]?"#333":"#ccc"};">${d[k]?eur(d[k]):"—"}</td>`).join("")}
       <td style="padding:6px;text-align:right;font-weight:600;">${eur(tj)}</td>
       <td style="padding:6px;text-align:right;color:#993556;font-weight:600;">${eur(cumul)}</td>
-    </tr>`;
+    </tr>
+    ${detailOuvert?`<tr><td colspan="10" style="padding:6px 10px 10px;background:#f7fafe;">
+      <div style="font-size:11px;color:#185fa5;font-weight:600;margin-bottom:4px;">Paiements carte enregistrés en caisse ce jour (${ticketsCB.length}) — compare avec la liste de ton terminal :</div>
+      ${ticketsCB.length?ticketsCB.map(x=>`<div onclick="voirTicketVenteId('${x.v.id}')" style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:0.5px dashed #dbe7f5;cursor:pointer;">
+        <span>${new Date(x.v.date).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})} · ${x.v.client?x.v.client.prenom+" "+x.v.client.nom:"sans cliente"} · ${x.v.vendeur?.nom||""}${x.v.mixed?" · mixte":""}</span>
+        <strong>${eur(x.cb)}</strong></div>`).join(""):`<div style="font-size:12px;color:#aaa;">Aucun paiement carte en caisse ce jour.</div>`}
+    </td></tr>`:""}`;
   }).join("");
   return `
   <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;margin-bottom:16px;">
@@ -9567,14 +9602,20 @@ function renderSuiviEncaissementsMois(mois, annee) {
         <div style="font-size:10px;color:#888;">${total>0?(tot[k]/total*100).toFixed(1):"0"} %</div>
       </div>`).join("")}
     </div>
-    ${jours.length?`<button onclick="STATE._suiviEncOuvert=!STATE._suiviEncOuvert;render()" style="background:none;border:1px solid #e8d8de;border-radius:7px;padding:6px 12px;font-size:12px;color:#993556;cursor:pointer;">${ouvert?"▲ Masquer le détail par jour":"▼ Voir le détail jour par jour"}</button>`:`<div style="font-size:12px;color:#aaa;">Aucune vente ce mois-ci.</div>`}
-    ${ouvert&&jours.length?`<div style="overflow-x:auto;margin-top:10px;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:560px;">
+    ${nbJoursTPE?`<div style="background:${Math.abs(tpeSaisi-cbMemesJours)<=0.009?"#eaf3de":"#fcebeb"};border-radius:9px;padding:9px 12px;margin-bottom:10px;font-size:12px;color:${Math.abs(tpeSaisi-cbMemesJours)<=0.009?"#3b6d11":"#a32d2d"};">
+      🔎 Rapprochement terminal (${nbJoursTPE} jour${nbJoursTPE>1?"s":""} saisi${nbJoursTPE>1?"s":""}) : terminal <strong>${eur(tpeSaisi)}</strong> · caisse CB <strong>${eur(cbMemesJours)}</strong> · écart <strong>${(tpeSaisi-cbMemesJours>0?"+":"")+eur(tpeSaisi-cbMemesJours)}</strong>${joursEcart?` — ${joursEcart} jour${joursEcart>1?"s":""} en écart (lignes en rouge)`:" — tout correspond ✓"}
+    </div>`:""}
+    <button onclick="STATE._suiviEncOuvert=!STATE._suiviEncOuvert;render()" style="background:none;border:1px solid #e8d8de;border-radius:7px;padding:6px 12px;font-size:12px;color:#993556;cursor:pointer;">${ouvert?"▲ Masquer le détail par jour":"▼ Détail jour par jour + rapprochement terminal"}</button>
+    ${ouvert?`<div style="font-size:11px;color:#888;margin-top:8px;">Saisis dans la colonne « Terminal » le total CB du jour indiqué par ton terminal : l'écart s'affiche aussitôt. Touche une date pour voir les paiements carte de ce jour.</div>
+    <div style="overflow-x:auto;margin-top:8px;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:720px;">
       <thead><tr style="color:#888;border-bottom:1px solid #e8e0e4;">
-        <th style="text-align:left;padding:6px;">Jour</th>${modes.map(([k,l])=>`<th style="text-align:right;padding:6px;">${l}</th>`).join("")}
+        <th style="text-align:left;padding:6px;">Jour</th><th style="text-align:right;padding:6px;">💳 CB caisse</th><th style="text-align:right;padding:6px;">Terminal</th><th style="text-align:right;padding:6px;">Écart</th>
+        ${modes.slice(1).map(([k,l])=>`<th style="text-align:right;padding:6px;">${l}</th>`).join("")}
         <th style="text-align:right;padding:6px;">Total jour</th><th style="text-align:right;padding:6px;">Cumul mois</th></tr></thead>
       <tbody>${lignes}</tbody>
       <tfoot><tr style="border-top:1px solid #e8e0e4;font-weight:700;">
-        <td style="padding:6px;">Total</td>${modes.map(([k])=>`<td style="padding:6px;text-align:right;">${eur(tot[k])}</td>`).join("")}
+        <td style="padding:6px;">Total</td><td style="padding:6px;text-align:right;">${eur(tot.cb)}</td><td style="padding:6px;text-align:right;">${nbJoursTPE?eur(tpeSaisi):""}</td><td></td>
+        ${modes.slice(1).map(([k])=>`<td style="padding:6px;text-align:right;">${eur(tot[k])}</td>`).join("")}
         <td style="padding:6px;text-align:right;color:#993556;">${eur(total)}</td><td></td></tr></tfoot>
     </table></div>`:""}
   </div>`;
