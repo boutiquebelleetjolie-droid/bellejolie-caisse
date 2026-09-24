@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "23/09 · v8 (retouches)";
+const APP_VERSION = "24/09 · v9 (registre)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -10228,6 +10228,13 @@ function renderRegistrePersonnelModal() {
         </div>
 
         ${(()=>{
+          const dans60j = new Date(); dans60j.setDate(dans60j.getDate()+60);
+          const fins = liste.filter(s=>!s.sortie && s.finContrat && new Date(s.finContrat)<=dans60j);
+          if(!fins.length) return "";
+          return `<div style="background:#fff3e8;border:1px solid #f0dcb0;border-radius:9px;padding:10px 12px;font-size:12px;color:#854f0b;margin-bottom:14px;">📅 <strong>Fin de contrat proche :</strong> ${fins.map(s=>s.prenom+" "+s.nom+" ("+formatDateFr(s.finContrat)+")").join(" · ")}</div>`;
+        })()}
+
+        ${(()=>{
           const dans30j = new Date(); dans30j.setDate(dans30j.getDate()+30);
           const aSuivre = liste.filter(s=>!s.sortie && s.prochaineVisiteMedicale && new Date(s.prochaineVisiteMedicale)<=dans30j);
           if(!aSuivre.length) return "";
@@ -10270,6 +10277,15 @@ function renderRegistrePersonnelModal() {
           </div>
           <div style="margin-bottom:8px;"><label style="font-size:11px;color:#888;">Date de sortie (vide si toujours en poste)</label><input type="date" value="${f.sortie||''}" oninput="STATE.salarieForm.sortie=this.value" style="width:100%;"/></div>
           <div style="margin-bottom:8px;"><label style="font-size:11px;color:#888;">Titre de travail (salarié étranger hors UE — type et n°)</label><input value="${f.titre||''}" oninput="STATE.salarieForm.titre=this.value" style="width:100%;"/></div>
+          <div style="margin-bottom:8px;"><label style="font-size:11px;color:#888;">📅 Fin de contrat prévue (CDD, apprentissage…)</label><input type="date" value="${f.finContrat||''}" oninput="STATE.salarieForm.finContrat=this.value" style="width:100%;"/></div>
+          <div style="margin-bottom:8px;"><label style="font-size:11px;color:#888;">N° de sécurité sociale</label><input value="${f.numSecu||''}" oninput="STATE.salarieForm.numSecu=this.value.replace(/\\s+/g,'')" inputmode="numeric" placeholder="15 chiffres" style="width:100%;"/></div>
+          <div style="margin-bottom:8px;"><label style="font-size:11px;color:#888;">Adresse postale</label><input value="${f.adresse||''}" oninput="STATE.salarieForm.adresse=this.value" placeholder="N° et rue" style="width:100%;"/></div>
+          <div style="margin-bottom:8px;"><label style="font-size:11px;color:#888;">Complément d'adresse</label><input value="${f.complementAdresse||''}" oninput="STATE.salarieForm.complementAdresse=this.value" style="width:100%;"/></div>
+          <div style="display:grid;grid-template-columns:1fr 2fr;gap:8px;margin-bottom:8px;">
+            <div><label style="font-size:11px;color:#888;">Code postal</label><input value="${f.codePostal||''}" oninput="STATE.salarieForm.codePostal=this.value" inputmode="numeric" maxlength="5" style="width:100%;"/></div>
+            <div><label style="font-size:11px;color:#888;">Ville</label><input value="${f.ville||''}" oninput="STATE.salarieForm.ville=this.value" style="width:100%;"/></div>
+          </div>
+          <div style="margin-bottom:8px;"><label style="font-size:11px;color:#888;">Email</label><input type="email" value="${f.email||''}" oninput="STATE.salarieForm.email=this.value" style="width:100%;"/></div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">
             <div><label style="font-size:11px;color:#888;">🩺 Dernière visite médicale</label><input type="date" value="${f.visiteMedicale||''}" oninput="STATE.salarieForm.visiteMedicale=this.value" style="width:100%;"/></div>
             <div><label style="font-size:11px;color:#888;">🔔 Prochaine visite prévue</label><input type="date" value="${f.prochaineVisiteMedicale||''}" oninput="STATE.salarieForm.prochaineVisiteMedicale=this.value" style="width:100%;"/></div>
@@ -10304,10 +10320,10 @@ function renderRegistrePersonnelModal() {
               const visiteProche = s.prochaineVisiteMedicale && new Date(s.prochaineVisiteMedicale) <= new Date(Date.now()+30*86400000);
               const visiteEnRetard = s.prochaineVisiteMedicale && new Date(s.prochaineVisiteMedicale) < new Date();
               return `<tr style="border-bottom:0.5px solid #f0ebee;">
-                <td style="padding:7px 8px;font-weight:500;">${s.nom} ${s.prenom}${s.titre?`<div style="font-size:9px;color:#aaa;">🪪 ${s.titre}</div>`:""}</td>
+                <td style="padding:7px 8px;font-weight:500;">${s.nom} ${s.prenom}${s.titre?`<div style="font-size:9px;color:#aaa;">🪪 ${s.titre}</div>`:""}${s.numSecu?`<div style="font-size:9px;color:#aaa;font-weight:400;">Sécu ••••${String(s.numSecu).slice(-4)}</div>`:""}${(s.adresse||s.ville)?`<div style="font-size:9px;color:#aaa;font-weight:400;">${[s.adresse,s.complementAdresse,[s.codePostal,s.ville].filter(Boolean).join(" ")].filter(Boolean).join(", ")}</div>`:""}${s.email?`<div style="font-size:9px;color:#aaa;font-weight:400;">${s.email}</div>`:""}</td>
                 <td style="padding:7px 8px;">${formatDateFr(s.naissance)}${s.naissance?`<div style="font-size:9px;color:#aaa;">${calculerAge(s.naissance)}</div>`:""}</td>
                 <td style="padding:7px 8px;">${s.emploi||"—"}</td>
-                <td style="padding:7px 8px;">${s.contrat||"—"}</td>
+                <td style="padding:7px 8px;">${s.contrat||"—"}${s.finContrat?`<div style="font-size:9px;color:${(!s.sortie && new Date(s.finContrat)<=new Date(Date.now()+60*86400000))?'#e07c00':'#aaa'};">fin ${formatDateFr(s.finContrat)}</div>`:""}</td>
                 <td style="padding:7px 8px;">${formatDateFr(s.entree)}</td>
                 <td style="padding:7px 8px;">${formatDateFr(s.sortie)}</td>
                 <td style="padding:7px 8px;"><span style="background:${actif?'#eaf3de':'#f0ebee'};color:${actif?'#3b6d11':'#888'};padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;">${actif?"En poste":"Sorti"}</span></td>
@@ -10329,7 +10345,7 @@ function renderRegistrePersonnelModal() {
 window.ouvrirFormSalarie = (id) => {
   const s = id ? (STATE.registrePersonnel||[]).find(x=>x.id===id) : null;
   STATE.editSalarieId = id || null;
-  STATE.salarieForm = s ? {...s} : {nom:"",prenom:"",naissance:"",sexe:"",nationalite:"",emploi:"",contrat:"CDI",entree:"",sortie:"",titre:"",visiteMedicale:"",prochaineVisiteMedicale:"",remarques:""};
+  STATE.salarieForm = s ? {...s} : {nom:"",prenom:"",naissance:"",sexe:"",nationalite:"",emploi:"",contrat:"CDI",entree:"",sortie:"",titre:"",finContrat:"",numSecu:"",adresse:"",complementAdresse:"",codePostal:"",ville:"",email:"",visiteMedicale:"",prochaineVisiteMedicale:"",remarques:""};
   render();
 };
 
