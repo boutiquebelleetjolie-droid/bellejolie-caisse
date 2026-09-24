@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "24/09 · v9 (registre)";
+const APP_VERSION = "24/09 · v10 (encaissements)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -9519,6 +9519,67 @@ function renderStats() {
 }
 
 // ── EXPORT COMPTABLE (CSV téléchargeable, pour la comptable) ────────
+// ── Suivi des encaissements du mois, jour par jour avec cumul ─────────
+function encaissementsParMode(v) {
+  const res = {cb:0, especes:0, cheque:0, avoir:0, cadeau:0};
+  if(v.mixed && Array.isArray(v.pays)) v.pays.forEach(p => { if(p.mode in res) res[p.mode] += parseFloat(p.montant||0); });
+  else if(v.payMode in res) res[v.payMode] += v.total;
+  return res;
+}
+function renderSuiviEncaissementsMois(mois, annee) {
+  const modes = [["cb","💳 CB","#185fa5","#eef4fd"],["especes","💶 Espèces","#3b6d11","#eaf3de"],["cheque","📝 Chèque","#854f0b","#faeeda"],["avoir","🎟️ Avoir","#993556","#fbeaf0"],["cadeau","🎁 Carte cadeau","#6a3d9a","#f3e8fc"]];
+  const vf = (STATE.ventes||[]).filter(v => { if(v.test||v.annulee) return false; const d=new Date(v.date); return d.getMonth()===mois && d.getFullYear()===annee; });
+  const parJour = {};
+  const tot = {cb:0, especes:0, cheque:0, avoir:0, cadeau:0};
+  vf.forEach(v => {
+    const j = new Date(v.date).getDate();
+    if(!parJour[j]) parJour[j] = {cb:0, especes:0, cheque:0, avoir:0, cadeau:0, nb:0};
+    const e = encaissementsParMode(v);
+    Object.keys(e).forEach(k => { parJour[j][k] += e[k]; tot[k] += e[k]; });
+    parJour[j].nb++;
+  });
+  const total = Object.values(tot).reduce((a,b)=>a+b,0);
+  const jours = Object.keys(parJour).map(Number).sort((a,b)=>a-b);
+  const ouvert = !!STATE._suiviEncOuvert;
+  let cumul = 0;
+  const lignes = jours.map(j => {
+    const d = parJour[j];
+    const tj = modes.reduce((s,[k])=>s+d[k],0);
+    cumul += tj;
+    const date = new Date(annee, mois, j).toLocaleDateString("fr-FR",{weekday:"short", day:"numeric"});
+    return `<tr style="border-bottom:0.5px solid #f0ebee;">
+      <td style="padding:6px;white-space:nowrap;">${date}</td>
+      ${modes.map(([k])=>`<td style="padding:6px;text-align:right;color:${d[k]?"#333":"#ccc"};">${d[k]?eur(d[k]):"—"}</td>`).join("")}
+      <td style="padding:6px;text-align:right;font-weight:600;">${eur(tj)}</td>
+      <td style="padding:6px;text-align:right;color:#993556;font-weight:600;">${eur(cumul)}</td>
+    </tr>`;
+  }).join("");
+  return `
+  <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;margin-bottom:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:8px;flex-wrap:wrap;">
+      <div style="font-weight:600;font-size:14px;">💰 Encaissements du mois</div>
+      <div style="font-size:13px;color:#888;">Total : <strong style="color:#993556;">${eur(total)}</strong> · ${vf.length} vente${vf.length>1?"s":""}</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:10px;">
+      ${modes.map(([k,l,c,bg])=>`<div style="background:${bg};border-radius:9px;padding:9px 10px;">
+        <div style="font-size:11px;color:${c};">${l}</div>
+        <div style="font-size:16px;font-weight:700;color:${c};">${eur(tot[k])}</div>
+        <div style="font-size:10px;color:#888;">${total>0?(tot[k]/total*100).toFixed(1):"0"} %</div>
+      </div>`).join("")}
+    </div>
+    ${jours.length?`<button onclick="STATE._suiviEncOuvert=!STATE._suiviEncOuvert;render()" style="background:none;border:1px solid #e8d8de;border-radius:7px;padding:6px 12px;font-size:12px;color:#993556;cursor:pointer;">${ouvert?"▲ Masquer le détail par jour":"▼ Voir le détail jour par jour"}</button>`:`<div style="font-size:12px;color:#aaa;">Aucune vente ce mois-ci.</div>`}
+    ${ouvert&&jours.length?`<div style="overflow-x:auto;margin-top:10px;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:560px;">
+      <thead><tr style="color:#888;border-bottom:1px solid #e8e0e4;">
+        <th style="text-align:left;padding:6px;">Jour</th>${modes.map(([k,l])=>`<th style="text-align:right;padding:6px;">${l}</th>`).join("")}
+        <th style="text-align:right;padding:6px;">Total jour</th><th style="text-align:right;padding:6px;">Cumul mois</th></tr></thead>
+      <tbody>${lignes}</tbody>
+      <tfoot><tr style="border-top:1px solid #e8e0e4;font-weight:700;">
+        <td style="padding:6px;">Total</td>${modes.map(([k])=>`<td style="padding:6px;text-align:right;">${eur(tot[k])}</td>`).join("")}
+        <td style="padding:6px;text-align:right;color:#993556;">${eur(total)}</td><td></td></tr></tfoot>
+    </table></div>`:""}
+  </div>`;
+}
+
 window.exporterComptable = (mois, annee) => {
   const TVA_TAUX = 0.20;
   const moisNoms = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
@@ -9870,6 +9931,8 @@ function renderBilan() {
         🖨️ Toutes les factures — Année ${STATE.bilanYear}
       </button>
     </div>
+
+    ${renderSuiviEncaissementsMois(STATE.bilanMonth, STATE.bilanYear)}
 
     <!-- KPIs principaux — Objectifs mensuel / trim / sem / annuel -->
     ${(()=>{
