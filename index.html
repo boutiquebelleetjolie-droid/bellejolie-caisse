@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "24/09 · v11 (rapprochement TPE)";
+const APP_VERSION = "25/09 · v12 (régularisation TPE)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -9531,11 +9531,61 @@ function encaissementsParMode(v) {
   else if(v.payMode in res) res[v.payMode] += v.total;
   return res;
 }
+// Relevé terminal : un montant par jour, ou {m, d} pour un relevé couvrant plusieurs jours (du d au jour)
+function montantTPE(x) { return x===undefined||x===null ? undefined : (typeof x==="object" ? x.m : x); }
+function debutTPE(x, cle) { return (x && typeof x==="object" && x.d) ? x.d : cle; }
 window.saisirTPE = (dateStr, valeur) => {
   const v = parseFloat(String(valeur).replace(",", ".").replace(/\s/g,""));
   const r = {...(STATE.releveTPE||{})};
-  if(isNaN(v)) delete r[dateStr]; else r[dateStr] = Math.round(v*100)/100;
+  const ancien = r[dateStr];
+  if(isNaN(v)) delete r[dateStr];
+  else r[dateStr] = (ancien && typeof ancien==="object" && ancien.d) ? {m: Math.round(v*100)/100, d: ancien.d} : Math.round(v*100)/100;
   setState({releveTPE: r});
+};
+// Ajouter l'écart terminal comme vente CB reconstituée (sans toucher au stock)
+window.regulariserEcartTPE = (cle, ecart) => {
+  if(STATE.vendeur.id!=="V1") return;
+  ecart = Math.round(ecart*100)/100;
+  if(!(ecart>0)) return;
+  const jourFr = new Date(cle+"T12:00:00").toLocaleDateString("fr-FR");
+  if(!confirm("Ajouter "+eur(ecart)+" en CB le "+jourFr+" (vente reconstituée d'après le terminal, sans toucher au stock) ?")) return;
+  const vente = {
+    id: uid("CORR"), date: new Date(cle+"T12:00:00").toISOString(), boutiqueId: BOUTIQUE_CONFIG.id,
+    panier: [{id:"correction_manuelle", name:"Vente reconstituée — écart terminal CB", qty:1, price:ecart, remise:"", remiseType:""}],
+    client:null, clientId:null, vendeur:STATE.vendeur, remise:0, remiseFid:0, remiseProg:0,
+    total:ecart, mixed:false, pays:[{mode:"cb", montant:ecart}], payMode:"cb",
+    correctionManuelle:true, noteCorrection:"Écart terminal CB (rapprochement)", creeLe:new Date().toISOString(), creePar:STATE.vendeur.nom, depotTraite:true,
+  };
+  STATE.ventes = [...STATE.ventes, vente];
+  lsSet("bj_ventes", STATE.ventes);
+  ajusterZApresAnnulation(vente, +1, "Régularisation écart terminal");
+  render();
+};
+// Passer un ticket payé en CB en espèces (le paiement n'est pas passé au terminal)
+window.passerTicketEnEspeces = (venteId) => {
+  if(STATE.vendeur.id!=="V1") return;
+  const v = STATE.ventes.find(x=>x.id===venteId); if(!v) return;
+  const partCB = encaissementsParMode(v).cb; if(!(partCB>0)) return;
+  if(!confirm("Passer "+eur(partCB)+" de ce ticket de CB en ESPÈCES ?\n(à faire seulement si la cliente a réellement payé en espèces)")) return;
+  const pays = (v.mixed && Array.isArray(v.pays)) ? v.pays.map(p=>p.mode==="cb"?{...p, mode:"especes"}:p) : [{mode:"especes", montant:v.total}];
+  const modes = [...new Set(pays.map(p=>p.mode))];
+  const maj = modes.length===1
+    ? {...v, mixed:false, payMode:"especes", pays:[{mode:"especes", montant:v.total}], modifLe:new Date().toISOString()}
+    : {...v, pays, modifLe:new Date().toISOString()};
+  STATE.ventes = STATE.ventes.map(x=>x.id===venteId ? maj : x);
+  lsSet("bj_ventes", STATE.ventes);
+  // Répercuter sur le Z déjà clôturé de ce jour (CB -> espèces)
+  const dz = dateLocaleStr(new Date(v.date));
+  const z = (STATE.caisseJour||[]).find(x=>x.date===dz);
+  if(z) {
+    STATE.caisseJour = STATE.caisseJour.map(x=>x.date!==dz ? x : {...x,
+      payM: {...(x.payM||{}), cb: Math.max(0,((x.payM||{}).cb||0)-partCB), especes: ((x.payM||{}).especes||0)+partCB},
+      especes: (x.especes||0)+partCB,
+      ...(typeof x.ecart==="number" ? {ecart: Math.round((x.ecart-partCB)*100)/100} : {}),
+      corrections: [...(x.corrections||[]), {date:new Date().toISOString(), par:STATE.vendeur.nom, venteId, montant:0, motif:"CB → espèces "+eur(partCB)}]});
+    lsSet("bj_caisse_jour", STATE.caisseJour);
+  }
+  render();
 };
 function renderSuiviEncaissementsMois(mois, annee) {
   const modes = [["cb","💳 CB","#185fa5","#eef4fd"],["especes","💶 Espèces","#3b6d11","#eaf3de"],["cheque","📝 Chèque","#854f0b","#faeeda"],["avoir","🎟️ Avoir","#993556","#fbeaf0"],["cadeau","🎁 Carte cadeau","#6a3d9a","#f3e8fc"]];
@@ -9558,17 +9608,30 @@ function renderSuiviEncaissementsMois(mois, annee) {
   const now = new Date();
   const dernier = (now.getFullYear()===annee && now.getMonth()===mois) ? now.getDate() : new Date(annee, mois+1, 0).getDate();
   const jours = []; for(let j=1;j<=dernier;j++) if(parJour[j] || tpe[cleJour(j)]!==undefined || new Date(annee,mois,j).getDay()!==0) jours.push(j);
+  // Relevés couvrant plusieurs jours : CB caisse cumulée sur la période, jours intermédiaires marqués "inclus"
+  const cbPeriode = {}, inclusDans = {};
+  for(let j=1;j<=dernier;j++) {
+    const cle = cleJour(j), x = tpe[cle];
+    if(x===undefined) continue;
+    const deb = debutTPE(x, cle);
+    let somme = 0;
+    for(let k=1;k<=j;k++) { const ck = cleJour(k); if(ck>=deb) { somme += parJour[k]?parJour[k].cb:0; if(k<j) inclusDans[k] = cle; } }
+    cbPeriode[cle] = somme;
+  }
   // Rapprochement global sur les jours où le terminal a été saisi
   let tpeSaisi = 0, cbMemesJours = 0, nbJoursTPE = 0, joursEcart = 0;
-  jours.forEach(j => { const t = tpe[cleJour(j)]; if(t!==undefined) { nbJoursTPE++; tpeSaisi += t; const c = parJour[j]?parJour[j].cb:0; cbMemesJours += c; if(Math.abs(t-c)>0.009) joursEcart++; } });
+  jours.forEach(j => { const cle = cleJour(j); const t = montantTPE(tpe[cle]); if(t!==undefined) { nbJoursTPE++; tpeSaisi += t; const c = cbPeriode[cle]||0; cbMemesJours += c; if(Math.abs(t-c)>0.009) joursEcart++; } });
   let cumul = 0;
   const lignes = jours.map(j => {
     const d = parJour[j] || vide();
     const tj = modes.reduce((s,[k])=>s+d[k],0);
     cumul += tj;
     const cle = cleJour(j);
-    const t = tpe[cle];
-    const ecart = t!==undefined ? t - d.cb : null;
+    const brut = tpe[cle];
+    const t = montantTPE(brut);
+    const deb = debutTPE(brut, cle);
+    const ecart = t!==undefined ? Math.round((t - (cbPeriode[cle]||0))*100)/100 : null;
+    const inclus = inclusDans[j];
     const ecartOk = ecart!==null && Math.abs(ecart)<=0.009;
     const date = new Date(annee, mois, j).toLocaleDateString("fr-FR",{weekday:"short", day:"numeric"});
     const detailOuvert = STATE._jourDetailEnc===cle;
@@ -9576,8 +9639,10 @@ function renderSuiviEncaissementsMois(mois, annee) {
     return `<tr style="border-bottom:0.5px solid #f0ebee;${ecart!==null&&!ecartOk?"background:#fff5f5;":""}">
       <td style="padding:6px;white-space:nowrap;"><span onclick="STATE._jourDetailEnc=STATE._jourDetailEnc==='${cle}'?null:'${cle}';render()" style="cursor:pointer;text-decoration:underline dotted;">${date}</span></td>
       <td style="padding:6px;text-align:right;color:${d.cb?"#185fa5":"#ccc"};font-weight:600;">${d.cb?eur(d.cb):"—"}</td>
-      <td style="padding:4px;text-align:right;"><input type="text" inputmode="decimal" value="${t!==undefined?String(t).replace(".",","):""}" placeholder="terminal" onchange="saisirTPE('${cle}', this.value)" style="width:78px;text-align:right;font-size:12px;padding:4px;"/></td>
-      <td style="padding:6px;text-align:right;font-weight:700;color:${ecart===null?"#ccc":ecartOk?"#3b6d11":"#a32d2d"};">${ecart===null?"—":ecartOk?"✓":(ecart>0?"+":"")+eur(ecart)}</td>
+      <td style="padding:4px;text-align:right;">${inclus&&t===undefined?`<span style="font-size:10px;color:#aaa;">inclus ↓</span>`:`<input type="text" inputmode="decimal" value="${t!==undefined?String(t).replace(".",","):""}" placeholder="terminal" onchange="saisirTPE('${cle}', this.value)" style="width:78px;text-align:right;font-size:12px;padding:4px;"/>${deb!==cle?`<div style="font-size:9px;color:#888;">depuis le ${new Date(deb+"T12:00:00").toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit"})}</div>`:""}`}</td>
+      <td style="padding:6px;text-align:right;font-weight:700;color:${ecart===null?"#ccc":ecartOk?"#3b6d11":"#a32d2d"};">${ecart===null?"—":ecartOk?"✓":(ecart>0?"+":"")+eur(ecart)}
+        ${ecart!==null&&ecart>0.009&&STATE.vendeur.id==="V1"?`<div><button onclick="regulariserEcartTPE('${cle}', ${ecart})" style="margin-top:3px;background:#eaf3de;color:#3b6d11;border:1px solid #aed882;border-radius:6px;padding:2px 6px;font-size:10px;cursor:pointer;white-space:nowrap;">➕ Régulariser</button></div>`:""}
+        ${ecart!==null&&ecart<-0.009?`<div style="font-size:9px;color:#a32d2d;font-weight:400;white-space:nowrap;">touche la date ↑</div>`:""}</td>
       ${modes.slice(1).map(([k])=>`<td style="padding:6px;text-align:right;color:${d[k]?"#333":"#ccc"};">${d[k]?eur(d[k]):"—"}</td>`).join("")}
       <td style="padding:6px;text-align:right;font-weight:600;">${eur(tj)}</td>
       <td style="padding:6px;text-align:right;color:#993556;font-weight:600;">${eur(cumul)}</td>
@@ -9586,7 +9651,7 @@ function renderSuiviEncaissementsMois(mois, annee) {
       <div style="font-size:11px;color:#185fa5;font-weight:600;margin-bottom:4px;">Paiements carte enregistrés en caisse ce jour (${ticketsCB.length}) — compare avec la liste de ton terminal :</div>
       ${ticketsCB.length?ticketsCB.map(x=>`<div onclick="voirTicketVenteId('${x.v.id}')" style="display:flex;justify-content:space-between;font-size:12px;padding:3px 0;border-bottom:0.5px dashed #dbe7f5;cursor:pointer;">
         <span>${new Date(x.v.date).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})} · ${x.v.client?x.v.client.prenom+" "+x.v.client.nom:"sans cliente"} · ${x.v.vendeur?.nom||""}${x.v.mixed?" · mixte":""}</span>
-        <strong>${eur(x.cb)}</strong></div>`).join(""):`<div style="font-size:12px;color:#aaa;">Aucun paiement carte en caisse ce jour.</div>`}
+        <span style="white-space:nowrap;"><strong>${eur(x.cb)}</strong>${STATE.vendeur.id==="V1"?` <button onclick="event.stopPropagation();passerTicketEnEspeces('${x.v.id}')" style="margin-left:6px;background:#fff;color:#3b6d11;border:1px solid #aed882;border-radius:6px;padding:1px 6px;font-size:10px;cursor:pointer;">→ espèces</button>`:""}</span></div>`).join(""):`<div style="font-size:12px;color:#aaa;">Aucun paiement carte en caisse ce jour.</div>`}
     </td></tr>`:""}`;
   }).join("");
   return `
@@ -17684,6 +17749,18 @@ demarrerSyncTempsReel();
 // Journal des tickets (stockage cloud des ventes, un document par vente) : synchro + écoute temps réel
 synchroniserJournalAuDemarrage();
 ecouterJournalVentes();
+// Relevés du terminal de septembre 2026 transmis par la gérante (une seule fois, sans écraser une saisie)
+setTimeout(() => {
+  if(BOUTIQUE_ID_ACTUEL!=="boutique_1" || localStorage.getItem("bj_seed_tpe_2026_09")) return;
+  const seed = {"2026-09-01":{m:344.4,d:"2026-08-07"},"2026-09-02":268.58,"2026-09-03":598.46,"2026-09-04":527.93,"2026-09-05":1078.08,
+    "2026-09-07":{m:282.78,d:"2026-09-06"},"2026-09-08":799.9,"2026-09-09":247.6,"2026-09-10":423.6,"2026-09-11":359.4,
+    "2026-09-14":{m:757.1,d:"2026-09-12"},"2026-09-15":98.2,"2026-09-16":341.6,"2026-09-17":168.4,"2026-09-18":324.4,"2026-09-19":399.9,
+    "2026-09-21":{m:101.2,d:"2026-09-20"},"2026-09-22":381.0,"2026-09-23":361.8};
+  const r = {...(STATE.releveTPE||{})}; let n = 0;
+  Object.entries(seed).forEach(([k,v]) => { if(r[k]===undefined) { r[k]=v; n++; } });
+  localStorage.setItem("bj_seed_tpe_2026_09","1");
+  if(n) setState({releveTPE: r});
+}, 5000);
 setTimeout(() => { envoyerPhotosProduits(STATE.products||[]); chargerPhotosManquantes(); }, 3000);
 
 // ── DEMANDE D'AVIS GOOGLE (envoyée quelques jours après un achat) ──────
