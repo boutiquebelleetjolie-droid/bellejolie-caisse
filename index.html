@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "23/09 · v7 (ressaisie)";
+const APP_VERSION = "23/09 · v8 (retouches)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -402,6 +402,7 @@ const CLES_SYNC_TEMPS_REEL = {
   bj_lien_avis_google: "lienAvisGoogle",
   bj_transferts: "transferts",
   bj_ventes_suppr: "ventesSuppr",
+  bj_retouches: "retouches",
 };
 const CLES_SYNC_PROTEGEES = new Set(["emailjsServiceId","emailjsTemplateId","emailjsPublicKey"]); // ne jamais écraser par une valeur vide venue d'un autre appareil
 window._syncBannerTimeout = null;
@@ -915,6 +916,8 @@ let STATE = {
   clients:  ls("bj_clients",  []),
   ventes:   ls("bj_ventes",   []),
   ventesSuppr: ls("bj_ventes_suppr", []),
+  retouches: ls("bj_retouches", []),
+  showRetoucheForm: false, retoucheForm: null, showSuiviRetouches: false, filtreRetouches: "encours",
   avoirs:      ls("bj_avoirs",      []),
   promotions:    ls("bj_promotions",    []),
   ticketsAttente:        ls("bj_attente",       []),
@@ -1040,6 +1043,7 @@ function setState(patch) {
   if(patch.ouvertures !== undefined) lsSet("bj_ouvertures", STATE.ouvertures);
   if(patch.reservations  !== undefined) lsSet("bj_reservations",  STATE.reservations);
   if(patch.transferts    !== undefined) lsSet("bj_transferts",    STATE.transferts);
+  if(patch.retouches     !== undefined) lsSet("bj_retouches",     STATE.retouches);
   if(patch.transferts  !== undefined) lsSet("bj_transferts",   STATE.transferts);
   if(patch.memos    !== undefined) lsSet("bj_memos",    STATE.memos);
   if(patch.emailjsServiceId  !== undefined) lsSet("bj_ejs_service",  STATE.emailjsServiceId);
@@ -1717,6 +1721,8 @@ function renderApp() {
   ${STATE.showStockAutreBoutique ? renderStockAutreBoutiqueModal() : ""}
   ${STATE.showTransfertBoutique ? renderTransfertBoutiqueModal() : ""}
   ${STATE.showHistoriqueTransferts ? renderHistoriqueTransfertsModal() : ""}
+  ${STATE.showRetoucheForm ? renderRetoucheFormModal() : ""}
+  ${STATE.showSuiviRetouches ? renderSuiviRetouchesModal() : ""}
   ${STATE.showCorrectionVente ? renderCorrectionVenteModal() : ""}
   ${STATE.showProdModal    ? renderProdModal()       : ""}
   ${STATE.showClientModal  ? renderClientModal()     : ""}
@@ -1792,6 +1798,126 @@ window.afficherInfoArticlePanier = (itemId) => {
     +'</div></div>';
   document.body.appendChild(div);
 };
+
+// ── RETOUCHES ──────────────────────────────────────────────────────
+window.ouvrirRetoucheForm = () => {
+  const dRetour = new Date(); dRetour.setDate(dRetour.getDate()+7);
+  const c = STATE.client;
+  STATE.retoucheForm = { description:"", prix:"10", dateRetour: dateLocaleStr(dRetour),
+    clientNom: c ? (c.prenom+" "+c.nom).trim() : "", clientTel: c ? (c.tel||"") : "", clientId: c ? c.id : null };
+  setState({showRetoucheForm:true});
+};
+function renderRetoucheFormModal() {
+  const f = STATE.retoucheForm||{};
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)setState({showRetoucheForm:false})">
+    <div class="modal" style="max-width:420px;">
+      <div class="modal-header"><span style="font-weight:500;">✂️ Nouvelle retouche</span>
+        <button onclick="setState({showRetoucheForm:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button></div>
+      <div class="modal-body">
+        <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Retouche à faire *</label>
+        <input value="${f.description||''}" oninput="STATE.retoucheForm.description=this.value" placeholder="Ex : ourlet pantalon noir, reprise taille robe" style="width:100%;box-sizing:border-box;margin-bottom:10px;"/>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+          <div><label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Prix (€)</label>
+            <input type="number" step="0.5" min="0" value="${f.prix}" oninput="STATE.retoucheForm.prix=this.value" style="width:100%;box-sizing:border-box;"/></div>
+          <div><label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Retour prévu le *</label>
+            <input type="date" value="${f.dateRetour||''}" onchange="STATE.retoucheForm.dateRetour=this.value" style="width:100%;box-sizing:border-box;"/></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px;">
+          <div><label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Cliente *</label>
+            <input value="${f.clientNom||''}" oninput="STATE.retoucheForm.clientNom=this.value" placeholder="Prénom Nom" style="width:100%;box-sizing:border-box;"/></div>
+          <div><label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Téléphone</label>
+            <input value="${f.clientTel||''}" oninput="STATE.retoucheForm.clientTel=this.value" placeholder="06..." style="width:100%;box-sizing:border-box;"/></div>
+        </div>
+        <div style="font-size:11px;color:#aaa;margin-bottom:14px;">${STATE.client?"Cliente de la caisse reprise automatiquement.":"Astuce : sélectionne la cliente dans la caisse avant, ses infos seront reprises."}</div>
+        <button onclick="validerRetoucheForm()" class="btn-primary" style="width:100%;">Ajouter au panier</button>
+      </div>
+    </div>
+  </div>`;
+}
+window.validerRetoucheForm = () => {
+  const f = STATE.retoucheForm;
+  const prix = parseFloat(String(f.prix).replace(",", "."));
+  if(!f.description.trim()) { alert("Indique la retouche à faire."); return; }
+  if(!f.clientNom.trim()) { alert("Indique le nom de la cliente."); return; }
+  if(!f.dateRetour) { alert("Indique la date de retour prévue."); return; }
+  if(isNaN(prix) || prix<0) { alert("Prix invalide."); return; }
+  // Article "Retouche" (service, sans stock réel) créé une seule fois
+  let prod = STATE.products.find(p=>p.ref==="RETOUCHE-CAISSE");
+  if(!prod) {
+    prod = { id:"RETOUCHE_"+Date.now(), name:"Retouche", ref:"RETOUCHE-CAISSE", barcode:"RETOUCHE", price:10, prixAchat:0,
+      category:"Services", stock:0, isService:true, tailles:[], couleurs:[], grandeTaille:false, enReserve:false, dateAjout:dateLocaleStr() };
+    STATE.products = [...STATE.products, prod];
+    lsSet("bj_products", STATE.products);
+  }
+  const dRet = new Date(f.dateRetour+"T12:00:00").toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit"});
+  STATE.panier = [...STATE.panier, {
+    id: uid("RETL")+Math.random().toString(36).slice(2,5), prodIdOriginal: prod.id, ref: prod.ref, category: prod.category,
+    name: "Retouche — "+f.description.trim()+" (retour le "+dRet+")", price: prix, prixAchat: 0, qty: 1, remise:"", remiseType:"",
+    retoucheInfo: { description: f.description.trim(), dateRetour: f.dateRetour, clientNom: f.clientNom.trim(), clientTel: (f.clientTel||"").trim(), clientId: f.clientId||null },
+  }];
+  setState({showRetoucheForm:false, retoucheForm:null});
+};
+window.changerStatutRetouche = (id, statut) => {
+  STATE.retouches = (STATE.retouches||[]).map(r=>r.id!==id ? r : {...r, statut,
+    ...(statut==="revenue" ? {dateRevenue: new Date().toISOString()} : {}),
+    ...(statut==="recuperee" ? {dateRecuperee: new Date().toISOString()} : {})});
+  setState({retouches: STATE.retouches});
+};
+window.modifierDateRetouche = (id, date) => {
+  STATE.retouches = (STATE.retouches||[]).map(r=>r.id===id ? {...r, dateRetour: date} : r);
+  setState({retouches: STATE.retouches});
+};
+window.supprimerRetouche = (id) => {
+  if(!confirm("Supprimer cette retouche du suivi ? (la vente n'est pas modifiée)")) return;
+  setState({retouches: (STATE.retouches||[]).filter(r=>r.id!==id)});
+};
+function renderSuiviRetouchesModal() {
+  const auj = dateLocaleStr();
+  const filtre = STATE.filtreRetouches||"encours";
+  const toutes = [...(STATE.retouches||[])];
+  const liste = toutes.filter(r => filtre==="toutes" ? true : filtre==="encours" ? r.statut!=="recuperee" : r.statut==="recuperee")
+    .sort((a,b)=> (a.statut==="recuperee")-(b.statut==="recuperee") || String(a.dateRetour).localeCompare(String(b.dateRetour)));
+  const fmt = d => d ? new Date(d.length===10 ? d+"T12:00:00" : d).toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit",year:"2-digit"}) : "—";
+  const onglet = (k,l) => `<button onclick="STATE.filtreRetouches='${k}';render()" style="padding:6px 12px;border-radius:7px;border:none;cursor:pointer;font-size:12px;background:${filtre===k?'#6a3d9a':'#f3e8fc'};color:${filtre===k?'#fff':'#6a3d9a'};">${l}</button>`;
+  const badge = r => r.statut==="recuperee" ? `<span style="background:#eaf3de;color:#3b6d11;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;">✅ Récupérée</span>`
+    : r.statut==="revenue" ? `<span style="background:#eef4fd;color:#185fa5;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;">📦 Revenue</span>`
+    : (r.dateRetour && r.dateRetour<auj) ? `<span style="background:#fcebeb;color:#a32d2d;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;">⚠️ En retard</span>`
+    : (r.dateRetour===auj) ? `<span style="background:#fff3e8;color:#e07c00;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;">🔔 Aujourd'hui</span>`
+    : `<span style="background:#f3e8fc;color:#6a3d9a;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;">✂️ En cours</span>`;
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)setState({showSuiviRetouches:false})">
+    <div class="modal" style="max-width:760px;max-height:88vh;display:flex;flex-direction:column;">
+      <div class="modal-header"><span style="font-weight:500;">📋 Suivi des retouches</span>
+        <button onclick="setState({showSuiviRetouches:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button></div>
+      <div class="modal-body" style="overflow-y:auto;flex:1;">
+        <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
+          ${onglet("encours","En cours ("+toutes.filter(r=>r.statut!=="recuperee").length+")")}${onglet("recuperees","Récupérées")}${onglet("toutes","Toutes")}
+        </div>
+        ${liste.length===0?`<div style="text-align:center;color:#aaa;padding:24px 0;">Aucune retouche.</div>`:`
+        <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead><tr style="border-bottom:0.5px solid #e8e0e4;color:#888;">
+            <th style="text-align:left;padding:6px;">Déposée</th><th style="text-align:left;padding:6px;">Cliente</th><th style="text-align:left;padding:6px;">Retouche</th>
+            <th style="text-align:right;padding:6px;">Prix</th><th style="text-align:left;padding:6px;">Retour prévu</th><th style="text-align:left;padding:6px;">Statut</th><th></th></tr></thead>
+          <tbody>${liste.map(r=>`
+            <tr style="border-bottom:0.5px solid #f0ebee;vertical-align:top;">
+              <td style="padding:7px 6px;white-space:nowrap;">${fmt(r.dateDepot)}</td>
+              <td style="padding:7px 6px;"><strong>${r.clientNom||"—"}</strong>${r.clientTel?`<div style="color:#888;font-size:11px;">${r.clientTel}</div>`:""}</td>
+              <td style="padding:7px 6px;">${r.description||""}</td>
+              <td style="padding:7px 6px;text-align:right;white-space:nowrap;">${eur(r.prix||0)}</td>
+              <td style="padding:7px 6px;">${r.statut==="recuperee"?fmt(r.dateRetour):`<input type="date" value="${r.dateRetour||""}" onchange="modifierDateRetouche('${r.id}',this.value)" style="font-size:12px;padding:3px;"/>`}</td>
+              <td style="padding:7px 6px;">${badge(r)}${r.dateRecuperee?`<div style="color:#aaa;font-size:10px;">le ${fmt(r.dateRecuperee)}</div>`:""}</td>
+              <td style="padding:7px 6px;white-space:nowrap;">
+                ${r.statut==="encours"?`<button onclick="changerStatutRetouche('${r.id}','revenue')" style="background:#eef4fd;color:#185fa5;border:1px solid #b3d0f0;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer;">📦 Revenue</button>`:""}
+                ${r.statut!=="recuperee"?`<button onclick="changerStatutRetouche('${r.id}','recuperee')" style="background:#eaf3de;color:#3b6d11;border:1px solid #aed882;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer;margin-left:3px;">✅ Récupérée</button>`:`<button onclick="changerStatutRetouche('${r.id}','encours')" style="background:none;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px;cursor:pointer;color:#888;">↩️</button>`}
+                ${STATE.vendeur.id==="V1"?`<button onclick="supprimerRetouche('${r.id}')" style="background:none;border:none;color:#a32d2d;cursor:pointer;font-size:13px;">🗑️</button>`:""}
+              </td>
+            </tr>`).join("")}</tbody>
+        </table></div>`}
+      </div>
+    </div>
+  </div>`;
+}
 
 window.ajouterSac = () => {
   // Chercher si un article "Sac" existe déjà dans les produits
@@ -2184,6 +2310,7 @@ window.exporterDonnees = () => {
     depotsBanque:STATE.depotsBanque||[],
     mouvementsDefectueux:STATE.mouvementsDefectueux||[],
     registrePersonnel:STATE.registrePersonnel||[],
+    retouches:STATE.retouches||[],
     ouvertures:STATE.ouvertures||{},
     // Config EmailJS incluse pour ne pas la perdre si le navigateur efface ses données
     emailjsServiceId:STATE.emailjsServiceId||"", emailjsTemplateId:STATE.emailjsTemplateId||"", emailjsPublicKey:STATE.emailjsPublicKey||"",
@@ -2380,6 +2507,7 @@ window.importerDonnees = (input) => {
       if(data.soldeDepotReporte!==undefined) {STATE.soldeDepotReporte=data.soldeDepotReporte;lsSet("bj_solde_depot_reporte",data.soldeDepotReporte);}
       if(data.mouvementsDefectueux) {STATE.mouvementsDefectueux=data.mouvementsDefectueux;lsSet("bj_mouvements_defectueux",data.mouvementsDefectueux);}
       if(data.registrePersonnel) {STATE.registrePersonnel=data.registrePersonnel;lsSet("bj_registre_personnel",data.registrePersonnel);}
+      if(data.retouches) {STATE.retouches=data.retouches;lsSet("bj_retouches",data.retouches);}
       if(data.ouvertures) {STATE.ouvertures=data.ouvertures;lsSet("bj_ouvertures",data.ouvertures);}
       if(data.historiquePromo){STATE.historiquePromo=data.historiquePromo;lsSet("bj_historique_promo",data.historiquePromo);}
       // Config EmailJS : restaurée si présente dans la sauvegarde (évite de la reperdre si le navigateur efface ses données)
@@ -2499,7 +2627,7 @@ function calcPanier() {
       let qtyEligible = 0, baseEligible = 0;
       panier.forEach(x=>{
         if(x.retour || x.avoirId) return;
-        if(x.ref==="SAC-CAISSE" || x.name==="Sac") return;
+        if(x.ref==="SAC-CAISSE" || x.name==="Sac" || x.ref==="RETOUCHE-CAISSE") return;
         const aRemiseArt = parseFloat(x.remise||0)>0 || x._promoAuto;
         if(aRemiseArt) return; // déjà en promo, ne compte pas pour le palier
         qtyEligible += (x.qty||1);
@@ -2525,7 +2653,7 @@ function calcPanier() {
     const finOk = pc.testMode || !pc.dateFin || now <= new Date(pc.dateFin+"T23:59:59");
     if(debutOk && finOk) {
       const prodMapPC = {}; STATE.products.forEach(pr=>prodMapPC[pr.id]=pr);
-      const achatsPC = panier.filter(x=>!x.retour && !x.avoirId && x.ref!=="SAC-CAISSE" && x.name!=="Sac");
+      const achatsPC = panier.filter(x=>!x.retour && !x.avoirId && x.ref!=="SAC-CAISSE" && x.name!=="Sac" && x.ref!=="RETOUCHE-CAISSE");
       const aChaussure = achatsPC.some(x => prodMapPC[x.prodIdOriginal||x.id]?.category==="Chaussures");
       if(aChaussure) {
         // Article le plus cher hors chaussures, pas déjà en promo/remise
@@ -2900,6 +3028,9 @@ function renderCaisse() {
     const aSuivreMed = (STATE.registrePersonnel||[]).filter(s=>!s.sortie && s.prochaineVisiteMedicale && new Date(s.prochaineVisiteMedicale)<=dans30jMed);
     if(aSuivreMed.length) alerteHtml += '<div style="background:#fcebeb;border:1px solid #f0a5a5;border-radius:9px;padding:10px 14px;margin-bottom:6px;font-size:13px;color:#a32d2d;display:flex;align-items:center;justify-content:space-between;"><span>🩺 Visite médicale à prévoir : '+aSuivreMed.map(s=>s.prenom+' '+s.nom).join(', ')+'</span><button onclick="setState({showRegistrePersonnel:true})" style="padding:4px 10px;background:#a32d2d;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;">→ Personnel</button></div>';
   }
+  const auj0 = dateLocaleStr();
+  const retAttendues = (STATE.retouches||[]).filter(r=>r.statut==="encours" && r.dateRetour && r.dateRetour<=auj0);
+  if(retAttendues.length) alerteHtml += '<div style="background:#f3e8fc;border:1px solid #d9c2ee;border-radius:9px;padding:10px 14px;margin-bottom:6px;font-size:13px;color:#6a3d9a;display:flex;align-items:center;justify-content:space-between;"><span>✂️ '+retAttendues.length+' retouche(s) attendue(s) aujourd\'hui ou en retard</span><button onclick="setState({showSuiviRetouches:true})" style="padding:4px 10px;background:#6a3d9a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;">→ Suivi</button></div>';
   const alerteBloc = alerteHtml ? '<div style="margin-bottom:10px;">'+alerteHtml+'</div>' : '';
   const bandeauEvenements = renderBandeauEvenements();
 
@@ -3358,6 +3489,10 @@ function renderCaisse() {
       <!-- Remise globale -->
       <div class="card">
         <button onclick="ajouterSac()" style="width:100%;padding:9px;background:#f9f6f8;color:#555;border:1px solid #e8d8de;border-radius:8px;cursor:pointer;font-size:13px;margin-bottom:8px;font-weight:500;">🛍️ + Sac — 0,20€</button>
+        <div style="display:flex;gap:6px;margin-bottom:8px;">
+          <button onclick="ouvrirRetoucheForm()" style="flex:1;padding:9px;background:#f3e8fc;color:#6a3d9a;border:1px solid #d9c2ee;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">✂️ + Retouche — 10€</button>
+          <button onclick="setState({showSuiviRetouches:true})" style="padding:9px 10px;background:#fff;color:#6a3d9a;border:1px solid #d9c2ee;border-radius:8px;cursor:pointer;font-size:12px;white-space:nowrap;">📋 Suivi${(STATE.retouches||[]).filter(r=>r.statut!=="recuperee").length?" ("+(STATE.retouches||[]).filter(r=>r.statut!=="recuperee").length+")":""}</button>
+        </div>
         <button onclick="ouvrirVenteChequeCadeau()" style="width:100%;padding:9px;background:#fbf3e6;color:#854f0b;border:1px solid #f0dcb0;border-radius:8px;cursor:pointer;font-size:13px;margin-bottom:8px;font-weight:500;">🎁 Vendre un chèque cadeau</button>
         <div style="font-weight:500;font-size:13px;margin-bottom:8px;">🏷️ Remise globale panier</div>
         <!-- Bouton rapide réseaux sociaux -->
@@ -5138,6 +5273,12 @@ window.validerPaiement = () => {
   STATE._reliquatInfo = null;
 
   STATE.ventes=[...STATE.ventes, vente];
+  // Retouches payées dans cette vente -> ajout au tableau de suivi
+  const nouvellesRetouches = STATE.panier.filter(x=>x.retoucheInfo && !x.retour).map(x=>({
+    id: uid("RTC")+Math.random().toString(36).slice(2,5), venteId: vente.id, dateDepot: vente.date,
+    ...x.retoucheInfo, prix: x.price*(x.qty||1), statut: "encours", vendeur: STATE.vendeur.nom,
+  }));
+  if(nouvellesRetouches.length) { STATE.retouches = [...(STATE.retouches||[]), ...nouvellesRetouches]; lsSet("bj_retouches", STATE.retouches); }
   lsSet("bj_ventes", STATE.ventes);
 
   // Décrémenter stock articles achetés (pas les retours, pas les réservations déjà déduites)
@@ -5145,6 +5286,7 @@ window.validerPaiement = () => {
   STATE.ressaisieSansStock = false; // l'option ne vaut que pour cette vente
   STATE.panier.filter(x=>!x.retour).forEach(it=>{
     if(_ressaisie) return; // Ressaisie d'une vente perdue : le stock avait déjà été décompté
+    if(it.retoucheInfo) return; // Retouche : service, pas de stock
     if(it.resaId) return; // Stock déjà déduit à la réservation
     const pid = it.prodIdOriginal || it.id;
     STATE.products = ajusterStock(STATE.products, pid, -it.qty, it.taille, it.couleur);
@@ -6679,6 +6821,7 @@ function renderStock() {
   const filtreDateStock = STATE.dateEtiqFiltreActif ? (STATE.dateEtiq||"") : "";
   const motsStock = q.split(/\s+/).filter(Boolean);
   let filtered = STATE.products.filter(p=>{
+    if(p.isChequeCadeau || p.isService) return false; // pas de vrai stock (chèques cadeaux, retouches)
     const texte = normStr(p.name+" "+p.ref+" "+(p.marque||""));
     return motsStock.every(m=>texte.includes(m));
   });
