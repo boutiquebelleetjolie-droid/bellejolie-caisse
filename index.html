@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "25/09 · v19 (Z sans mentions)";
+const APP_VERSION = "25/09 · v20 (montants réels)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -9677,7 +9677,7 @@ function majZDepuisCaisse(dateStr) {
     payM: {cb:r2(c.cb), especes:r2(c.especes), cheque:r2(c.cheque), avoir:r2(c.avoir), cadeau:r2(c.cadeau)},
     especes: r2(c.especes),
     ...(compte ? {ecart: r2(z.fondFermeture - (z.fondOuverture||0) - c.especes), aDeposer: Math.max(0, r2(z.fondFermeture - fond))} : {}),
-    corrections: [...(z.corrections||[]), {date:new Date().toISOString(), par:STATE.vendeur.nom, venteId:"", montant:r2(c.ca-(z.caTTC||0)), motif:"Z mis à jour d'après la caisse"}],
+    corrections: [...(z.corrections||[]), {date:new Date().toISOString(), par:(STATE.vendeur||{}).nom||"", venteId:"", montant:r2(c.ca-(z.caTTC||0)), motif:"Z mis à jour d'après la caisse"}],
   };
   STATE.caisseJour = STATE.caisseJour.map(zz=>zz.date===dateStr ? nouveau : zz);
   lsSet("bj_caisse_jour", STATE.caisseJour);
@@ -9700,6 +9700,38 @@ function noteZAffichable(note) {
   if(!note) return "";
   return String(note).split(" · ").filter(x=>!/Correction manuelle ajoutée|Clôture reconstituée|Alignement|Régularisation|écart terminal/i.test(x)).join(" · ").trim();
 }
+// Fixer les montants réellement encaissés un jour donné (CB et espèces) : la caisse est ajustée
+// par une vente de correction (qui peut être négative sur un mode), puis le Z est recalculé.
+function appliquerMontantsReels(dateStr, cibleCB, cibleEsp) {
+  const r2 = n => Math.round(n*100)/100;
+  const c = etatCaisseJour(dateStr);
+  const pays = [{mode:"cb", montant:r2(cibleCB - c.cb)}, {mode:"especes", montant:r2(cibleEsp - c.especes)}].filter(p=>Math.abs(p.montant)>0.009);
+  if(pays.length) {
+    const total = r2(pays.reduce((s,p)=>s+p.montant,0));
+    const v = {
+      id: uid("CORR"), date: new Date(dateStr+"T12:00:00").toISOString(), boutiqueId: BOUTIQUE_CONFIG.id,
+      panier: [{id:"correction_manuelle", name:"Alignement sur les montants encaissés", qty:1, price:total, remise:"", remiseType:""}],
+      client:null, clientId:null, vendeur:STATE.vendeur, remise:0, remiseFid:0, remiseProg:0,
+      total, mixed: pays.length>1, pays, payMode: pays.length===1 ? pays[0].mode : "mixte",
+      correctionManuelle:true, alignementZ:true, noteCorrection:"Alignement sur les montants encaissés", creeLe:new Date().toISOString(), creePar:(STATE.vendeur||{}).nom||"", depotTraite:true,
+    };
+    STATE.ventes = [...STATE.ventes, v];
+    lsSet("bj_ventes", STATE.ventes);
+  }
+  majZDepuisCaisse(dateStr);
+  return pays.length;
+}
+window.saisirMontantsReels = (dateStr) => {
+  if(STATE.vendeur.id!=="V1") return;
+  const c = etatCaisseJour(dateStr);
+  const jour = new Date(dateStr+"T12:00:00").toLocaleDateString("fr-FR");
+  const lire = (lib, def) => { const r = prompt(lib+" réellement encaissé le "+jour+" (€) :", String(def).replace(".",",")); if(r===null) return null; const n = parseFloat(String(r).replace(",",".").replace(/\s/g,"")); return isNaN(n) ? null : n; };
+  const cb = lire("Montant CB", Math.round(c.cb*100)/100); if(cb===null) return;
+  const esp = lire("Montant espèces", Math.round(c.especes*100)/100); if(esp===null) return;
+  if(!confirm("Le "+jour+" : CB "+eur(cb)+" · espèces "+eur(esp)+"\n\nLa caisse et le ticket Z de ce jour seront alignés sur ces montants (le stock n'est pas modifié).")) return;
+  appliquerMontantsReels(dateStr, cb, esp);
+  render();
+};
 window.reimprimerZDate = (dateStr) => { const z = (STATE.caisseJour||[]).find(zz=>zz.date===dateStr); if(z) imprimerZ(z); };
 // Passer un ticket payé en CB en espèces (le paiement n'est pas passé au terminal)
 window.passerTicketEnEspeces = (venteId) => {
@@ -9814,6 +9846,11 @@ function renderControleZ(mois, annee) {
         <span><strong>${new Date(z.date+"T12:00:00").toLocaleDateString("fr-FR",{weekday:"short",day:"numeric",month:"short"})}</strong> · Z CB ${eur(zcb)} · terminal ${eur(t)} · ${fmtE(diff)}</span>
         ${diff>0?`<button onclick="corrigerZDepuisTPE('${z.date}')" style="background:#185fa5;color:#fff;border:none;border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;">Corriger le Z</button>`:`<span style="color:#a32d2d;font-size:11px;">→ espèces à faire dans le rapprochement</span>`}
       </div>`).join("")}`:""}
+
+    <details style="margin-top:12px;"><summary style="cursor:pointer;font-size:13px;font-weight:600;">✏️ Saisir les montants réellement encaissés d'un jour</summary>
+      <div style="font-size:11px;color:#888;margin:6px 0;">Pour un jour où tu connais les vrais montants (terminal + espèces comptées) : la caisse et le Z sont alignés dessus.</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">${liste.map(({z})=>`<button onclick="saisirMontantsReels('${z.date}')" style="background:#fff;border:1px solid #e8d8de;color:#993556;border-radius:7px;padding:4px 9px;font-size:12px;cursor:pointer;">${new Date(z.date+"T12:00:00").toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit"})}</button>`).join("")}</div>
+    </details>
 
     ${zCorriges.length?`<div style="font-weight:600;font-size:13px;margin:14px 0 6px;">🖨️ Z modifiés — à réimprimer</div>
     <div style="display:flex;flex-wrap:wrap;gap:6px;">${zCorriges.map(z=>`<button onclick="reimprimerZDate('${z.date}')" style="background:#fff;border:1px solid #3b6d11;color:#3b6d11;border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;">🖨️ ${new Date(z.date+"T12:00:00").toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit"})} · ${eur(z.caTTC||0)}</button>`).join("")}</div>`:""}
@@ -17995,6 +18032,17 @@ memoriserSignaturesProduits(STATE.products||[]);
   if(n) { lsSet("bj_ventes", STATE.ventes); console.log("Ventes arrondies au centime :", n); }
 })();
 synchroniserJournalAuDemarrage();
+// 11/09 : montants réels confirmés par la gérante (CB 359,40 € · espèces 24,99 €) — appliqué une seule fois,
+// après la synchro, uniquement si la caisse de ce jour ne correspond pas déjà.
+setTimeout(() => {
+  if(BOUTIQUE_ID_ACTUEL!=="boutique_1" || localStorage.getItem("bj_fix_1109")) return;
+  if(!(STATE.caisseJour||[]).some(z=>z.date==="2026-09-11")) return;
+  localStorage.setItem("bj_fix_1109","1");
+  const c = etatCaisseJour("2026-09-11");
+  if(Math.abs(c.cb-359.40)<0.009 && Math.abs(c.especes-24.99)<0.009) { majZDepuisCaisse("2026-09-11"); render(); return; }
+  appliquerMontantsReels("2026-09-11", 359.40, 24.99);
+  render();
+}, 9000);
 // Recréation unique de 2 articles perdus le 25/09 (d'après les étiquettes imprimées) :
 // identifiants fixes (pas de doublon si plusieurs appareils le font), seulement s'ils n'existent pas déjà.
 setTimeout(() => {
