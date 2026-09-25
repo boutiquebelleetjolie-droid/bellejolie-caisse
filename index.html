@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "25/09 · v22 (ticket protégé)";
+const APP_VERSION = "25/09 · v23 (ticket sauvegardé)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -1124,8 +1124,39 @@ function setState(patch) {
 }
 
 // ─── RENDU PRINCIPAL ────────────────────────────────────────────
+// ── Ticket en cours sauvegardé sur l'appareil (jamais perdu par un rechargement / une mise en veille) ──
+function cleTicketEnCours() { return "bj_ticket_en_cours__"+BOUTIQUE_ID_ACTUEL; }
+function sauvegarderTicketEnCours() {
+  try {
+    if(!STATE.vendeur) return; // écran de connexion : ne rien effacer, le ticket sera restauré à la connexion
+    if(!STATE.panier || !STATE.panier.length) { localStorage.removeItem(cleTicketEnCours()); STATE._panierDepuis = null; STATE._ticketRestaure = false; return; }
+    if(!STATE._panierDepuis) STATE._panierDepuis = new Date().toISOString();
+    localStorage.setItem(cleTicketEnCours(), JSON.stringify({
+      panier: STATE.panier, client: STATE.client||null, remVal: STATE.remVal||"", remType: STATE.remType||"eur",
+      remGlobalMotif: STATE.remGlobalMotif||"", depuis: STATE._panierDepuis, vendeur: STATE.vendeur?.nom||"",
+    }));
+  } catch(e) {}
+}
+function restaurerTicketEnCours() {
+  if(window._ticketRestaureFait || !STATE.vendeur || (STATE.panier && STATE.panier.length)) return;
+  window._ticketRestaureFait = true;
+  try {
+    const t = JSON.parse(localStorage.getItem(cleTicketEnCours())||"null");
+    if(!t || !Array.isArray(t.panier) || !t.panier.length) return;
+    STATE.panier = t.panier; STATE.client = t.client||null; STATE.remVal = t.remVal||""; STATE.remType = t.remType||"eur";
+    STATE.remGlobalMotif = t.remGlobalMotif||""; STATE._panierDepuis = t.depuis||new Date().toISOString();
+    STATE._ticketRestaure = true; STATE.tab = "caisse";
+  } catch(e) {}
+}
+window.addEventListener("beforeunload", e => {
+  if(STATE.panier && STATE.panier.length) { e.preventDefault(); e.returnValue = "Un ticket est en cours et n'est pas encaissé."; return e.returnValue; }
+});
+setInterval(() => { if(STATE.vendeur && STATE.tab==="caisse" && STATE.panier && STATE.panier.length) render(); }, 60000); // mise à jour du rappel
+
 function render() {
   const root = document.getElementById("root");
+  restaurerTicketEnCours();
+  sauvegarderTicketEnCours();
   if (!STATE.vendeur) {
     root.innerHTML = renderLogin();
     bindLogin();
@@ -2094,6 +2125,8 @@ window.viderPanier = () => {
 
 window.logout = () => {
   if(STATE.panier && STATE.panier.length && !confirm("Un ticket est en cours. Voulez-vous supprimer ce ticket et quitter ?")) return;
+  try { localStorage.removeItem(cleTicketEnCours()); } catch(e) {}
+  window._ticketRestaureFait = false;
   clearTimeout(_timerVerrouillage);
   _verrouille=false;
   lsSet("bj_vendeur",null);
@@ -3107,6 +3140,12 @@ function renderCaisse() {
   const auj0 = dateLocaleStr();
   const retAttendues = (STATE.retouches||[]).filter(r=>r.statut==="encours" && r.dateRetour && r.dateRetour<=auj0);
   if(retAttendues.length) alerteHtml += '<div style="background:#f3e8fc;border:1px solid #d9c2ee;border-radius:9px;padding:10px 14px;margin-bottom:6px;font-size:13px;color:#6a3d9a;display:flex;align-items:center;justify-content:space-between;"><span>✂️ '+retAttendues.length+' retouche(s) attendue(s) aujourd\'hui ou en retard</span><button onclick="setState({showSuiviRetouches:true})" style="padding:4px 10px;background:#6a3d9a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;">→ Suivi</button></div>';
+  // Ticket en cours : restauré après un rechargement, ou resté non encaissé depuis plus de 10 min
+  if(STATE.panier && STATE.panier.length) {
+    const minutes = STATE._panierDepuis ? Math.floor((Date.now()-new Date(STATE._panierDepuis).getTime())/60000) : 0;
+    if(STATE._ticketRestaure) alerteHtml = '<div style="background:#fff3cd;border:2px solid #e0a800;border-radius:9px;padding:10px 14px;margin-bottom:6px;font-size:13px;color:#856404;">🧾 <strong>Ticket non encaissé restauré</strong> (commencé il y a '+minutes+' min). Si la cliente a déjà payé, termine l\'encaissement ; sinon supprime-le avec 🗑️.</div>' + alerteHtml;
+    else if(minutes>=10) alerteHtml = '<div style="background:#fcebeb;border:2px solid #e8a5a5;border-radius:9px;padding:10px 14px;margin-bottom:6px;font-size:13px;color:#a32d2d;">⏳ <strong>Ticket en cours depuis '+minutes+' min, pas encore encaissé.</strong> Si la cliente a payé au terminal, clique sur Encaisser.</div>' + alerteHtml;
+  }
   const alerteBloc = alerteHtml ? '<div style="margin-bottom:10px;">'+alerteHtml+'</div>' : '';
   const bandeauEvenements = renderBandeauEvenements();
 
