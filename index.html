@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "25/09 · v18 (arrondi centime)";
+const APP_VERSION = "25/09 · v19 (Z sans mentions)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -9695,6 +9695,11 @@ window.majTousZDepuisCaisse = (mois, annee) => {
   if(!confirm("Mettre à jour "+aFaire.length+" ticket(s) Z d'après la caisse ?\n\n"+aFaire.map(d=>"• "+new Date(d+"T12:00:00").toLocaleDateString("fr-FR")).join("\n")+"\n\nL'argent compté à la clôture ne change pas : s'il ne correspond plus aux espèces en caisse, l'écart apparaîtra sur le Z.")) return;
   aFaire.forEach(majZDepuisCaisse); render();
 };
+// Note d'un Z sans les mentions automatiques de correction (jamais affichées ni imprimées)
+function noteZAffichable(note) {
+  if(!note) return "";
+  return String(note).split(" · ").filter(x=>!/Correction manuelle ajoutée|Clôture reconstituée|Alignement|Régularisation|écart terminal/i.test(x)).join(" · ").trim();
+}
 window.reimprimerZDate = (dateStr) => { const z = (STATE.caisseJour||[]).find(zz=>zz.date===dateStr); if(z) imprimerZ(z); };
 // Passer un ticket payé en CB en espèces (le paiement n'est pas passé au terminal)
 window.passerTicketEnEspeces = (venteId) => {
@@ -10070,7 +10075,7 @@ window.validerCorrectionVenteManquante = () => {
         especes: (z.especes||0)+especes,
         aDeposer: (z.aDeposer||0)+especes,
         nbVentes: (z.nbVentes||0)+1,
-        note: (z.note?z.note+" · ":"")+"Correction manuelle ajoutée : "+eur(total),
+        note: z.note||"",
       }:z);
     } else {
       const FOND_RESERVE = 80;
@@ -10079,7 +10084,7 @@ window.validerCorrectionVenteManquante = () => {
         nbVentes: 1, caTTC: total, caHT: total/1.20, tvaCol: total-total/1.20,
         especes, fondOuverture: FOND_RESERVE, fondFermeture: FOND_RESERVE+especes,
         aDeposer: especes, ecart: 0, payM: Object.fromEntries(pays.map(p=>[p.mode,p.montant])),
-        note: "Clôture reconstituée — "+(f.note||"ticket Z papier, données perdues"),
+        note: "", reconstitue: true,
         vendeur: STATE.vendeur.nom,
       }];
     }
@@ -13906,7 +13911,7 @@ function renderCaisseJour() {
         ${!zDejàFait&&isToday?`
           <label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Note de clôture</label>
           <textarea id="z-note" rows="3" placeholder="Observations..." style="width:100%;box-sizing:border-box;border:1px solid #ddd;border-radius:7px;padding:7px;font-family:inherit;font-size:12px;resize:vertical;"></textarea>
-        `:zDejàFait?.note?`<div style="background:#f5f0f2;border-radius:8px;padding:10px;font-size:13px;">${zDejàFait.note}</div>`:""}
+        `:noteZAffichable(zDejàFait?.note)?`<div style="background:#f5f0f2;border-radius:8px;padding:10px;font-size:13px;">${noteZAffichable(zDejàFait.note)}</div>`:""}
       </div>
     </div>
 
@@ -14298,7 +14303,7 @@ window.imprimerZ = (z) => {
     <tr><td>À déposer en banque</td><td style="font-weight:700;color:#185fa5;">${eur(z.aDeposer||0)}</td></tr>
     <tr><td>Écart</td><td style="color:${Math.abs(z.ecart||0)>5?"red":"green"};font-weight:700;">${eur(z.ecart||0)}</td></tr>
   </table>
-  ${z.note?`<hr/><p><em>${z.note}</em></p>`:""}
+  ${noteZAffichable(z.note)?`<hr/><p><em>${noteZAffichable(z.note)}</em></p>`:""}
   </body></html>`;
   const w=window.open("","_blank","width=500,height:700");if(w){w.document.write(html);w.document.close();}
 };
@@ -17927,7 +17932,7 @@ if(savedVendeurs) savedVendeurs.forEach((sv,i)=>{ if(VENDEURS[i]&&sv.code){VENDE
         especes: (z.especes||0)+especesCorrection,
         aDeposer: (z.aDeposer||0)+especesCorrection,
         nbVentes: (z.nbVentes||0)+1,
-        note: (z.note?z.note+" · ":"")+"Correction manuelle ajoutée : "+eur(v.total),
+        note: z.note||"",
       }:z);
     } else {
       const FOND_RESERVE = 80;
@@ -17936,7 +17941,7 @@ if(savedVendeurs) savedVendeurs.forEach((sv,i)=>{ if(VENDEURS[i]&&sv.code){VENDE
         nbVentes: 1, caTTC: v.total, caHT: v.total/1.20, tvaCol: v.total-v.total/1.20,
         especes: especesCorrection, fondOuverture: FOND_RESERVE, fondFermeture: FOND_RESERVE+especesCorrection,
         aDeposer: especesCorrection, ecart: 0, payM: Object.fromEntries((v.pays||[]).map(p=>[p.mode,p.montant])),
-        note: "Clôture reconstituée — "+(v.noteCorrection||"ticket Z papier, données perdues"),
+        note: "", reconstitue: true,
         vendeur: v.creePar || v.vendeur?.nom || "",
       }];
     }
