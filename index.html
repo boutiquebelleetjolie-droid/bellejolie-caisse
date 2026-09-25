@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "25/09 · v14 (articles fusionnés)";
+const APP_VERSION = "25/09 · v15 (articles recréés)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -17884,6 +17884,29 @@ demarrerSyncTempsReel();
 // Journal des tickets (stockage cloud des ventes, un document par vente) : synchro + écoute temps réel
 memoriserSignaturesProduits(STATE.products||[]);
 synchroniserJournalAuDemarrage();
+// Recréation unique de 2 articles perdus le 25/09 (d'après les étiquettes imprimées) :
+// identifiants fixes (pas de doublon si plusieurs appareils le font), seulement s'ils n'existent pas déjà.
+setTimeout(() => {
+  if(BOUTIQUE_ID_ACTUEL!=="boutique_1" || localStorage.getItem("bj_seed_prod_2509")) return;
+  localStorage.setItem("bj_seed_prod_2509","1");
+  const modeles = [
+    {id:"PSEED_MUGR5C4D", name:"Pull bordeaux avec foulard", ref:"REF-MUGR5C4D", bc:"3760006721123", price:25},
+    {id:"PSEED_MUGR9HR3", name:"Pull noir col chemise bleu", ref:"REF-MUGR9HR3", bc:"3760000946921", price:26},
+  ];
+  const suppr = new Set(STATE.produitsSuppr||[]);
+  const existe = m => (STATE.products||[]).some(p => p.id===m.id || p.ref===m.ref || p.barcode===m.bc || Object.values(p.barcodeVariantes||{}).includes(m.bc));
+  const aCreer = modeles.filter(m => !existe(m) && !suppr.has(m.id));
+  if(!aCreer.length) return;
+  const maintenant = new Date().toISOString();
+  STATE.products = [...STATE.products, ...aCreer.map(m => ({
+    id:m.id, name:m.name, marque:"Kilky", category:"Pulls & Gilets", price:m.price, prixAchat:"",
+    stock:6, ref:m.ref, barcode:m.bc, tailles:["TU"], couleurs:[], stockVariantes:{"TU__":6}, barcodeVariantes:{"TU__":m.bc},
+    photo:"", aPhoto:false, grandeTaille:false, enReserve:false, reserveQty:0, dateReserve:null, dernierReassort:null,
+    dateAjout:"2026-09-25T10:00:00.000Z", createdAt:maintenant,
+  }))];
+  lsSet("bj_products", STATE.products);
+  render();
+}, 8000);
 ecouterJournalVentes();
 // Relevés du terminal de septembre 2026 transmis par la gérante (une seule fois, sans écraser une saisie)
 setTimeout(() => {
