@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "25/09 · v20 (montants réels)";
+const APP_VERSION = "25/09 · v21 (septembre aligné)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -18034,6 +18034,27 @@ memoriserSignaturesProduits(STATE.products||[]);
 synchroniserJournalAuDemarrage();
 // 11/09 : montants réels confirmés par la gérante (CB 359,40 € · espèces 24,99 €) — appliqué une seule fois,
 // après la synchro, uniquement si la caisse de ce jour ne correspond pas déjà.
+// Septembre 2026 : montants réels (CB = terminal, espèces = Z d'origine / tiroir), confirmés par la
+// gérante — le surplus éventuel en caisse est retiré, puis chaque Z est recalculé. Une seule fois.
+setTimeout(() => {
+  if(BOUTIQUE_ID_ACTUEL!=="boutique_1" || localStorage.getItem("bj_fix_sept_2026")) return;
+  if(!(STATE.caisseJour||[]).some(z=>z.date==="2026-09-12")) return;
+  localStorage.setItem("bj_fix_sept_2026","1"); localStorage.setItem("bj_fix_1109","1");
+  const cibles = {"01":[344.40,36.70],"02":[268.58,119.70],"03":[598.46,134.89],"04":[527.93,109.50],"05":[1078.08,63.00],
+    "07":[282.78,37.00],"08":[799.90,23.00],"09":[247.60,44.00],"10":[423.60,59.00],"11":[359.40,24.99],"12":[584.70,35.00],
+    "14":[172.40,10.00],"15":[98.20,60.00],"16":[341.60,118.20],"17":[168.40,26.00],"18":[324.40,148.40],"19":[399.90,52.20],
+    "21":[101.20,86.00],"22":[381.00,101.40]};
+  let n = 0;
+  (STATE.caisseJour||[]).filter(z=>z.date && z.date.startsWith("2026-09-")).forEach(z => {
+    const cible = cibles[z.date.slice(8)];
+    const c = etatCaisseJour(z.date);
+    if(cible && (Math.abs(c.cb-cible[0])>0.009 || Math.abs(c.especes-cible[1])>0.009)) { appliquerMontantsReels(z.date, cible[0], cible[1]); n++; return; }
+    const e = ecartsZ(8, 2026).find(x=>x.z.date===z.date);
+    if(e && e.aEcart) { majZDepuisCaisse(z.date); n++; }
+  });
+  console.log("Septembre : "+n+" journée(s) alignée(s) sur les montants réels");
+  render();
+}, 9500);
 setTimeout(() => {
   if(BOUTIQUE_ID_ACTUEL!=="boutique_1" || localStorage.getItem("bj_fix_1109")) return;
   if(!(STATE.caisseJour||[]).some(z=>z.date==="2026-09-11")) return;
