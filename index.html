@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "25/09 · v16 (Z vs terminal)";
+const APP_VERSION = "25/09 · v17 (Z ← caisse)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -9664,6 +9664,37 @@ window.corrigerZDepuisTPE = (dateStr) => {
   ajusterZApresAnnulation({id:"TPE-"+dateStr, date:new Date(dateStr+"T12:00:00").toISOString(), total:ajoutZ, mixed:false, payMode:"cb", pays:[{mode:"cb",montant:ajoutZ}]}, +1, "Correction d'après le terminal");
   render();
 };
+// Mettre un Z à jour d'après les ventes actuellement en caisse. L'argent compté à la clôture
+// (fonds d'ouverture/fermeture) n'est jamais modifié : l'écart et le montant à déposer en sont recalculés.
+function majZDepuisCaisse(dateStr) {
+  const z = (STATE.caisseJour||[]).find(zz=>zz.date===dateStr); if(!z) return false;
+  const c = etatCaisseJour(dateStr);
+  const r2 = n => Math.round(n*100)/100;
+  const fond = typeof FOND_RESERVE!=="undefined" ? FOND_RESERVE : 80;
+  const compte = typeof z.fondFermeture==="number" && z.fondFermeture>0;
+  const nouveau = {...z,
+    caTTC: r2(c.ca), caHT: r2(c.ca/1.20), tvaCol: r2(c.ca - c.ca/1.20), nbVentes: c.nb,
+    payM: {cb:r2(c.cb), especes:r2(c.especes), cheque:r2(c.cheque), avoir:r2(c.avoir), cadeau:r2(c.cadeau)},
+    especes: r2(c.especes),
+    ...(compte ? {ecart: r2(z.fondFermeture - (z.fondOuverture||0) - c.especes), aDeposer: Math.max(0, r2(z.fondFermeture - fond))} : {}),
+    corrections: [...(z.corrections||[]), {date:new Date().toISOString(), par:STATE.vendeur.nom, venteId:"", montant:r2(c.ca-(z.caTTC||0)), motif:"Z mis à jour d'après la caisse"}],
+  };
+  STATE.caisseJour = STATE.caisseJour.map(zz=>zz.date===dateStr ? nouveau : zz);
+  lsSet("bj_caisse_jour", STATE.caisseJour);
+  return true;
+}
+window.majZDepuisCaisseUI = (dateStr) => {
+  if(STATE.vendeur.id!=="V1") return;
+  if(!confirm("Mettre le ticket Z du "+new Date(dateStr+"T12:00:00").toLocaleDateString("fr-FR")+" à jour d'après les ventes en caisse ?\n(l'argent compté à la clôture ne change pas : l'écart espèces est recalculé)")) return;
+  majZDepuisCaisse(dateStr); render();
+};
+window.majTousZDepuisCaisse = (mois, annee) => {
+  if(STATE.vendeur.id!=="V1") return;
+  const aFaire = ecartsZ(mois, annee).filter(x=>x.aEcart).map(x=>x.z.date);
+  if(!aFaire.length) { alert("✓ Tous les Z du mois correspondent déjà à la caisse."); return; }
+  if(!confirm("Mettre à jour "+aFaire.length+" ticket(s) Z d'après la caisse ?\n\n"+aFaire.map(d=>"• "+new Date(d+"T12:00:00").toLocaleDateString("fr-FR")).join("\n")+"\n\nL'argent compté à la clôture ne change pas : s'il ne correspond plus aux espèces en caisse, l'écart apparaîtra sur le Z.")) return;
+  aFaire.forEach(majZDepuisCaisse); render();
+};
 window.reimprimerZDate = (dateStr) => { const z = (STATE.caisseJour||[]).find(zz=>zz.date===dateStr); if(z) imprimerZ(z); };
 // Passer un ticket payé en CB en espèces (le paiement n'est pas passé au terminal)
 window.passerTicketEnEspeces = (venteId) => {
@@ -9754,17 +9785,22 @@ function renderControleZ(mois, annee) {
   return `
   <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;margin-bottom:16px;">
     <div style="font-weight:600;font-size:14px;margin-bottom:4px;">🧾 Contrôle des tickets Z</div>
-    <div style="font-size:12px;color:#888;margin-bottom:10px;">Compare chaque Z clôturé avec les ventes enregistrées aujourd'hui pour ce jour. Un montant en <span style="color:#a32d2d;">rouge</span> = ventes présentes dans le Z mais disparues de la caisse ; en <span style="color:#185fa5;">bleu</span> = ventes ajoutées depuis la clôture (attention aux doublons).</div>
+    <div style="font-size:12px;color:#888;margin-bottom:10px;">« Z ← caisse » met le ticket Z à jour avec les ventes actuelles ; « Caisse ← Z » ajoute à la caisse ce que le Z contenait. Compare chaque Z clôturé avec les ventes enregistrées aujourd'hui pour ce jour. Un montant en <span style="color:#a32d2d;">rouge</span> = ventes présentes dans le Z mais disparues de la caisse ; en <span style="color:#185fa5;">bleu</span> = ventes ajoutées depuis la clôture (attention aux doublons).</div>
     ${avecEcart.length===0?`<div style="background:#eaf3de;color:#3b6d11;border-radius:9px;padding:9px 12px;font-size:13px;">✓ Les ${liste.length} Z du mois correspondent aux ventes enregistrées.</div>`:
     avecEcart.map(({z,c,d})=>`
       <div style="border:1px solid #f0c4c4;border-radius:10px;padding:10px 12px;margin-bottom:8px;">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
           <strong style="font-size:13px;">${new Date(z.date+"T12:00:00").toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"})}</strong>
-          <button onclick="alignerSurZ('${z.date}')" style="background:#993556;color:#fff;border:none;border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;">Aligner sur le Z</button>
+          <span style="display:flex;gap:6px;flex-wrap:wrap;">
+            <button onclick="majZDepuisCaisseUI('${z.date}')" style="background:#185fa5;color:#fff;border:none;border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;">Z ← caisse</button>
+            <button onclick="alignerSurZ('${z.date}')" style="background:#993556;color:#fff;border:none;border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;">Caisse ← Z</button>
+          </span>
         </div>
         <div style="font-size:12px;color:#555;margin-top:6px;">Ticket Z : <strong>${eur(z.caTTC||0)}</strong> (${z.nbVentes||0} ventes) · Caisse aujourd'hui : <strong>${eur(c.ca)}</strong> (${c.nb} ventes) · Écart : ${fmtE(d.ca)}</div>
         <div style="font-size:12px;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap;">${MODES_Z.filter(k=>Math.abs(d[k])>0.009).map(k=>`<span>${lib[k]} ${fmtE(d[k])}</span>`).join("")}</div>
+        ${(typeof z.fondFermeture==="number"&&z.fondFermeture>0)?`<div style="font-size:11px;color:#888;margin-top:3px;">Espèces en caisse : ${eur(c.especes)} · espèces comptées à la clôture : ${eur(Math.round((z.fondFermeture-(z.fondOuverture||0))*100)/100)}${Math.abs((z.fondFermeture-(z.fondOuverture||0))-c.especes)>0.009?` <strong style="color:#a32d2d;">(différence ${eur(Math.round(((z.fondFermeture-(z.fondOuverture||0))-c.especes)*100)/100)})</strong>`:" ✓"}</div>`:""}
       </div>`).join("")}
+    ${avecEcart.length?`<button onclick="majTousZDepuisCaisse(${mois},${annee})" style="width:100%;margin-top:4px;padding:9px;background:#eef4fd;color:#185fa5;border:1px solid #b3d0f0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">🔄 Mettre tous les Z du mois à jour d'après la caisse</button>`:""}
 
     ${zVsTPE.length?`<div style="font-weight:600;font-size:13px;margin:14px 0 6px;">💳 Ticket Z différent du terminal</div>
     <div style="font-size:11px;color:#888;margin-bottom:6px;">À traiter après les alignements ci-dessus. Terminal plus élevé : bouton « Corriger le Z ». Terminal plus bas : un ticket CB n'est pas passé au terminal (rapprochement → toucher la date → « → espèces »).</div>
