@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "25/09 · v17 (Z ← caisse)";
+const APP_VERSION = "25/09 · v18 (arrondi centime)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -5332,7 +5332,7 @@ window.validerPaiement = () => {
     remiseChaussures:remiseChaussuresMontant||0, remiseChaussuresArticle:promoChaussuresInfo?promoChaussuresInfo.nom:"",
     ...(STATE.ressaisieSansStock && STATE.vendeur.id==="V1" ? {ressaisie:true} : {}),
     remType:STATE.remType||"", remVal:STATE.remVal||"", remiseMotif:STATE.remGlobalMotif||"",
-    total:Math.max(0,total), mixed:STATE.payMixed,
+    total:Math.round(Math.max(0,total)*100)/100, mixed:STATE.payMixed,
     pays:JSON.parse(JSON.stringify(STATE.pays)),
     payMode:STATE.payMixed?"mixte":STATE.pays[0].mode,
     montantDonne:parseFloat(STATE.pays[0].montant||Math.max(0,total)),
@@ -17977,6 +17977,18 @@ demarrerSyncTempsReel();
 
 // Journal des tickets (stockage cloud des ventes, un document par vente) : synchro + écoute temps réel
 memoriserSignaturesProduits(STATE.products||[]);
+// Arrondi au centime des ventes enregistrées avec des fractions de centime (remises en % non arrondies)
+(function(){
+  const r2 = n => Math.round(n*100)/100;
+  const maintenant = new Date().toISOString(); let n = 0;
+  (STATE.ventes||[]).forEach(v => {
+    if(typeof v.total!=="number" || Math.abs(v.total*100-Math.round(v.total*100))<1e-6) return;
+    v.total = r2(v.total);
+    if(!v.mixed && Array.isArray(v.pays) && v.pays[0] && typeof v.pays[0].montant==="number") v.pays[0].montant = v.total;
+    v.modifLe = maintenant; n++;
+  });
+  if(n) { lsSet("bj_ventes", STATE.ventes); console.log("Ventes arrondies au centime :", n); }
+})();
 synchroniserJournalAuDemarrage();
 // Recréation unique de 2 articles perdus le 25/09 (d'après les étiquettes imprimées) :
 // identifiants fixes (pas de doublon si plusieurs appareils le font), seulement s'ils n'existent pas déjà.
