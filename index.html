@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "25/09 · v13 (contrôle des Z)";
+const APP_VERSION = "25/09 · v14 (articles fusionnés)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -244,6 +244,45 @@ function alerterTailleCloud(key, message) {
   setTimeout(() => alert(message), 0);
 }
 
+// ── Fusion des articles entre appareils ─────────────────────────────
+// La liste des articles n'est plus remplacée en bloc par celle d'un autre appareil : on fusionne
+// article par article (le plus récemment modifié gagne, horodatage majLe posé automatiquement à
+// chaque enregistrement). Un article ne disparaît que s'il est supprimé volontairement
+// (mémorisé dans bj_products_suppr, synchronisé).
+function signatureProduit(p) { if(!p) return ""; const {photo, majLe, ...r} = p; try { return JSON.stringify(r); } catch { return ""; } }
+let _sigProduits = null;
+function memoriserSignaturesProduits(liste) { _sigProduits = new Map((liste||[]).filter(p=>p&&p.id).map(p=>[p.id, signatureProduit(p)])); }
+function horodaterProduits(liste) {
+  if(!Array.isArray(liste)) return;
+  if(!_sigProduits) { memoriserSignaturesProduits(liste); return; }
+  const now = new Date().toISOString();
+  const ids = new Set();
+  liste.forEach(p => {
+    if(!p || !p.id) return;
+    ids.add(p.id);
+    if(_sigProduits.get(p.id)!==signatureProduit(p)) p.majLe = now;
+  });
+  const supprimes = [..._sigProduits.keys()].filter(id=>!ids.has(id));
+  memoriserSignaturesProduits(liste);
+  if(supprimes.length) {
+    STATE.produitsSuppr = [...new Set([...(STATE.produitsSuppr||[]), ...supprimes])];
+    try { localStorage.setItem(cleFirestore("bj_products_suppr"), JSON.stringify(STATE.produitsSuppr)); } catch{}
+    firestorePush("bj_products_suppr", STATE.produitsSuppr);
+  }
+}
+function fusionnerProduits(base, arrivee) {
+  let suppr; try { suppr = new Set(STATE.produitsSuppr||[]); } catch { suppr = new Set(); }
+  const m = new Map();
+  (base||[]).forEach(p => { if(p && p.id && !suppr.has(p.id)) m.set(p.id, p); });
+  (arrivee||[]).forEach(p => {
+    if(!p || !p.id || suppr.has(p.id)) return;
+    const ex = m.get(p.id);
+    if(!ex || (p.majLe||"") >= (ex.majLe||"")) m.set(p.id, (ex && ex.photo && !p.photo && p.aPhoto!==false) ? {...p, photo: ex.photo} : p);
+  });
+  return [...m.values()];
+}
+function signatureListeProduits(l) { return (l||[]).map(p=>p&&(p.id+":"+(p.majLe||""))).join("|"); }
+
 // ── Journal des tickets : une copie de chaque vente dans son propre document cloud ──
 // Contrairement à la liste bj_ventes (un seul document, réécrit en entier), un ticket du journal
 // ne peut pas être effacé par un appareil en retard qui renvoie une liste périmée.
@@ -366,8 +405,26 @@ function firestorePush(key, val) {
   // Articles : les photos partent dans des documents séparés, la liste reste légère
   let aEnvoyer = val;
   if(key==="bj_products" && Array.isArray(val)) {
-    aEnvoyer = produitsSansPhotos(val);
     envoyerPhotosProduits(val);
+    const refP = _fbDb.collection("bellejolie").doc(cle);
+    refP.get().then(doc => {
+      const serveur = doc.exists ? attacherPhotosLocales(doc.data().value||[]) : [];
+      const fusion = fusionnerProduits(serveur, val);
+      if(signatureListeProduits(fusion)!==signatureListeProduits(val)) {
+        // Le cloud avait des articles que cet appareil ignorait : on les récupère ici aussi
+        STATE.products = fusion; memoriserSignaturesProduits(fusion);
+        try { localStorage.setItem(cle, JSON.stringify(fusion)); } catch{}
+        setTimeout(render, 0);
+      }
+      return refP.set({ value: produitsSansPhotos(fusion), maj: maintenant, device: DEVICE_ID });
+    }).then(() => { try { localStorage.setItem("bj_dernier_push_local", maintenant); } catch{} })
+    .catch(err => {
+      console.error("Firestore push (fusion articles) error:", err);
+      const msg = String(err && (err.message||err));
+      if(/exceed|too large|maximum|invalid-argument/i.test(msg))
+        alerterTailleCloud("refus_"+key, "⚠️ La sauvegarde cloud des articles a été REFUSÉE (données trop volumineuses). Préviens l'assistant.");
+    });
+    return;
   }
   let taille = 0; try { taille = JSON.stringify(aEnvoyer).length; } catch{}
   if(taille > 900000) alerterTailleCloud(key, "⚠️ Les données « "+key+" » approchent la limite du cloud ("+Math.round(taille/1024)+" Ko sur 1024). Préviens l'assistant pour éviter un blocage.");
@@ -403,6 +460,7 @@ const CLES_SYNC_TEMPS_REEL = {
   bj_transferts: "transferts",
   bj_ventes_suppr: "ventesSuppr",
   bj_retouches: "retouches",
+  bj_products_suppr: "produitsSuppr",
   bj_releve_tpe: "releveTPE",
 };
 const CLES_SYNC_PROTEGEES = new Set(["emailjsServiceId","emailjsTemplateId","emailjsPublicKey"]); // ne jamais écraser par une valeur vide venue d'un autre appareil
@@ -420,8 +478,10 @@ function demarrerSyncTempsReel() {
       if(storageKey==="bj_products") {
         try {
           const recus = attacherPhotosLocales(data.value||[]);
-          STATE.products = recus;
-          localStorage.setItem(cleFirestore(storageKey), JSON.stringify(recus));
+          const fusion = fusionnerProduits(STATE.products||[], recus);
+          STATE.products = fusion; memoriserSignaturesProduits(fusion);
+          localStorage.setItem(cleFirestore(storageKey), JSON.stringify(fusion));
+          if(signatureListeProduits(fusion)!==signatureListeProduits(recus)) firestorePush("bj_products", fusion);
           render(); afficherBandeauSyncDiscret();
           chargerPhotosManquantes();
         } catch(err) { console.error("Erreur application articles:", err); }
@@ -447,6 +507,11 @@ function demarrerSyncTempsReel() {
           (data.value||[]).forEach((sv,i)=>{ if(VENDEURS[i]&&sv.code) VENDEURS[i].code=sv.code; });
         } else {
           STATE[stateKey] = data.value;
+        }
+        if(storageKey==="bj_products_suppr") {
+          const supprP = new Set(data.value||[]);
+          const filtreP = (STATE.products||[]).filter(p=>!supprP.has(p.id));
+          if(filtreP.length!==(STATE.products||[]).length) { STATE.products = filtreP; memoriserSignaturesProduits(filtreP); localStorage.setItem(cleFirestore("bj_products"), JSON.stringify(filtreP)); }
         }
         if(storageKey==="bj_ventes_suppr") {
           const suppr = new Set(data.value||[]);
@@ -484,6 +549,7 @@ const DB = {
     if(this.moteur === "local") {
       try {
         if(key==="bj_ventes") allegerVentes(val);
+        if(key==="bj_products") horodaterProduits(val);
         localStorage.setItem(cleFirestore(key), JSON.stringify(val));
         firestorePush(key, val); // sauvegarde cloud en tâche de fond, ne bloque jamais l'appli
       } catch(err) {
@@ -918,6 +984,7 @@ let STATE = {
   ventes:   ls("bj_ventes",   []),
   ventesSuppr: ls("bj_ventes_suppr", []),
   retouches: ls("bj_retouches", []),
+  produitsSuppr: ls("bj_products_suppr", []),
   releveTPE: ls("bj_releve_tpe", {}),
   showRetoucheForm: false, retoucheForm: null, showSuiviRetouches: false, filtreRetouches: "encours",
   avoirs:      ls("bj_avoirs",      []),
@@ -6454,9 +6521,9 @@ window.validerTransfertBoutique = async () => {
     let produitsDest = docProdDest.exists ? (docProdDest.data().value||[]) : [];
     const idx = produitsDest.findIndex(x=>x.ref===p.ref);
     if(idx>=0) {
-      produitsDest[idx] = {...produitsDest[idx], stock:(produitsDest[idx].stock||0)+f.qty};
+      produitsDest[idx] = {...produitsDest[idx], stock:(produitsDest[idx].stock||0)+f.qty, majLe:new Date().toISOString()};
     } else {
-      produitsDest = [...produitsDest, {...p, id:uid("PROD"), stock:f.qty, reserveQty:0, photo:"", aPhoto:false}];
+      produitsDest = [...produitsDest, {...p, id:uid("PROD"), stock:f.qty, reserveQty:0, photo:"", aPhoto:false, majLe:new Date().toISOString()}];
     }
     await _fbDb.collection("bellejolie").doc(cleProdDest).set({value:produitsDest, maj:new Date().toISOString(), device:DEVICE_ID});
 
@@ -17815,6 +17882,7 @@ demarrerSyncTempsReel();
 })();
 
 // Journal des tickets (stockage cloud des ventes, un document par vente) : synchro + écoute temps réel
+memoriserSignaturesProduits(STATE.products||[]);
 synchroniserJournalAuDemarrage();
 ecouterJournalVentes();
 // Relevés du terminal de septembre 2026 transmis par la gérante (une seule fois, sans écraser une saisie)
