@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "25/09 · v15 (articles recréés)";
+const APP_VERSION = "25/09 · v16 (Z vs terminal)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -9625,9 +9625,46 @@ window.regulariserEcartTPE = (cle, ecart) => {
   };
   STATE.ventes = [...STATE.ventes, vente];
   lsSet("bj_ventes", STATE.ventes);
-  ajusterZApresAnnulation(vente, +1, "Régularisation écart terminal");
+  // Z : pour un relevé d'un seul jour, on ramène le CB du Z au montant du terminal (sans le gonfler
+  // s'il était déjà juste) ; pour un relevé sur plusieurs jours, ajout de l'écart sur le Z du dernier jour.
+  const x = (STATE.releveTPE||{})[cle];
+  const z = (STATE.caisseJour||[]).find(zz=>zz.date===cle);
+  if(z) {
+    const debX = x!==undefined ? debutTPE(x, cle) : cle;
+    const unJour = x!==undefined && !(STATE.caisseJour||[]).some(o=>o.date>=debX && o.date<cle);
+    const ajoutZ = unJour ? Math.round((montantTPE(x) - ((z.payM||{}).cb||0))*100)/100 : ecart;
+    if(ajoutZ>0.009) ajusterZApresAnnulation({...vente, total:ajoutZ, pays:[{mode:"cb",montant:ajoutZ}]}, +1, "Régularisation écart terminal");
+  }
   render();
 };
+// Corriger un Z (et la caisse si besoin) d'après le relevé du terminal pour ce jour
+window.corrigerZDepuisTPE = (dateStr) => {
+  if(STATE.vendeur.id!=="V1") return;
+  const x = (STATE.releveTPE||{})[dateStr]; const t = montantTPE(x);
+  const z = (STATE.caisseJour||[]).find(zz=>zz.date===dateStr);
+  if(t===undefined || !z) return;
+  const deb = debutTPE(x, dateStr);
+  if(deb!==dateStr && (STATE.caisseJour||[]).some(o=>o.date>=deb && o.date<dateStr)) { alert("Ce relevé du terminal couvre plusieurs journées clôturées : corrige-le depuis le rapprochement."); return; }
+  const zcb = (z.payM||{}).cb||0;
+  const caisseCB = etatCaisseJour(dateStr).cb;
+  const ajoutZ = Math.round((t-zcb)*100)/100, ajoutCaisse = Math.round((t-caisseCB)*100)/100;
+  if(!(ajoutZ>0.009)) return;
+  if(!confirm("Corriger le "+new Date(dateStr+"T12:00:00").toLocaleDateString("fr-FR")+" d'après le terminal ("+eur(t)+" en CB) ?\n\n• Ticket Z : CB +"+eur(ajoutZ)+(ajoutCaisse>0.009?"\n• Caisse : ajout d'une vente CB reconstituée de "+eur(ajoutCaisse):"")+"\n\nLe stock n'est pas modifié.")) return;
+  if(ajoutCaisse>0.009) {
+    const v = {
+      id: uid("CORR"), date: new Date(dateStr+"T12:00:00").toISOString(), boutiqueId: BOUTIQUE_CONFIG.id,
+      panier: [{id:"correction_manuelle", name:"Vente reconstituée — écart terminal CB", qty:1, price:ajoutCaisse, remise:"", remiseType:""}],
+      client:null, clientId:null, vendeur:STATE.vendeur, remise:0, remiseFid:0, remiseProg:0,
+      total:ajoutCaisse, mixed:false, pays:[{mode:"cb", montant:ajoutCaisse}], payMode:"cb",
+      correctionManuelle:true, noteCorrection:"Écart terminal CB (rapprochement)", creeLe:new Date().toISOString(), creePar:STATE.vendeur.nom, depotTraite:true,
+    };
+    STATE.ventes = [...STATE.ventes, v];
+    lsSet("bj_ventes", STATE.ventes);
+  }
+  ajusterZApresAnnulation({id:"TPE-"+dateStr, date:new Date(dateStr+"T12:00:00").toISOString(), total:ajoutZ, mixed:false, payMode:"cb", pays:[{mode:"cb",montant:ajoutZ}]}, +1, "Correction d'après le terminal");
+  render();
+};
+window.reimprimerZDate = (dateStr) => { const z = (STATE.caisseJour||[]).find(zz=>zz.date===dateStr); if(z) imprimerZ(z); };
 // Passer un ticket payé en CB en espèces (le paiement n'est pas passé au terminal)
 window.passerTicketEnEspeces = (venteId) => {
   if(STATE.vendeur.id!=="V1") return;
@@ -9702,13 +9739,23 @@ function renderControleZ(mois, annee) {
   const liste = ecartsZ(mois, annee);
   if(!liste.length) return "";
   const avecEcart = liste.filter(x=>x.aEcart);
+  const tpe = STATE.releveTPE||{};
+  const zVsTPE = liste.map(({z}) => {
+    const x = tpe[z.date]; const t = montantTPE(x);
+    if(t===undefined) return null;
+    const deb = debutTPE(x, z.date); // relevé sur plusieurs jours : accepté si ce Z est le seul de la période
+    if(deb!==z.date && (STATE.caisseJour||[]).some(o=>o.date>=deb && o.date<z.date)) return null;
+    const zcb = (z.payM||{}).cb||0; const diff = Math.round((t-zcb)*100)/100;
+    return Math.abs(diff)>0.009 ? {z, t, zcb, diff} : null;
+  }).filter(Boolean);
+  const zCorriges = liste.map(({z})=>z).filter(z=>(z.corrections||[]).length);
   const lib = {cb:"CB",especes:"Esp.",cheque:"Chq",avoir:"Avoir",cadeau:"Cad."};
   const fmtE = v => `<span style="color:${v>0?"#a32d2d":"#185fa5"};font-weight:600;">${v>0?"+":""}${eur(v)}</span>`;
   return `
   <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;margin-bottom:16px;">
     <div style="font-weight:600;font-size:14px;margin-bottom:4px;">🧾 Contrôle des tickets Z</div>
     <div style="font-size:12px;color:#888;margin-bottom:10px;">Compare chaque Z clôturé avec les ventes enregistrées aujourd'hui pour ce jour. Un montant en <span style="color:#a32d2d;">rouge</span> = ventes présentes dans le Z mais disparues de la caisse ; en <span style="color:#185fa5;">bleu</span> = ventes ajoutées depuis la clôture (attention aux doublons).</div>
-    ${avecEcart.length===0?`<div style="background:#eaf3de;color:#3b6d11;border-radius:9px;padding:9px 12px;font-size:13px;">✓ Les ${liste.length} Z du mois correspondent exactement aux ventes enregistrées.</div>`:
+    ${avecEcart.length===0?`<div style="background:#eaf3de;color:#3b6d11;border-radius:9px;padding:9px 12px;font-size:13px;">✓ Les ${liste.length} Z du mois correspondent aux ventes enregistrées.</div>`:
     avecEcart.map(({z,c,d})=>`
       <div style="border:1px solid #f0c4c4;border-radius:10px;padding:10px 12px;margin-bottom:8px;">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
@@ -9718,6 +9765,17 @@ function renderControleZ(mois, annee) {
         <div style="font-size:12px;color:#555;margin-top:6px;">Ticket Z : <strong>${eur(z.caTTC||0)}</strong> (${z.nbVentes||0} ventes) · Caisse aujourd'hui : <strong>${eur(c.ca)}</strong> (${c.nb} ventes) · Écart : ${fmtE(d.ca)}</div>
         <div style="font-size:12px;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap;">${MODES_Z.filter(k=>Math.abs(d[k])>0.009).map(k=>`<span>${lib[k]} ${fmtE(d[k])}</span>`).join("")}</div>
       </div>`).join("")}
+
+    ${zVsTPE.length?`<div style="font-weight:600;font-size:13px;margin:14px 0 6px;">💳 Ticket Z différent du terminal</div>
+    <div style="font-size:11px;color:#888;margin-bottom:6px;">À traiter après les alignements ci-dessus. Terminal plus élevé : bouton « Corriger le Z ». Terminal plus bas : un ticket CB n'est pas passé au terminal (rapprochement → toucher la date → « → espèces »).</div>
+    ${zVsTPE.map(({z,t,zcb,diff})=>`
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;border:1px solid #e8e0e4;border-radius:9px;padding:8px 10px;margin-bottom:6px;font-size:12px;">
+        <span><strong>${new Date(z.date+"T12:00:00").toLocaleDateString("fr-FR",{weekday:"short",day:"numeric",month:"short"})}</strong> · Z CB ${eur(zcb)} · terminal ${eur(t)} · ${fmtE(diff)}</span>
+        ${diff>0?`<button onclick="corrigerZDepuisTPE('${z.date}')" style="background:#185fa5;color:#fff;border:none;border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;">Corriger le Z</button>`:`<span style="color:#a32d2d;font-size:11px;">→ espèces à faire dans le rapprochement</span>`}
+      </div>`).join("")}`:""}
+
+    ${zCorriges.length?`<div style="font-weight:600;font-size:13px;margin:14px 0 6px;">🖨️ Z modifiés — à réimprimer</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px;">${zCorriges.map(z=>`<button onclick="reimprimerZDate('${z.date}')" style="background:#fff;border:1px solid #3b6d11;color:#3b6d11;border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;">🖨️ ${new Date(z.date+"T12:00:00").toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit"})} · ${eur(z.caTTC||0)}</button>`).join("")}</div>`:""}
   </div>`;
 }
 
