@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "25/09 · v12 (régularisation TPE)";
+const APP_VERSION = "25/09 · v13 (contrôle des Z)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -9587,6 +9587,73 @@ window.passerTicketEnEspeces = (venteId) => {
   }
   render();
 };
+// ── Contrôle des tickets Z : compare chaque Z clôturé (photo au moment de la clôture) avec les
+// ventes actuellement enregistrées pour ce jour. Un écart = ventes disparues ou ajoutées depuis.
+const MODES_Z = ["cb","especes","cheque","avoir","cadeau"];
+function etatCaisseJour(dateStr) {
+  const r = {ca:0, nb:0, cb:0, especes:0, cheque:0, avoir:0, cadeau:0};
+  (STATE.ventes||[]).forEach(v => {
+    if(v.test||v.annulee) return;
+    if(dateLocaleStr(new Date(v.date))!==dateStr) return;
+    r.ca += v.total; r.nb++;
+    const e = encaissementsParMode(v); MODES_Z.forEach(k => r[k] += e[k]);
+  });
+  return r;
+}
+function ecartsZ(mois, annee) {
+  const pre = annee+"-"+String(mois+1).padStart(2,"0")+"-";
+  return (STATE.caisseJour||[]).filter(z=>z.date && z.date.startsWith(pre)).sort((a,b)=>a.date.localeCompare(b.date)).map(z => {
+    const c = etatCaisseJour(z.date);
+    const d = {ca: Math.round(((z.caTTC||0)-c.ca)*100)/100, nb:(z.nbVentes||0)-c.nb};
+    MODES_Z.forEach(k => d[k] = Math.round((((z.payM||{})[k]||0)-c[k])*100)/100);
+    const aEcart = Math.abs(d.ca)>0.009 || MODES_Z.some(k=>Math.abs(d[k])>0.009);
+    return {z, c, d, aEcart};
+  });
+}
+window.alignerSurZ = (dateStr) => {
+  if(STATE.vendeur.id!=="V1") return;
+  const z = (STATE.caisseJour||[]).find(x=>x.date===dateStr); if(!z) return;
+  const c = etatCaisseJour(dateStr);
+  const pays = MODES_Z.map(k => ({mode:k, montant: Math.round((((z.payM||{})[k]||0)-c[k])*100)/100})).filter(p=>Math.abs(p.montant)>0.009);
+  const total = Math.round(((z.caTTC||0)-c.ca)*100)/100;
+  if(!pays.length && Math.abs(total)<=0.009) return;
+  const lib = {cb:"CB",especes:"espèces",cheque:"chèque",avoir:"avoir",cadeau:"carte cadeau"};
+  if(!confirm("Aligner la caisse du "+new Date(dateStr+"T12:00:00").toLocaleDateString("fr-FR")+" sur son ticket Z ?\n\n"+pays.map(p=>"• "+lib[p.mode]+" : "+(p.montant>0?"+":"")+eur(p.montant)).join("\n")+"\n\nTotal : "+(total>0?"+":"")+eur(total)+"\n(le stock n'est pas modifié, le Z reste tel quel)")) return;
+  const vente = {
+    id: uid("CORR"), date: new Date(dateStr+"T12:00:00").toISOString(), boutiqueId: BOUTIQUE_CONFIG.id,
+    panier: [{id:"correction_manuelle", name:"Alignement sur le ticket Z", qty:1, price:total, remise:"", remiseType:""}],
+    client:null, clientId:null, vendeur:STATE.vendeur, remise:0, remiseFid:0, remiseProg:0,
+    total, mixed: pays.length>1, pays, payMode: pays.length===1 ? pays[0].mode : "mixte",
+    correctionManuelle:true, alignementZ:true, noteCorrection:"Alignement sur le ticket Z", creeLe:new Date().toISOString(), creePar:STATE.vendeur.nom, depotTraite:true,
+  };
+  STATE.ventes = [...STATE.ventes, vente];
+  lsSet("bj_ventes", STATE.ventes);
+  render();
+};
+function renderControleZ(mois, annee) {
+  if(STATE.vendeur.id!=="V1") return "";
+  const liste = ecartsZ(mois, annee);
+  if(!liste.length) return "";
+  const avecEcart = liste.filter(x=>x.aEcart);
+  const lib = {cb:"CB",especes:"Esp.",cheque:"Chq",avoir:"Avoir",cadeau:"Cad."};
+  const fmtE = v => `<span style="color:${v>0?"#a32d2d":"#185fa5"};font-weight:600;">${v>0?"+":""}${eur(v)}</span>`;
+  return `
+  <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;margin-bottom:16px;">
+    <div style="font-weight:600;font-size:14px;margin-bottom:4px;">🧾 Contrôle des tickets Z</div>
+    <div style="font-size:12px;color:#888;margin-bottom:10px;">Compare chaque Z clôturé avec les ventes enregistrées aujourd'hui pour ce jour. Un montant en <span style="color:#a32d2d;">rouge</span> = ventes présentes dans le Z mais disparues de la caisse ; en <span style="color:#185fa5;">bleu</span> = ventes ajoutées depuis la clôture (attention aux doublons).</div>
+    ${avecEcart.length===0?`<div style="background:#eaf3de;color:#3b6d11;border-radius:9px;padding:9px 12px;font-size:13px;">✓ Les ${liste.length} Z du mois correspondent exactement aux ventes enregistrées.</div>`:
+    avecEcart.map(({z,c,d})=>`
+      <div style="border:1px solid #f0c4c4;border-radius:10px;padding:10px 12px;margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+          <strong style="font-size:13px;">${new Date(z.date+"T12:00:00").toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"})}</strong>
+          <button onclick="alignerSurZ('${z.date}')" style="background:#993556;color:#fff;border:none;border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;">Aligner sur le Z</button>
+        </div>
+        <div style="font-size:12px;color:#555;margin-top:6px;">Ticket Z : <strong>${eur(z.caTTC||0)}</strong> (${z.nbVentes||0} ventes) · Caisse aujourd'hui : <strong>${eur(c.ca)}</strong> (${c.nb} ventes) · Écart : ${fmtE(d.ca)}</div>
+        <div style="font-size:12px;margin-top:4px;display:flex;gap:10px;flex-wrap:wrap;">${MODES_Z.filter(k=>Math.abs(d[k])>0.009).map(k=>`<span>${lib[k]} ${fmtE(d[k])}</span>`).join("")}</div>
+      </div>`).join("")}
+  </div>`;
+}
+
 function renderSuiviEncaissementsMois(mois, annee) {
   const modes = [["cb","💳 CB","#185fa5","#eef4fd"],["especes","💶 Espèces","#3b6d11","#eaf3de"],["cheque","📝 Chèque","#854f0b","#faeeda"],["avoir","🎟️ Avoir","#993556","#fbeaf0"],["cadeau","🎁 Carte cadeau","#6a3d9a","#f3e8fc"]];
   const vf = (STATE.ventes||[]).filter(v => { if(v.test||v.annulee) return false; const d=new Date(v.date); return d.getMonth()===mois && d.getFullYear()===annee; });
@@ -10039,6 +10106,7 @@ function renderBilan() {
     </div>
 
     ${renderSuiviEncaissementsMois(STATE.bilanMonth, STATE.bilanYear)}
+    ${renderControleZ(STATE.bilanMonth, STATE.bilanYear)}
 
     <!-- KPIs principaux — Objectifs mensuel / trim / sem / annuel -->
     ${(()=>{
