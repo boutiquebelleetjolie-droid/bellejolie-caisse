@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "25/09 · v21 (septembre aligné)";
+const APP_VERSION = "25/09 · v22 (ticket protégé)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -2063,9 +2063,12 @@ function renderVenteChequeCadeauModal() {
 
 window.viderPanier = () => {
   if(!STATE.panier.length) return;
+  if(!confirm("Voulez-vous supprimer ce ticket ?\n("+STATE.panier.length+" ligne"+(STATE.panier.length>1?"s":"")+" en cours)")) return;
   // Journaliser si ce n'est pas le compte principal qui vide un panier non vide
   if(STATE.vendeur?.id !== "V1") {
-    const motif = prompt("Motif obligatoire pour vider ce panier :", "") || "";
+    const r = prompt("Motif obligatoire pour supprimer ce ticket :", "");
+    if(r===null) return;
+    const motif = r;
     if(!motif.trim()) { alert("Un motif est obligatoire pour vider le panier."); return; }
     const articles = STATE.panier.filter(x=>!x.avoirId).map(x=>({
       nom: x.name, qty: x.qty||1, prix: x.price,
@@ -2085,11 +2088,12 @@ window.viderPanier = () => {
     STATE.panier=[]; STATE.remVal=""; STATE.remType="eur"; STATE.remGlobalMotif="";
     render();
   } else {
-    if(confirm("Vider le panier ?")) { STATE.panier=[]; STATE.remVal=""; STATE.remType="eur"; STATE.remGlobalMotif=""; render(); }
+    STATE.panier=[]; STATE.remVal=""; STATE.remType="eur"; STATE.remGlobalMotif=""; render();
   }
 };
 
 window.logout = () => {
+  if(STATE.panier && STATE.panier.length && !confirm("Un ticket est en cours. Voulez-vous supprimer ce ticket et quitter ?")) return;
   clearTimeout(_timerVerrouillage);
   _verrouille=false;
   lsSet("bj_vendeur",null);
@@ -3649,7 +3653,7 @@ function renderCaisse() {
           }).join("")}
         </div>`:""}
       `}
-      <button onclick="setState({panier:[],searchRetour:'',searchRetourBC:''})" class="btn-ghost" style="width:100%;padding:9px;color:#a32d2d;border-color:#f0959599;">Vider le panier</button>
+      <button onclick="viderPanier(); if(!STATE.panier.length){STATE.searchRetour='';STATE.searchRetourBC='';render();}" class="btn-ghost" style="width:100%;padding:9px;color:#a32d2d;border-color:#f0959599;">Vider le panier</button>
 
     </div>
   </div>`;
@@ -4984,27 +4988,28 @@ window.supprimerLignePanier = (idx) => {
 };
 
 window.removeFromCartAvecJournal = (id, nom, prix, qty) => {
-  const logAnnulation = (motif) => {
+  if(!confirm("Voulez-vous supprimer « "+nom+" » de ce ticket ?")) return;
+  let motif = "";
+  if(STATE.vendeur.id!=="V1") {
+    // Vendeuses : motif obligatoire ; « Annuler » garde l'article dans le ticket
+    while(!motif.trim()) {
+      const r = prompt("Motif de la suppression (obligatoire) :", "");
+      if(r===null) return;
+      motif = r;
+    }
+  }
+  STATE.panier = STATE.panier.filter(x=>x.id!==id);
+  if(STATE.vendeur.id!=="V1") {
     const log = {
       id:uid("AL"), date:new Date().toISOString(),
       venteId:"PANIER", articleId:id, articleNom:nom, articleRef:"",
       qty:parseInt(qty), prix:parseFloat(prix),
-      vendeur:STATE.vendeur.nom, motif:motif||"", stockRemis:false,
+      vendeur:STATE.vendeur.nom, motif, stockRemis:false,
     };
     STATE.annulLignes = [...(STATE.annulLignes||[]), log];
     lsSet("bj_annul_lignes", STATE.annulLignes);
-  };
-  STATE.panier = STATE.panier.filter(x=>x.id!==id);
-  if(STATE.vendeur.id==="V1") {
-    // Compte principal : suppression directe, sans confirmation ni motif
-  } else {
-    // Vendeurs : motif réellement obligatoire, impossible de continuer sans le renseigner
-    let motif = "";
-    while(!motif.trim()) {
-      motif = prompt("Motif de la suppression (obligatoire) :", "") || "";
-    }
-    logAnnulation(motif);
   }
+  appliquer2Pour1Pct();
   render();
 };
 
@@ -18192,6 +18197,11 @@ setInterval(() => {
 render();
 
 // ── Scanner code-barre global ──
+// Après un clic, aucun bouton ne garde le focus : l'Entrée envoyée par le scanner ne peut pas le redéclencher
+document.addEventListener("click", e => {
+  const bt = e.target && e.target.closest && e.target.closest("button");
+  if(bt) setTimeout(() => { if(document.activeElement===bt) bt.blur(); }, 0);
+}, true);
 // Le scanner se comporte comme un clavier rapide : buffer + délai + Enter
 (function() {
   let buf = "";
@@ -18208,15 +18218,24 @@ render();
       buf = "";
       clearTimeout(timer);
       if(code.length < 3) return; // trop court = pas un scan
+      e.preventDefault(); e.stopPropagation(); // sinon l'Entrée du scanner « clique » le bouton qui a le focus (✕, 🗑️…)
       // Seulement en mode caisse (onglet caisse actif)
       if(STATE.tab !== "caisse") return;
       // Fermer clavier virtuel si ouvert
       document.activeElement?.blur();
       // Chercher l'article
       if(scanAvoir(code)) { STATE.searchBC=""; render(); return; }
-      const p = STATE.products.find(x=>x.barcode===code||x.ref===code);
+      let varTaille = null, varCouleur = null;
+      let p = null;
+      for(const prod of STATE.products) {
+        for(const [varKey, bc] of Object.entries(prod.barcodeVariantes||{})) {
+          if(bc===code) { const parts = varKey.split('_'); varTaille = parts[0]||null; varCouleur = parts.slice(1).join('_').replace(/^_/,'')||null; p = prod; break; }
+        }
+        if(p) break;
+      }
+      if(!p) p = STATE.products.find(x=>x.barcode===code||x.ref===code);
       if(p && (p.stock||0)>0) {
-        addToCart(p.id);
+        if(varTaille||varCouleur) addToCart(p.id, varTaille, varCouleur); else addToCart(p.id);
         STATE.searchBC = "";
         render();
         // Feedback visuel
