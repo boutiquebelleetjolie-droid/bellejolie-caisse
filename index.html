@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "25/09 · v23 (ticket sauvegardé)";
+const APP_VERSION = "26/09 · v24 (artisans en dépôt)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -461,6 +461,7 @@ const CLES_SYNC_TEMPS_REEL = {
   bj_ventes_suppr: "ventesSuppr",
   bj_retouches: "retouches",
   bj_products_suppr: "produitsSuppr",
+  bj_commission_artisan: "commissionArtisan",
   bj_releve_tpe: "releveTPE",
 };
 const CLES_SYNC_PROTEGEES = new Set(["emailjsServiceId","emailjsTemplateId","emailjsPublicKey"]); // ne jamais écraser par une valeur vide venue d'un autre appareil
@@ -985,6 +986,7 @@ let STATE = {
   ventesSuppr: ls("bj_ventes_suppr", []),
   retouches: ls("bj_retouches", []),
   produitsSuppr: ls("bj_products_suppr", []),
+  commissionArtisan: ls("bj_commission_artisan", 20),
   releveTPE: ls("bj_releve_tpe", {}),
   showRetoucheForm: false, retoucheForm: null, showSuiviRetouches: false, filtreRetouches: "encours",
   avoirs:      ls("bj_avoirs",      []),
@@ -7076,9 +7078,12 @@ function renderStock() {
 
   // Récap V1
   if(isV1){
-    const qt=filtered.reduce((s,p)=>s+(p.stock||0),0);
-    const vv=filtered.reduce((s,p)=>s+(p.stock||0)*p.price,0);
-    const va=filtered.reduce((s,p)=>s+(p.stock||0)*(p.prixAchat||0),0);
+    // Les produits d'artisans (dépôt, commission) ne font pas partie de la valeur du stock
+    const filteredArtisans = filtered.filter(p=>p.artisanat);
+    const filteredStock = filtered.filter(p=>!p.artisanat);
+    const qt=filteredStock.reduce((s,p)=>s+(p.stock||0),0);
+    const vv=filteredStock.reduce((s,p)=>s+(p.stock||0)*p.price,0);
+    const va=filteredStock.reduce((s,p)=>s+(p.stock||0)*(p.prixAchat||0),0);
     const mg=vv>0&&va>0?Math.round((vv/1.20-va)/(vv/1.20)*100):null;
     const mc=mg===null?"#aaa":mg>=50?"#3b6d11":mg>=30?"#854f0b":"#a32d2d";
     const mb=mg===null?"#f5f0f2":mg>=50?"#eaf3de":mg>=30?"#fff3e8":"#fcebeb";
@@ -7087,8 +7092,8 @@ function renderStock() {
     const coeffGlobal = va>0 ? parseFloat((vv/1.20/va).toFixed(2)) : null;
 
     // Calculs séparés : en vente vs en réserve
-    const filteredVente = filtered.filter(p=>!p.enReserve);
-    const filteredReserve = filtered.filter(p=>p.enReserve);
+    const filteredVente = filteredStock.filter(p=>!p.enReserve);
+    const filteredReserve = filteredStock.filter(p=>p.enReserve);
     const qtVente = filteredVente.reduce((s,p)=>s+(p.stock||0),0);
     const vvVente = filteredVente.reduce((s,p)=>s+(p.stock||0)*p.price,0);
     const vaVente = filteredVente.reduce((s,p)=>s+(p.stock||0)*(p.prixAchat||0),0);
@@ -7110,9 +7115,13 @@ function renderStock() {
       html += '<button data-vue="'+v+'" onclick="STATE.recapVue=this.dataset.vue;render()" style="padding:4px 10px;border-radius:6px;border:1px solid '+(STATE.recapVue===v?'#993556':'#ddd')+';background:'+(STATE.recapVue===v?'#993556':'#fff')+';color:'+(STATE.recapVue===v?'#fff':'#555')+';font-size:11px;cursor:pointer;">'+labels[v]+'</button>';
     });
     html += '</div></div>';
+    if(filteredArtisans.length) {
+      const qtA = filteredArtisans.reduce((s,p)=>s+(p.stock||0),0), vvA = filteredArtisans.reduce((s,p)=>s+(p.stock||0)*(p.price||0),0);
+      html += '<div style="background:#f3e8fc;border-radius:9px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#6a3d9a;">🎨 <strong>Produits d\'artisans (hors stock)</strong> : '+filteredArtisans.length+' réf. · '+qtA+' unités · valeur de vente '+eur(vvA)+' — suivi dans Bilan → Artisans</div>';
+    }
 
     // Données selon vue
-    const vueProd = STATE.recapVue==='vente'?filteredVente:STATE.recapVue==='reserve'?filteredReserve:filtered;
+    const vueProd = STATE.recapVue==='vente'?filteredVente:STATE.recapVue==='reserve'?filteredReserve:filteredStock;
     const vueQt = STATE.recapVue==='vente'?qtVente:STATE.recapVue==='reserve'?qtReserve:qt;
     const vueVV = STATE.recapVue==='vente'?vvVente:STATE.recapVue==='reserve'?vvReserve:vv;
     const vueVA = STATE.recapVue==='vente'?vaVente:STATE.recapVue==='reserve'?vaReserve:va;
@@ -9901,6 +9910,110 @@ function renderControleZ(mois, annee) {
   </div>`;
 }
 
+// ── Bilan des produits d'artisans (dépôt avec commission) : jour / semaine / mois ──
+function periodeArtisans() {
+  const ref = new Date((STATE.artRef||dateLocaleStr())+"T12:00:00");
+  const per = STATE.artPeriode||"mois";
+  let debut, fin, libelle;
+  if(per==="jour") { debut = new Date(ref); fin = new Date(ref); libelle = ref.toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long",year:"numeric"}); }
+  else if(per==="semaine") {
+    debut = new Date(ref); debut.setDate(ref.getDate()-((ref.getDay()+6)%7)); fin = new Date(debut); fin.setDate(debut.getDate()+6);
+    libelle = "Semaine du "+debut.toLocaleDateString("fr-FR",{day:"numeric",month:"short"})+" au "+fin.toLocaleDateString("fr-FR",{day:"numeric",month:"short",year:"numeric"});
+  } else { debut = new Date(ref.getFullYear(), ref.getMonth(), 1); fin = new Date(ref.getFullYear(), ref.getMonth()+1, 0); libelle = debut.toLocaleDateString("fr-FR",{month:"long",year:"numeric"}); }
+  return {debut: dateLocaleStr(debut), fin: dateLocaleStr(fin), libelle, per};
+}
+window.decalerPeriodeArtisans = (sens) => {
+  const ref = new Date((STATE.artRef||dateLocaleStr())+"T12:00:00");
+  const per = STATE.artPeriode||"mois";
+  if(per==="jour") ref.setDate(ref.getDate()+sens); else if(per==="semaine") ref.setDate(ref.getDate()+7*sens); else ref.setMonth(ref.getMonth()+sens, 1);
+  STATE.artRef = dateLocaleStr(ref); render();
+};
+function ventesArtisans(debut, fin) {
+  const prodMap = {}; (STATE.products||[]).forEach(p=>prodMap[p.id]=p);
+  const lignes = [];
+  (STATE.ventes||[]).forEach(v => {
+    if(v.test||v.annulee) return;
+    const d = dateLocaleStr(new Date(v.date)); if(d<debut || d>fin) return;
+    (v.panier||[]).forEach(i => {
+      if(i.avoirId) return;
+      const p = prodMap[i.prodIdOriginal||i.id] || {};
+      const estArt = p.artisanat || i.artisanat; if(!estArt) return;
+      const artisan = (p.nomArtisan||i.nomArtisan||"").trim() || "Artisan non renseigné";
+      const qty = i.qty||1;
+      let montant;
+      if(i.retour) { const rem = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/qty:0; montant = -Math.max(0,i.price-rem)*qty; }
+      else montant = calculerPrixPayeReel(v, i)*qty;
+      lignes.push({date:v.date, artisan, article:p.name||i.name, qty: i.retour?-qty:qty, montant: Math.round(montant*100)/100, retour:!!i.retour});
+    });
+  });
+  return lignes.sort((a,b)=>new Date(a.date)-new Date(b.date));
+}
+window.changerCommissionArtisan = (val) => {
+  const n = parseFloat(String(val).replace(",","."));
+  if(isNaN(n)||n<0||n>100) { alert("Taux invalide."); render(); return; }
+  setState({commissionArtisan: n});
+  lsSet("bj_commission_artisan", n);
+};
+window.imprimerReleveArtisan = (artisan) => {
+  const {debut, fin, libelle} = periodeArtisans();
+  const taux = STATE.commissionArtisan ?? 20;
+  const lignes = ventesArtisans(debut, fin).filter(l=>l.artisan===artisan);
+  const ca = lignes.reduce((s,l)=>s+l.montant,0), com = ca*taux/100;
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Relevé ${artisan}</title><style>
+    body{font-family:Arial,sans-serif;padding:24px;max-width:640px;margin:auto;color:#111}h1{color:#993556;font-size:19px;margin:0}
+    table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}td,th{padding:6px 8px;border-bottom:1px solid #eee;text-align:left}.r{text-align:right}
+    .tot td{font-weight:700;background:#fbeaf0}</style></head><body>
+    <h1>Belle&amp;Jolie — Relevé de ventes</h1><p><strong>${artisan}</strong><br>${libelle}</p>
+    <table><tr><th>Date</th><th>Article</th><th class="r">Qté</th><th class="r">Montant TTC</th></tr>
+    ${lignes.map(l=>`<tr><td>${new Date(l.date).toLocaleDateString("fr-FR")}</td><td>${l.article}${l.retour?" (retour)":""}</td><td class="r">${l.qty}</td><td class="r">${eur(l.montant)}</td></tr>`).join("")||`<tr><td colspan="4">Aucune vente sur la période</td></tr>`}
+    <tr class="tot"><td colspan="3">Total des ventes</td><td class="r">${eur(ca)}</td></tr>
+    <tr><td colspan="3">Commission Belle&amp;Jolie (${taux} %)</td><td class="r">− ${eur(com)}</td></tr>
+    <tr class="tot"><td colspan="3">Montant à reverser</td><td class="r">${eur(ca-com)}</td></tr></table>
+    <p style="margin-top:40px;font-size:12px;color:#555;">Signature de l'artisan : ______________________</p>
+    <script>window.onload=()=>window.print()<\/script></body></html>`;
+  const w = window.open("","_blank","width=720,height=900"); if(w) { w.document.write(html); w.document.close(); }
+};
+function renderBilanArtisans() {
+  if(STATE.vendeur.id!=="V1") return "";
+  if(!(STATE.products||[]).some(p=>p.artisanat)) return "";
+  const {debut, fin, libelle, per} = periodeArtisans();
+  const taux = STATE.commissionArtisan ?? 20;
+  const lignes = ventesArtisans(debut, fin);
+  const parA = {};
+  lignes.forEach(l => { const a = parA[l.artisan] = parA[l.artisan] || {qty:0, ca:0}; a.qty += l.qty; a.ca += l.montant; });
+  (STATE.products||[]).filter(p=>p.artisanat).forEach(p => { const n = (p.nomArtisan||"").trim()||"Artisan non renseigné"; if(!parA[n]) parA[n] = {qty:0, ca:0}; });
+  const artisans = Object.entries(parA).sort((a,b)=>b[1].ca-a[1].ca);
+  const tot = artisans.reduce((s,[,a])=>({qty:s.qty+a.qty, ca:s.ca+a.ca}), {qty:0, ca:0});
+  const btn = (k,l) => `<button onclick="STATE.artPeriode='${k}';render()" style="padding:5px 12px;border-radius:7px;border:none;cursor:pointer;font-size:12px;background:${per===k?'#6a3d9a':'#f3e8fc'};color:${per===k?'#fff':'#6a3d9a'};">${l}</button>`;
+  return `
+  <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;margin-bottom:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+      <div style="font-weight:600;font-size:14px;">🎨 Artisans — dépôt</div>
+      <div style="display:flex;gap:4px;">${btn("jour","Jour")}${btn("semaine","Semaine")}${btn("mois","Mois")}</div>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;">
+      <button onclick="decalerPeriodeArtisans(-1)" style="background:none;border:1px solid #ddd;border-radius:7px;padding:4px 10px;cursor:pointer;">◀</button>
+      <div style="font-size:13px;font-weight:500;text-transform:capitalize;text-align:center;">${libelle}</div>
+      <button onclick="decalerPeriodeArtisans(1)" style="background:none;border:1px solid #ddd;border-radius:7px;padding:4px 10px;cursor:pointer;">▶</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:10px;">
+      <div style="background:#f3e8fc;border-radius:9px;padding:9px 10px;"><div style="font-size:11px;color:#6a3d9a;">Ventes artisans</div><div style="font-size:16px;font-weight:700;color:#6a3d9a;">${eur(tot.ca)}</div><div style="font-size:10px;color:#888;">${tot.qty} article${tot.qty>1?"s":""}</div></div>
+      <div style="background:#eaf3de;border-radius:9px;padding:9px 10px;"><div style="font-size:11px;color:#3b6d11;">Ta commission (${taux} %)</div><div style="font-size:16px;font-weight:700;color:#3b6d11;">${eur(tot.ca*taux/100)}</div></div>
+      <div style="background:#fbeaf0;border-radius:9px;padding:9px 10px;"><div style="font-size:11px;color:#993556;">À reverser aux artisans</div><div style="font-size:16px;font-weight:700;color:#993556;">${eur(tot.ca*(100-taux)/100)}</div></div>
+    </div>
+    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:460px;">
+      <thead><tr style="color:#888;border-bottom:1px solid #e8e0e4;"><th style="text-align:left;padding:6px;">Artisan</th><th style="text-align:right;padding:6px;">Articles</th><th style="text-align:right;padding:6px;">Ventes TTC</th><th style="text-align:right;padding:6px;">Commission</th><th style="text-align:right;padding:6px;">À reverser</th><th></th></tr></thead>
+      <tbody>${artisans.map(([n,a])=>`<tr style="border-bottom:0.5px solid #f0ebee;">
+        <td style="padding:6px;font-weight:500;">${n}</td><td style="padding:6px;text-align:right;">${a.qty}</td><td style="padding:6px;text-align:right;">${eur(a.ca)}</td>
+        <td style="padding:6px;text-align:right;color:#3b6d11;">${eur(a.ca*taux/100)}</td><td style="padding:6px;text-align:right;color:#993556;font-weight:600;">${eur(a.ca*(100-taux)/100)}</td>
+        <td style="padding:6px;text-align:right;"><button onclick="imprimerReleveArtisan(this.dataset.a)" data-a="${n.replace(/"/g,"&quot;")}" style="background:none;border:1px solid #d9c2ee;color:#6a3d9a;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">🖨️ Relevé</button></td></tr>`).join("")}</tbody>
+    </table></div>
+    <div style="font-size:11px;color:#888;margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">Taux de commission :
+      <input type="text" inputmode="decimal" value="${String(taux).replace(".",",")}" onchange="changerCommissionArtisan(this.value)" style="width:48px;text-align:right;font-size:12px;padding:3px;"/> %
+      · les retours sont déduits · articles d'artisans exclus de la valeur du stock</div>
+  </div>`;
+}
+
 function renderSuiviEncaissementsMois(mois, annee) {
   const modes = [["cb","💳 CB","#185fa5","#eef4fd"],["especes","💶 Espèces","#3b6d11","#eaf3de"],["cheque","📝 Chèque","#854f0b","#faeeda"],["avoir","🎟️ Avoir","#993556","#fbeaf0"],["cadeau","🎁 Carte cadeau","#6a3d9a","#f3e8fc"]];
   const vf = (STATE.ventes||[]).filter(v => { if(v.test||v.annulee) return false; const d=new Date(v.date); return d.getMonth()===mois && d.getFullYear()===annee; });
@@ -10354,6 +10467,7 @@ function renderBilan() {
 
     ${renderSuiviEncaissementsMois(STATE.bilanMonth, STATE.bilanYear)}
     ${renderControleZ(STATE.bilanMonth, STATE.bilanYear)}
+    ${renderBilanArtisans()}
 
     <!-- KPIs principaux — Objectifs mensuel / trim / sem / annuel -->
     ${(()=>{
