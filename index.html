@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "26/09 · v24 (artisans en dépôt)";
+const APP_VERSION = "26/09 · v25 (artisans Sabrina)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -6839,7 +6839,7 @@ prods.forEach(p=>{
       t += '<button onclick="ajouterToutStockLot(\''+p.id+'\');ouvrirModalLotEtiq()" class="btn-ghost" style="color:#993556;border-color:#f0c8d4;white-space:nowrap;">📦 Lot ('+totalLot+')</button>';
     }
   }
-  if(isV1) t += '<button onclick="openProdModal(\''+p.id+'\')" class="btn-ghost">✏️</button>';
+  if(isV1 || (p.artisanat && peutGererArtisans())) t += '<button onclick="openProdModal(\''+p.id+'\')" class="btn-ghost">✏️</button>';
   if(isV1) t += '<button onclick="deleteProd(\''+p.id+'\')" class="btn-ghost" style="color:#a32d2d;border-color:#f0959599;">🗑️</button>';
   t += '</div></td></tr>';
 });
@@ -7273,6 +7273,8 @@ window.saveProd = () => {
   if(f.stock===""||isNaN(parseInt(f.stock))){alert("Entrez un stock.");      return;}
 
   const existant = STATE.editProdId ? STATE.products.find(p=>p.id===STATE.editProdId) : null;
+  if(existant && STATE.vendeur.id!=="V1" && existant.artisanat) f.artisanat = true;
+  if(!existant && STATE.vendeur.id!=="V1" && peutGererArtisans() && f.artisanat && !(f.nomArtisan||"").trim()) { alert("Indique le nom de l'artisan."); return; }
   const stockActuel = existant ? existant.stock : 0;
   // Si des variantes sont définies, le stock total = somme des variantes
   const svForm = f.stockVariantes||{};
@@ -7283,7 +7285,7 @@ window.saveProd = () => {
 
   // Sécurité : les vendeuses (pas la gérante) ne peuvent qu'augmenter le stock manuellement,
   // jamais le diminuer — évite qu'un article "disparu" soit masqué en ajustant le stock à la baisse.
-  if(STATE.vendeur.id!=="V1" && existant && nouveauStock < stockActuel) {
+  if(STATE.vendeur.id!=="V1" && existant && nouveauStock < stockActuel && !(existant.artisanat && peutGererArtisans())) {
     alert("⚠️ Tu ne peux pas diminuer le stock manuellement (seulement l'augmenter). Pour un article défectueux, perdu ou abîmé, préviens la gérante.");
     return;
   }
@@ -7355,10 +7357,15 @@ window.saveProd = () => {
 };
 
 window.supprimerPhotoProd = () => { STATE.prodForm.photo=""; render(); };
+// Vendeuses autorisées à créer et modifier les produits d'artisans (en plus de la gérante)
+const GESTION_ARTISANS_IDS = ["V1","V3"]; // V3 = Sabrina
+function peutGererArtisans() { return !!STATE.vendeur && GESTION_ARTISANS_IDS.includes(STATE.vendeur.id); }
+
 window.openProdModal = id => {
-  // Vendeurs : création uniquement, pas de modification
+  // Vendeurs : création uniquement, pas de modification — sauf produits d'artisans pour les vendeuses autorisées
   if(id && STATE.vendeur.id !== "V1") {
-    alert("Seule la gérante peut modifier un article."); return;
+    const pm = STATE.products.find(x=>x.id===id);
+    if(!(pm && pm.artisanat && peutGererArtisans())) { alert("Seule la gérante peut modifier cet article."); return; }
   }
   STATE.editProdId=id;
   STATE._newCouleur = "";
