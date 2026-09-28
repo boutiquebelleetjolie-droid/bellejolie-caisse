@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "28/09 · v27 (curseur stable)";
+const APP_VERSION = "28/09 · v28 (stats clientèle)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -8121,11 +8121,102 @@ window.supprimerMvtDefectueux = (id) => {
 };
 
 // ─── CRM ────────────────────────────────────────────────────────
+// ── Tableau de bord de la clientèle fidèle (gérante uniquement) ─────────
+function lignesArticlesVente(v) {
+  // Articles réellement vendus (hors retours, avoirs, sac, retouches, chèques cadeaux, corrections)
+  return (v.panier||[]).filter(i => !i.retour && !i.avoirId && i.id!=="correction_manuelle" && i.ref!=="SAC-CAISSE" && i.name!=="Sac"
+    && i.ref!=="RETOUCHE-CAISSE" && !i.retoucheInfo && !i.isChequeCadeau);
+}
+function statsGroupeVentes(ventes) {
+  const tickets = ventes.length;
+  const ca = ventes.reduce((s,v)=>s+v.total,0);
+  const articles = ventes.reduce((s,v)=>s+lignesArticlesVente(v).reduce((a,i)=>a+(i.qty||1),0),0);
+  return { tickets, ca, articles, pm: tickets? ca/tickets : 0, idv: tickets? articles/tickets : 0, pmArticle: articles? ca/articles : 0 };
+}
+function periodeClientele() {
+  const now = new Date(), per = STATE.crmPer || "mois";
+  if(per==="mois") return {per, debut:new Date(now.getFullYear(), now.getMonth(), 1), fin:now, libelle:now.toLocaleDateString("fr-FR",{month:"long",year:"numeric"})};
+  if(per==="mois_prec") { const d=new Date(now.getFullYear(), now.getMonth()-1, 1); return {per, debut:d, fin:new Date(now.getFullYear(), now.getMonth(), 0, 23,59,59), libelle:d.toLocaleDateString("fr-FR",{month:"long",year:"numeric"})}; }
+  if(per==="annee") return {per, debut:new Date(now.getFullYear(),0,1), fin:now, libelle:"Année "+now.getFullYear()};
+  return {per, debut:new Date(2000,0,1), fin:now, libelle:"Depuis l'ouverture"};
+}
+function renderTableauClientele() {
+  if(STATE.vendeur.id!=="V1") return "";
+  const {per, debut, fin, libelle} = periodeClientele();
+  const clients = STATE.clients||[];
+  const now = new Date();
+  const ventesPer = (STATE.ventes||[]).filter(v => !v.test && !v.annulee && !v.correctionManuelle && v.total>0
+    && new Date(v.date)>=debut && new Date(v.date)<=fin);
+  const idClient = v => v.clientId || (v.client && v.client.id) || null;
+  const fideles = ventesPer.filter(v=>idClient(v)), autres = ventesPer.filter(v=>!idClient(v));
+  const sF = statsGroupeVentes(fideles), sA = statsGroupeVentes(autres), sT = statsGroupeVentes(ventesPer);
+  // Clientes ayant acheté sur la période
+  const parClient = {};
+  fideles.forEach(v => { const id=idClient(v); const c = parClient[id] = parClient[id] || {id, ca:0, tickets:0, articles:0};
+    c.ca += v.total; c.tickets++; c.articles += lignesArticlesVente(v).reduce((a,i)=>a+(i.qty||1),0); });
+  const acheteuses = Object.values(parClient);
+  // Activité de la base (toutes périodes confondues)
+  const derniereVente = {};
+  (STATE.ventes||[]).forEach(v => { if(v.test||v.annulee) return; const id=idClient(v); if(!id) return; if(!derniereVente[id] || v.date>derniereVente[id]) derniereVente[id]=v.date; });
+  const jours = d => (now - new Date(d))/86400000;
+  const actifs90 = clients.filter(c=>derniereVente[c.id] && jours(derniereVente[c.id])<=90).length;
+  const jamais = clients.filter(c=>!derniereVente[c.id]).length;
+  const inactifs = clients.length - actifs90 - jamais;
+  const nouveauxPer = clients.filter(c=>c.createdAt && new Date(c.createdAt)>=debut && new Date(c.createdAt)<=fin).length;
+  const avecEmail = clients.filter(c=>c.email).length;
+  const top = acheteuses.sort((a,b)=>b.ca-a.ca).slice(0,10).map(a=>({...a, c: clients.find(c=>c.id===a.id)}));
+  const pct = (a,b) => b>0 ? Math.round(a/b*100)+" %" : "—";
+  const fmt1 = n => n.toLocaleString("fr-FR",{minimumFractionDigits:1, maximumFractionDigits:1});
+  const btn = (k,l) => `<button onclick="STATE.crmPer='${k}';render()" style="padding:5px 11px;border-radius:7px;border:none;cursor:pointer;font-size:12px;background:${per===k?'#993556':'#f5f0f2'};color:${per===k?'#fff':'#555'};">${l}</button>`;
+  const carte = (titre, val, sous, c="#993556", bg="#fbeaf0") => `<div style="background:${bg};border-radius:10px;padding:10px 12px;"><div style="font-size:11px;color:${c};">${titre}</div><div style="font-size:18px;font-weight:700;color:${c};">${val}</div>${sous?`<div style="font-size:10px;color:#888;">${sous}</div>`:""}</div>`;
+  const ligne = (lib, f, a, fmtFn) => `<tr style="border-bottom:0.5px solid #f0ebee;"><td style="padding:6px;">${lib}</td><td style="padding:6px;text-align:right;font-weight:600;color:#993556;">${fmtFn(f)}</td><td style="padding:6px;text-align:right;color:#555;">${fmtFn(a)}</td></tr>`;
+  const ouvert = STATE._crmStatsOuvert!==false;
+  return `
+  <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;margin-bottom:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+      <div style="font-weight:600;font-size:14px;cursor:pointer;" onclick="STATE._crmStatsOuvert=${!ouvert};render()">📊 Clientèle fidèle ${ouvert?"▲":"▼"}</div>
+      ${ouvert?`<div style="display:flex;gap:4px;flex-wrap:wrap;">${btn("mois","Ce mois")}${btn("mois_prec","Mois dernier")}${btn("annee","Année")}${btn("tout","Depuis l'ouverture")}</div>`:""}
+    </div>
+    ${ouvert?`
+    <div style="font-size:12px;color:#888;margin:4px 0 10px;">${libelle.charAt(0).toUpperCase()+libelle.slice(1)}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(125px,1fr));gap:8px;margin-bottom:12px;">
+      ${carte("Clientes en base", clients.length, (nouveauxPer?"+"+nouveauxPer+" sur la période · ":"")+avecEmail+" avec email")}
+      ${carte("Actives (90 j)", actifs90, inactifs+" inactives · "+jamais+" sans achat", "#3b6d11", "#eaf3de")}
+      ${carte("Clientes ayant acheté", acheteuses.length, "sur la période", "#185fa5", "#eef4fd")}
+      ${carte("Part du CA fidèles", pct(sF.ca, sT.ca), eur(sF.ca)+" sur "+eur(sT.ca), "#6a3d9a", "#f3e8fc")}
+    </div>
+    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:360px;">
+      <thead><tr style="color:#888;border-bottom:1px solid #e8e0e4;"><th style="text-align:left;padding:6px;"></th><th style="text-align:right;padding:6px;color:#993556;">Clientes fidèles</th><th style="text-align:right;padding:6px;">Sans compte</th></tr></thead>
+      <tbody>
+        ${ligne("Chiffre d'affaires", sF.ca, sA.ca, eur)}
+        ${ligne("Nombre de tickets", sF.tickets, sA.tickets, n=>n)}
+        ${ligne("Panier moyen", sF.pm, sA.pm, eur)}
+        ${ligne("IDV (articles par ticket)", sF.idv, sA.idv, fmt1)}
+        ${ligne("Prix moyen d'un article", sF.pmArticle, sA.pmArticle, eur)}
+      </tbody>
+    </table></div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:10px;">
+      ${carte("CA moyen par cliente", acheteuses.length? eur(sF.ca/acheteuses.length) : "—", "sur la période", "#854f0b", "#faeeda")}
+      ${carte("Visites par cliente", acheteuses.length? fmt1(sF.tickets/acheteuses.length) : "—", "tickets en moyenne", "#854f0b", "#faeeda")}
+      ${carte("Clientes revenues", acheteuses.filter(a=>a.tickets>1).length, "au moins 2 achats sur la période", "#854f0b", "#faeeda")}
+    </div>
+    ${top.length?`<div style="font-weight:600;font-size:13px;margin:14px 0 6px;">🏆 Meilleures clientes — ${libelle}</div>
+    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:360px;">
+      <thead><tr style="color:#888;border-bottom:1px solid #e8e0e4;"><th style="text-align:left;padding:5px;">Cliente</th><th style="text-align:right;padding:5px;">CA</th><th style="text-align:right;padding:5px;">Tickets</th><th style="text-align:right;padding:5px;">Panier moyen</th><th style="text-align:right;padding:5px;">IDV</th></tr></thead>
+      <tbody>${top.map((a,i)=>`<tr style="border-bottom:0.5px solid #f0ebee;cursor:pointer;" onclick="openClientDetail('${a.id}')">
+        <td style="padding:5px;">${i+1}. ${a.c?(a.c.prenom+" "+a.c.nom):"Cliente supprimée"}</td><td style="padding:5px;text-align:right;font-weight:600;">${eur(a.ca)}</td>
+        <td style="padding:5px;text-align:right;">${a.tickets}</td><td style="padding:5px;text-align:right;">${eur(a.ca/a.tickets)}</td><td style="padding:5px;text-align:right;">${fmt1(a.articles/a.tickets)}</td></tr>`).join("")}</tbody>
+    </table></div>`:""}
+    <div style="font-size:10px;color:#aaa;margin-top:8px;">IDV et prix moyen hors sacs, retouches, chèques cadeaux et retours. Tickets annulés et corrections exclus.</div>`:""}
+  </div>`;
+}
+
 function renderCRM() {
   const s=normStr(STATE.searchProd||"");
   const filtered=STATE.clients.filter(c=>normStr(`${c.prenom} ${c.nom} ${c.tel} ${c.cp}`).includes(s));
   return `
   <div>
+    ${renderTableauClientele()}
     <div style="display:flex;gap:10px;margin-bottom:14px;">
       <input value="${STATE.searchProd||""}" id="stock-search2" oninput="STATE.searchProd=this.value;clearTimeout(window._spTimer);window._spTimer=setTimeout(renderStockOnly,300)" placeholder="Rechercher..." style="flex:1;"/>
       <button onclick="openClientModal(null)" class="btn-primary" style="width:auto;padding:8px 16px;">+ Nouveau client</button>
