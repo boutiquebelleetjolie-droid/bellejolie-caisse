@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "28/09 · v29 (compta regroupée)";
+const APP_VERSION = "28/09 · v30 (top clientes)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -8160,7 +8160,9 @@ function renderTableauClientele() {
   const inactifs = clients.length - actifs90 - jamais;
   const nouveauxPer = clients.filter(c=>c.createdAt && new Date(c.createdAt)>=debut && new Date(c.createdAt)<=fin).length;
   const avecEmail = clients.filter(c=>c.email).length;
-  const top = acheteuses.sort((a,b)=>b.ca-a.ca).slice(0,10).map(a=>({...a, c: clients.find(c=>c.id===a.id)}));
+  const triTop = STATE.crmTopTri || "ca";
+  const top = [...acheteuses].sort((a,b)=> triTop==="passages" ? (b.tickets-a.tickets || b.ca-a.ca) : (b.ca-a.ca || b.tickets-a.tickets))
+    .slice(0,10).map(a=>({...a, c: clients.find(c=>c.id===a.id)}));
   const pct = (a,b) => b>0 ? Math.round(a/b*100)+" %" : "—";
   const fmt1 = n => n.toLocaleString("fr-FR",{minimumFractionDigits:1, maximumFractionDigits:1});
   const btn = (k,l) => `<button onclick="STATE.crmPer='${k}';render()" style="padding:5px 11px;border-radius:7px;border:none;cursor:pointer;font-size:12px;background:${per===k?'#993556':'#f5f0f2'};color:${per===k?'#fff':'#555'};">${l}</button>`;
@@ -8196,12 +8198,18 @@ function renderTableauClientele() {
       ${carte("Visites par cliente", acheteuses.length? fmt1(sF.tickets/acheteuses.length) : "—", "tickets en moyenne", "#854f0b", "#faeeda")}
       ${carte("Clientes revenues", acheteuses.filter(a=>a.tickets>1).length, "au moins 2 achats sur la période", "#854f0b", "#faeeda")}
     </div>
-    ${top.length?`<div style="font-weight:600;font-size:13px;margin:14px 0 6px;">🏆 Meilleures clientes — ${libelle}</div>
+    ${top.length?`<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin:14px 0 6px;">
+      <div style="font-weight:600;font-size:13px;">🏆 Meilleures clientes — ${libelle}</div>
+      <div style="display:flex;gap:4px;">
+        <button onclick="STATE.crmTopTri='ca';render()" style="padding:4px 10px;border-radius:7px;border:none;cursor:pointer;font-size:12px;background:${triTop==='ca'?'#993556':'#f5f0f2'};color:${triTop==='ca'?'#fff':'#555'};">💶 En €</button>
+        <button onclick="STATE.crmTopTri='passages';render()" style="padding:4px 10px;border-radius:7px;border:none;cursor:pointer;font-size:12px;background:${triTop==='passages'?'#993556':'#f5f0f2'};color:${triTop==='passages'?'#fff':'#555'};">🔁 En passages</button>
+      </div>
+    </div>
     <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:360px;">
-      <thead><tr style="color:#888;border-bottom:1px solid #e8e0e4;"><th style="text-align:left;padding:5px;">Cliente</th><th style="text-align:right;padding:5px;">CA</th><th style="text-align:right;padding:5px;">Tickets</th><th style="text-align:right;padding:5px;">Panier moyen</th><th style="text-align:right;padding:5px;">IDV</th></tr></thead>
+      <thead><tr style="color:#888;border-bottom:1px solid #e8e0e4;"><th style="text-align:left;padding:5px;">Cliente</th><th style="text-align:right;padding:5px;${triTop==='ca'?'color:#993556;':''}">CA</th><th style="text-align:right;padding:5px;${triTop==='passages'?'color:#993556;':''}">Passages</th><th style="text-align:right;padding:5px;">Panier moyen</th><th style="text-align:right;padding:5px;">IDV</th></tr></thead>
       <tbody>${top.map((a,i)=>`<tr style="border-bottom:0.5px solid #f0ebee;cursor:pointer;" onclick="openClientDetail('${a.id}')">
-        <td style="padding:5px;">${i+1}. ${a.c?(a.c.prenom+" "+a.c.nom):"Cliente supprimée"}</td><td style="padding:5px;text-align:right;font-weight:600;">${eur(a.ca)}</td>
-        <td style="padding:5px;text-align:right;">${a.tickets}</td><td style="padding:5px;text-align:right;">${eur(a.ca/a.tickets)}</td><td style="padding:5px;text-align:right;">${fmt1(a.articles/a.tickets)}</td></tr>`).join("")}</tbody>
+        <td style="padding:5px;">${i+1}. ${a.c?(a.c.prenom+" "+a.c.nom):"Cliente supprimée"}</td><td style="padding:5px;text-align:right;${triTop==='ca'?'font-weight:600;':''}">${eur(a.ca)}</td>
+        <td style="padding:5px;text-align:right;${triTop==='passages'?'font-weight:600;':''}">${a.tickets}</td><td style="padding:5px;text-align:right;">${eur(a.ca/a.tickets)}</td><td style="padding:5px;text-align:right;">${fmt1(a.articles/a.tickets)}</td></tr>`).join("")}</tbody>
     </table></div>`:""}
     <div style="font-size:10px;color:#aaa;margin-top:8px;">IDV et prix moyen hors sacs, retouches, chèques cadeaux et retours. Tickets annulés et corrections exclus.</div>`:""}
   </div>`;
