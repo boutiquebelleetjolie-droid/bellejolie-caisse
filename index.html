@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "28/09 · v28 (stats clientèle)";
+const APP_VERSION = "28/09 · v29 (compta regroupée)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -1765,8 +1765,6 @@ function renderApp() {
     ...(STATE.vendeur.id==="V1"?[
       {key:"bilan",       label:"Bilan",        emoji:"📒"},
       {key:"compta",      label:"Comptabilité", emoji:"🧾"},
-      {key:"factures_fourn", label:"Factures",      emoji:"📃"},
-      {key:"factures",    label:"Factures",      emoji:"📄"},
 
       {key:"annulations", label:"Annulations",  emoji:"↩️"},
       {key:"inventaire",  label:"Inventaire",   emoji:"📋"},
@@ -1780,7 +1778,7 @@ function renderApp() {
     <nav id="nav-bar" style="display:flex;gap:2px;flex:1;">
       ${tabs.map(t=>`
         <button onclick="setTab('${t.key}')"
-          style="padding:7px 11px;border-radius:8px;border:none;background:${STATE.tab===t.key?"#fbeaf0":"none"};color:${STATE.tab===t.key?"#993556":"#666"};font-weight:${STATE.tab===t.key?500:400};font-size:13px;">
+          style="padding:7px 11px;border-radius:8px;border:none;background:${(STATE.tab===t.key||(t.key==="compta"&&["factures","factures_fourn"].includes(STATE.tab)))?"#fbeaf0":"none"};color:${(STATE.tab===t.key||(t.key==="compta"&&["factures","factures_fourn"].includes(STATE.tab)))?"#993556":"#666"};font-weight:${(STATE.tab===t.key||(t.key==="compta"&&["factures","factures_fourn"].includes(STATE.tab)))?500:400};font-size:13px;">
           ${t.emoji} ${t.label}
         </button>
       `).join("")}
@@ -1816,9 +1814,7 @@ function renderApp() {
     ${STATE.tab==="promo"        ? renderPromo()          : ""}
     ${STATE.tab==="bilan"        ? (STATE.vendeur.id==="V1" ? renderBilan()       : "") : ""}
     ${STATE.tab==="caisse_jour"  ? renderCaisseJour()  : ""}
-    ${STATE.tab==="compta"       ? (STATE.vendeur.id==="V1" ? renderCompta()      : "") : ""}
-    ${STATE.tab==="factures_fourn" ? (STATE.vendeur.id==="V1" ? renderFacturesFourn() : "") : ""}
-    ${STATE.tab==="factures"     ? renderFacturesClients() : ""}
+    ${["compta","factures","factures_fourn"].includes(STATE.tab) && STATE.vendeur.id==="V1" ? renderEspaceCompta() : ""}
     ${STATE.tab==="memo"         ? renderMemo() : ""}
     ${STATE.tab==="annulations" ? (STATE.vendeur.id==="V1" ? renderAnnulations() : "") : ""}
     ${STATE.tab==="inventaire"? (STATE.vendeur.id==="V1" ? renderInventaire() : `<div style="text-align:center;padding:60px 20px;color:#888;"><div style="font-size:40px;margin-bottom:12px;">🔒</div><div style="font-size:16px;font-weight:500;margin-bottom:8px;">Accès restreint</div><div style="font-size:13px;">Cette section est réservée à l'administrateur.</div></div>`) : ""}
@@ -8209,6 +8205,17 @@ function renderTableauClientele() {
     </table></div>`:""}
     <div style="font-size:10px;color:#aaa;margin-top:8px;">IDV et prix moyen hors sacs, retouches, chèques cadeaux et retours. Tickets annulés et corrections exclus.</div>`:""}
   </div>`;
+}
+
+// ── Espace Comptabilité : comptabilité + factures clients + factures fournisseurs ──
+function renderEspaceCompta() {
+  const sous = [["compta","🧾 Comptabilité"],["factures","📄 Factures clients"],["factures_fourn","📃 Factures fournisseurs"]];
+  const actif = STATE.tab;
+  return `
+  <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;border-bottom:1px solid #eee;padding-bottom:10px;">
+    ${sous.map(([k,l])=>`<button onclick="setState({tab:'${k}'})" style="padding:7px 14px;border-radius:8px;border:none;cursor:pointer;font-size:13px;font-weight:${actif===k?600:400};background:${actif===k?'#993556':'#f5f0f2'};color:${actif===k?'#fff':'#555'};">${l}</button>`).join("")}
+  </div>
+  ${actif==="compta" ? renderCompta() : actif==="factures" ? renderFacturesClients() : renderFacturesFourn()}`;
 }
 
 function renderCRM() {
