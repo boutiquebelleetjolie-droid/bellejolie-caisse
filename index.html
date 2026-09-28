@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "26/09 · v25 (artisans Sabrina)";
+const APP_VERSION = "28/09 · v26 (CA du jour seulement)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -8713,6 +8713,8 @@ function renderClientDetail() {
 function renderHistorique() {
   if(!STATE.histoFilters) STATE.histoFilters = {dateDebut:'',dateFin:'',vendeur:'',categorie:'',payMode:'',search:'',montant:''};
   const f = STATE.histoFilters;
+  const histoV1 = STATE.vendeur.id==="V1";
+  if(!histoV1) { const t = dateLocaleStr(); f.dateDebut = t; f.dateFin = t; } // vendeuses : ventes du jour uniquement
   const mL={cb:"CB",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Cadeau",mixte:"Mixte",avoir_cree:"🎟️ Avoir émis",remboursement_especes:"💶 Remb. espèces"};
 
   // Filtrer les ventes
@@ -8742,12 +8744,12 @@ function renderHistorique() {
   html += '<div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;margin-bottom:14px;">';
   html += '<div style="font-weight:500;font-size:13px;margin-bottom:10px;">🔍 Filtres</div>';
   html += '<div style="display:flex;gap:6px;margin-bottom:10px;">';
-  html += '<button onclick="const d=new Date();d.setDate(d.getDate()-1);const s=dateLocaleStr(d);STATE.histoFilters.dateDebut=s;STATE.histoFilters.dateFin=s;render()" style="padding:6px 12px;background:#f5f0f2;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;color:#993556;">📅 Hier</button>';
+  if(histoV1) html += '<button onclick="const d=new Date();d.setDate(d.getDate()-1);const s=dateLocaleStr(d);STATE.histoFilters.dateDebut=s;STATE.histoFilters.dateFin=s;render()" style="padding:6px 12px;background:#f5f0f2;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;color:#993556;">📅 Hier</button>';
   html += '<button onclick="const s=dateLocaleStr();STATE.histoFilters.dateDebut=s;STATE.histoFilters.dateFin=s;render()" style="padding:6px 12px;background:#f5f0f2;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;color:#993556;">📅 Aujourd\'hui</button>';
   html += '</div>';
   html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">';
-  html += '<div><label style="font-size:11px;color:#888;">Du</label><input type="date" value="'+f.dateDebut+'" oninput="STATE.histoFilters.dateDebut=this.value;render()" style="width:100%;border:1px solid #ddd;border-radius:6px;padding:5px;font-size:13px;box-sizing:border-box;"/></div>';
-  html += '<div><label style="font-size:11px;color:#888;">Au</label><input type="date" value="'+f.dateFin+'" oninput="STATE.histoFilters.dateFin=this.value;render()" style="width:100%;border:1px solid #ddd;border-radius:6px;padding:5px;font-size:13px;box-sizing:border-box;"/></div>';
+  if(histoV1) html += '<div><label style="font-size:11px;color:#888;">Du</label><input type="date" value="'+f.dateDebut+'" oninput="STATE.histoFilters.dateDebut=this.value;render()" style="width:100%;border:1px solid #ddd;border-radius:6px;padding:5px;font-size:13px;box-sizing:border-box;"/></div>';
+  if(histoV1) html += '<div><label style="font-size:11px;color:#888;">Au</label><input type="date" value="'+f.dateFin+'" oninput="STATE.histoFilters.dateFin=this.value;render()" style="width:100%;border:1px solid #ddd;border-radius:6px;padding:5px;font-size:13px;box-sizing:border-box;"/></div>';
   html += '</div>';
   html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;">';
   html += '<select onchange="STATE.histoFilters.vendeur=this.value;render()" style="border:1px solid #ddd;border-radius:6px;padding:5px;font-size:13px;"><option value="">Toutes vendeures</option>'+vendeurs.map(v=>'<option value="'+v+'"'+(f.vendeur===v?' selected':'')+'>'+v+'</option>').join('')+'</select>';
@@ -8992,6 +8994,8 @@ function renderPaceHoraireWidget() {
 }
 
 function renderStats() {
+  // Vendeuses : uniquement les chiffres du jour (pas de CA des jours, semaines, mois passés)
+  if(STATE.vendeur.id!=="V1") { STATE.statPer = "jour"; STATE.statOffsetJour = 0; }
   const per = STATE.statPer;
   const now = new Date();
   const moisNoms = ["Janvier","Février","Mars","Avril","Mai","Juin","Juillet","Août","Septembre","Octobre","Novembre","Décembre"];
@@ -9185,7 +9189,7 @@ function renderStats() {
   const navOffsets = {jour:"statOffsetJour", semaine:"statOffsetSem", mois:"statOffsetMois", annee:"statOffsetAnnee"};
   const navKey = navOffsets[per];
   const navCurrent = per==="jour"?STATE.statOffsetJour:per==="semaine"?STATE.statOffsetSem:per==="mois"?STATE.statOffsetMois:per==="annee"?STATE.statOffsetAnnee:null;
-  const showNav = ["jour","semaine","mois","annee"].includes(per);
+  const showNav = ["jour","semaine","mois","annee"].includes(per) && STATE.vendeur.id==="V1";
 
   // ── KPIs avec IDV ─────────────────────────────────────────────
   const calcIDV = arr => {
@@ -9201,7 +9205,8 @@ function renderStats() {
   <div>
     <!-- Onglets -->
     <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
-      ${[
+      ${STATE.vendeur.id!=="V1" ? `<div style="font-weight:600;font-size:14px;padding:6px 0;">📊 Aujourd'hui</div>` : ""}
+      ${STATE.vendeur.id!=="V1" ? "" : [
         ["jour","Jour"],["semaine","Semaine"],["mois","Mois"],["annee","Année"],
         ["detail_mois","📅 Détail mois"],["detail_jour","🕐 Par heure"],
         ["tout","Tout"],["top","🏆 Meilleures ventes"],
@@ -13820,6 +13825,7 @@ function renderCaisseJour() {
 
   // Navigation jour (pour consulter les jours précédents)
   if(STATE.zDateOffset===undefined) STATE.zDateOffset=0;
+  if(STATE.vendeur.id!=="V1") STATE.zDateOffset=0; // vendeuses : Z du jour uniquement
   const zDate = new Date(now); zDate.setDate(now.getDate()+STATE.zDateOffset); zDate.setHours(0,0,0,0);
   // Date locale (pas toISOString, qui convertit en UTC et décale d'un jour en France l'été/hiver)
   const zDateStr = zDate.getFullYear()+"-"+String(zDate.getMonth()+1).padStart(2,"0")+"-"+String(zDate.getDate()).padStart(2,"0");
@@ -13938,9 +13944,9 @@ function renderCaisseJour() {
         </div>
       </div>
       <div style="display:flex;gap:8px;align-items:center;">
-        <button onclick="STATE.zDateOffset--;render()" style="background:none;border:1px solid #ddd;border-radius:7px;padding:6px 12px;cursor:pointer;">◀</button>
+        ${STATE.vendeur.id==="V1"?`<button onclick="STATE.zDateOffset--;render()" style="background:none;border:1px solid #ddd;border-radius:7px;padding:6px 12px;cursor:pointer;">◀</button>
         <button onclick="STATE.zDateOffset=0;render()" ${isToday?"disabled":""} style="background:none;border:1px solid #ddd;border-radius:7px;padding:6px 12px;cursor:pointer;opacity:${isToday?0.4:1};">Auj.</button>
-        <button onclick="STATE.zDateOffset++;render()" ${isToday?"disabled":""} style="background:none;border:1px solid #ddd;border-radius:7px;padding:6px 12px;cursor:pointer;opacity:${isToday?0.4:1};">▶</button>
+        <button onclick="STATE.zDateOffset++;render()" ${isToday?"disabled":""} style="background:none;border:1px solid #ddd;border-radius:7px;padding:6px 12px;cursor:pointer;opacity:${isToday?0.4:1};">▶</button>`:""}
         ${zDejàFait?
           `<div style="background:#eaf3de;border-radius:8px;padding:8px 14px;font-size:13px;color:#3b6d11;font-weight:500;display:flex;align-items:center;gap:10px;">
             <span>✅ Clôturée le ${new Date(zDejàFait.heure).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})} par ${zDejàFait.vendeur}</span>
