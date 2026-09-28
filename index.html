@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "28/09 · v26 (CA du jour seulement)";
+const APP_VERSION = "28/09 · v27 (curseur stable)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -1173,18 +1173,21 @@ function render() {
   const active = document.activeElement;
   let focusInfo = null;
   if(active && (active.tagName==="INPUT"||active.tagName==="TEXTAREA") && root.contains(active)) {
+    let start = null, end = null;
+    try { start = active.selectionStart; end = active.selectionEnd; } catch{}
     focusInfo = {
       selector: active.getAttribute("data-focus-key") || null,
-      start: active.selectionStart,
-      end: active.selectionEnd,
+      id: active.id || null,
+      oninput: active.getAttribute("oninput") || null,
+      onchange: active.getAttribute("onchange") || null,
+      placeholder: active.getAttribute("placeholder") || null,
+      start, end,
     };
   }
   // Sauvegarder le scroll : window pour la page, modal-body pour les modales
   const modal = document.querySelector('.modal-body');
   const winScrollY = window.scrollY || 0;
   const modalScrollTop = modal ? modal.scrollTop : 0;
-  const activeId = document.activeElement ? document.activeElement.id : null;
-  const activeSel = document.activeElement && document.activeElement.selectionStart !== undefined ? document.activeElement.selectionStart : null;
 
   let html;
   try {
@@ -1199,29 +1202,38 @@ function render() {
 
   // Restaurer le scroll ET le focus
   const newModal = document.querySelector('.modal-body');
-  const restoreScroll = () => {
+  // Retrouver le champ qui avait le focus (par clé, id, ou à défaut par son action de saisie)
+  const retrouverChamp = () => {
+    if(!focusInfo) return null;
+    let el = null;
+    if(focusInfo.selector) el = root.querySelector(`[data-focus-key="${focusInfo.selector}"]`);
+    if(!el && focusInfo.id) el = document.getElementById(focusInfo.id);
+    if(!el) {
+      const cands = [...root.querySelectorAll("input,textarea")].filter(c =>
+        (focusInfo.oninput && c.getAttribute("oninput")===focusInfo.oninput) ||
+        (!focusInfo.oninput && focusInfo.onchange && c.getAttribute("onchange")===focusInfo.onchange && c.getAttribute("placeholder")===focusInfo.placeholder));
+      if(cands.length===1) el = cands[0];
+    }
+    return el;
+  };
+  const champFocus = retrouverChamp();
+  const restoreScroll = (differe) => {
     if(newModal) { newModal.scrollTop = modalScrollTop; }
-    else { window.scrollTo(0, winScrollY); }
-    if(activeId) {
-      const el = document.getElementById(activeId);
-      if(el) { el.focus(); if(activeSel!==null && el.setSelectionRange) el.setSelectionRange(activeSel, activeSel); }
+    else if(!differe || document.activeElement===document.body || !document.activeElement) { window.scrollTo(0, winScrollY); }
+    // Remettre le focus UNIQUEMENT s'il a été perdu : jamais pendant que l'on tape,
+    // ni si l'utilisateur est passé à un autre champ entre-temps (sinon le curseur recule).
+    if(champFocus && champFocus.isConnected) {
+      const cur = document.activeElement;
+      if(cur===champFocus) return;
+      if(differe && cur && cur!==document.body) return;
+      champFocus.focus();
+      if(typeof focusInfo.start==="number") { try { champFocus.setSelectionRange(focusInfo.start, focusInfo.end); } catch{} }
     }
   };
-  restoreScroll();
-  _pendingRestoreTimers.push({raf:true, id: requestAnimationFrame(restoreScroll)});
-  _pendingRestoreTimers.push({raf:false, id: setTimeout(restoreScroll, 50)});
-  _pendingRestoreTimers.push({raf:false, id: setTimeout(restoreScroll, 150)});
-
-  // Restaurer le focus
-  if(focusInfo && focusInfo.selector) {
-    const el = root.querySelector(`[data-focus-key="${focusInfo.selector}"]`);
-    if(el) {
-      el.focus();
-      if(typeof focusInfo.start==="number") {
-        try { el.setSelectionRange(focusInfo.start, focusInfo.end); } catch{}
-      }
-    }
-  }
+  restoreScroll(false);
+  _pendingRestoreTimers.push({raf:true, id: requestAnimationFrame(()=>restoreScroll(true))});
+  _pendingRestoreTimers.push({raf:false, id: setTimeout(()=>restoreScroll(true), 50)});
+  _pendingRestoreTimers.push({raf:false, id: setTimeout(()=>restoreScroll(true), 150)});
 }
 
 // ═══════════════════════════════════════════════════════════════
