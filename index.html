@@ -8240,7 +8240,8 @@ function calculerZMensuel(mois, annee) {
   });
   const caTTC = r2(ventes.reduce((s,v)=>s+v.total,0));
   const corrections = r2(ventes.filter(v=>v.correctionManuelle).reduce((s,v)=>s+v.total,0));
-  const remises = Math.max(0, r2(brut - retours - (caTTC - corrections)));
+  brut += corrections; // régularisations intégrées aux ventes (aucune ligne distincte)
+  const remises = Math.max(0, r2(brut - retours - caTTC));
   const caHT = r2(caTTC/(1+TVA)), tvaCol = r2(caTTC - caHT);
   const modes = {cb:0, especes:0, cheque:0, avoir:0, cadeau:0};
   ventes.forEach(v => { const e = encaissementsParMode(v); Object.keys(modes).forEach(k => modes[k] += e[k]); });
@@ -8294,7 +8295,6 @@ function lignesZMensuel(z) {
     L("Tickets avec carte de fidélité", z.ticketsFideles+" ("+(z.nbTickets?Math.round(z.ticketsFideles/z.nbTickets*100):0)+" %) · "+z.nbClientes+" clientes"),
     T("CHIFFRE D'AFFAIRES"),
     L("Ventes au prix affiché (TTC)", eur(z.brut)), L("− Remises accordées", "− "+eur(z.remises)), L("− Retours ("+z.nbRetours+" article"+(z.nbRetours>1?"s":"")+")", "− "+eur(z.retours)),
-    ...(z.nbCorrections?[L("+ Régularisations ("+z.nbCorrections+")", eur(z.corrections))]:[]),
     L("CA TTC du mois", eur(z.caTTC), true), L("CA HT", eur(z.caHT)), L("TVA collectée 20 %", eur(z.tvaCol)),
     T("DONT"),
     L("Produits d'artisans (dépôt)", eur(z.artisans.ca)), L("   commission "+z.artisans.taux+" % / à reverser", eur(z.artisans.commission)+" / "+eur(z.artisans.reverser)),
@@ -8337,7 +8337,7 @@ function renderZMensuel(mois, annee) {
         <tbody>${z.jours.map(j=>`<tr style="border-bottom:0.5px solid #f0ebee;"><td style="padding:4px;">${new Date(j.date+"T12:00:00").toLocaleDateString("fr-FR",{weekday:"short",day:"2-digit",month:"2-digit"})}</td><td style="padding:4px;text-align:right;">${j.tickets}</td><td style="padding:4px;text-align:right;font-weight:600;">${eur(j.ca)}</td><td style="padding:4px;text-align:right;">${eur(j.cb)}</td><td style="padding:4px;text-align:right;">${eur(j.especes)}</td><td style="padding:4px;text-align:right;">${eur(j.autres)}</td></tr>`).join("")}</tbody>
       </table></div>`:`<div style="color:#aaa;font-size:13px;padding:10px 0;">Aucune vente ce mois-ci.</div>`}
     </div>
-    <div style="font-size:11px;color:#999;margin-top:8px;">IDV et panier moyen hors régularisations. Les avoirs et chèques cadeaux utilisés sont des moyens de paiement, pas de l'argent encaissé. À faire valider par ton comptable pour la déclaration.</div>
+    <div style="font-size:11px;color:#999;margin-top:8px;">Les avoirs et chèques cadeaux utilisés sont des moyens de paiement, pas de l'argent encaissé. À faire valider par ton comptable pour la déclaration.</div>
   </div>`;
 }
 window.imprimerZMensuel = (mois, annee) => {
