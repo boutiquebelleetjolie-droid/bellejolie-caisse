@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "28/09 · v31 (Z mensuel)";
+const APP_VERSION = "28/09 · v32 (dépôt tout cocher)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -12347,6 +12347,12 @@ function renderDepotBanque() {
     ${reporte>0.001?`<div style="background:#fff3e8;border:1px solid #f0dcb0;border-radius:9px;padding:9px 12px;margin-bottom:12px;font-size:12px;color:#854f0b;">🪙 Report du dépôt précédent (pièces gardées) : <strong>${eur(reporte)}</strong> — déjà inclus dans le montant suggéré ci-dessous.</div>`:""}
     ${reporte<-0.001?`<div style="background:#eef4fd;border:1px solid #b3d0f0;border-radius:9px;padding:9px 12px;margin-bottom:12px;font-size:12px;color:#185fa5;">ℹ️ Tu avais déposé ${eur(-reporte)} de plus que prévu la dernière fois — c'est déjà déduit du montant suggéré ci-dessous.</div>`:""}
 
+    ${(()=>{ const nonDeposes = jours.filter(z=>!depotDeJour(z.date)); if(!nonDeposes.length) return "";
+      const tousCoches = nonDeposes.every(z=>STATE.depotSelection[z.date]);
+      return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
+        <span style="font-size:12px;color:#888;">${nonDeposes.length} journée${nonDeposes.length>1?"s":""} pas encore déposée${nonDeposes.length>1?"s":""} · ${eur(nonDeposes.reduce((s,z)=>s+z.aDeposer,0))}</span>
+        <button onclick="toutCocherDepot(${!tousCoches})" style="background:${tousCoches?"#fff":"#185fa5"};color:${tousCoches?"#185fa5":"#fff"};border:1px solid #185fa5;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:500;cursor:pointer;">${tousCoches?"☐ Tout décocher":"☑️ Tout cocher"}</button>
+      </div>`; })()}
     <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:6px 14px;margin-bottom:14px;">
       ${jours.length===0?`<div style="padding:14px 0;color:#aaa;font-size:13px;text-align:center;">Aucune clôture avec des espèces à déposer.</div>`:
         jours.map(z => {
@@ -12410,6 +12416,17 @@ function renderDepotBanque() {
     `:""}
   </div>`;
 }
+
+// Cocher / décocher d'un coup toutes les journées pas encore déposées
+window.toutCocherDepot = (cocher) => {
+  STATE.depotSelection = {};
+  if(cocher) {
+    const dejaDeposes = new Set((STATE.depotsBanque||[]).flatMap(d=>(d.jours||[]).map(j=>j.date)));
+    (STATE.caisseJour||[]).filter(z => (z.aDeposer||0)>0.001 && !dejaDeposes.has(z.date)).forEach(z => STATE.depotSelection[z.date] = true);
+  }
+  STATE.depotMontantSaisi = null;
+  render();
+};
 
 window.toggleDepotJour = (dateStr) => {
   STATE.depotSelection = STATE.depotSelection||{};
