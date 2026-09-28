@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "28/09 · v30 (top clientes)";
+const APP_VERSION = "28/09 · v31 (Z mensuel)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -8215,6 +8215,151 @@ function renderTableauClientele() {
   </div>`;
 }
 
+// ── Z MENSUEL : récapitulatif détaillé d'un mois (ventes, remises, retours, TVA, encaissements, jours) ──
+function calculerZMensuel(mois, annee) {
+  const TVA = 0.20, r2 = n => Math.round(n*100)/100;
+  const dansMois = d => { const x = new Date(d); return x.getMonth()===mois && x.getFullYear()===annee; };
+  const toutes = (STATE.ventes||[]).filter(v => !v.test && dansMois(v.date));
+  const ventes = toutes.filter(v => !v.annulee);
+  const annulees = toutes.filter(v => v.annulee);
+  const prodMap = {}; (STATE.products||[]).forEach(p => prodMap[p.id] = p);
+  let brut = 0, retours = 0, nbRetours = 0, artisansCA = 0, chqCadeauxVendus = 0, retouchesCA = 0, sacsCA = 0, nbCorrections = 0;
+  ventes.forEach(v => {
+    if(v.correctionManuelle) nbCorrections++;
+    (v.panier||[]).forEach(i => {
+      if(i.avoirId || i.id==="correction_manuelle") return;
+      const q = i.qty||1, m = (i.price||0)*q;
+      if(i.retour) { retours += m; nbRetours += q; return; }
+      brut += m;
+      const p = prodMap[i.prodIdOriginal||i.id] || {};
+      if(p.artisanat || i.artisanat) artisansCA += calculerPrixPayeReel(v, i)*q;
+      if(i.isChequeCadeau || p.isChequeCadeau) chqCadeauxVendus += m;
+      if(i.retoucheInfo || i.ref==="RETOUCHE-CAISSE") retouchesCA += m;
+      if(i.ref==="SAC-CAISSE" || i.name==="Sac") sacsCA += m;
+    });
+  });
+  const caTTC = r2(ventes.reduce((s,v)=>s+v.total,0));
+  const corrections = r2(ventes.filter(v=>v.correctionManuelle).reduce((s,v)=>s+v.total,0));
+  const remises = Math.max(0, r2(brut - retours - (caTTC - corrections)));
+  const caHT = r2(caTTC/(1+TVA)), tvaCol = r2(caTTC - caHT);
+  const modes = {cb:0, especes:0, cheque:0, avoir:0, cadeau:0};
+  ventes.forEach(v => { const e = encaissementsParMode(v); Object.keys(modes).forEach(k => modes[k] += e[k]); });
+  Object.keys(modes).forEach(k => modes[k] = r2(modes[k]));
+  const tickets = ventes.filter(v=>!v.correctionManuelle && v.total>0);
+  const st = statsGroupeVentes(tickets);
+  const nbClientes = new Set(tickets.map(v=>v.clientId||(v.client&&v.client.id)).filter(Boolean)).size;
+  const ticketsFideles = tickets.filter(v=>v.clientId||(v.client&&v.client.id)).length;
+  // TVA déductible (factures fournisseurs du mois cochées déductibles)
+  const factures = (STATE.depenses||[]).filter(d => dansMois(d.date));
+  const tvaDeduct = r2(factures.filter(f=>f.deductible).reduce((s,f)=>s+(f.montantHT||0)*TVA,0));
+  const achatsHT = r2(factures.reduce((s,f)=>s+(f.montantHT||0),0));
+  // Avoirs et bons émis dans le mois
+  const avoirsMois = (STATE.avoirs||[]).filter(a => a.date && dansMois(a.date));
+  const avoirsRetour = avoirsMois.filter(a => !a.typeAvoir), bons = avoirsMois.filter(a => a.typeAvoir);
+  // Commission artisans
+  const taux = STATE.commissionArtisan ?? 20;
+  // Détail par jour
+  const parJour = {};
+  ventes.forEach(v => {
+    const j = dateLocaleStr(new Date(v.date));
+    const d = parJour[j] = parJour[j] || {tickets:0, ca:0, cb:0, especes:0, autres:0};
+    if(!v.correctionManuelle && v.total>0) d.tickets++;
+    d.ca += v.total; const e = encaissementsParMode(v); d.cb += e.cb; d.especes += e.especes; d.autres += e.cheque+e.avoir+e.cadeau;
+  });
+  const jours = Object.keys(parJour).sort().map(j => ({date:j, ...parJour[j], ca:r2(parJour[j].ca)}));
+  // Cumul de l'année jusqu'à la fin du mois
+  const cumulAnnee = r2((STATE.ventes||[]).filter(v => { if(v.test||v.annulee) return false; const x=new Date(v.date); return x.getFullYear()===annee && x.getMonth()<=mois; }).reduce((s,v)=>s+v.total,0));
+  const zClotures = (STATE.caisseJour||[]).filter(z => z.date && z.date.startsWith(annee+"-"+String(mois+1).padStart(2,"0")));
+  const ecartCaisse = r2(zClotures.reduce((s,z)=>s+(typeof z.ecart==="number"?z.ecart:0),0));
+  return {
+    mois, annee, caTTC, caHT, tvaCol, tvaDeduct, tvaNette: r2(tvaCol-tvaDeduct), achatsHT,
+    brut: r2(brut), remises, retours: r2(retours), nbRetours, corrections, nbCorrections,
+    nbTickets: st.tickets, nbArticles: st.articles, panierMoyen: st.pm, idv: st.idv,
+    nbClientes, ticketsFideles, modes,
+    annulees: {nb: annulees.length, montant: r2(annulees.reduce((s,v)=>s+v.total,0))},
+    avoirsRetour: {nb: avoirsRetour.length, montant: r2(avoirsRetour.reduce((s,a)=>s+Math.abs(a.montant||0),0))},
+    bons: {nb: bons.length, montant: r2(bons.reduce((s,a)=>s+Math.abs(a.montant||0),0))},
+    artisans: {ca: r2(artisansCA), commission: r2(artisansCA*taux/100), reverser: r2(artisansCA*(100-taux)/100), taux},
+    chqCadeauxVendus: r2(chqCadeauxVendus), retouchesCA: r2(retouchesCA), sacsCA: r2(sacsCA),
+    jours, cumulAnnee, nbJoursOuverts: jours.length, nbZ: zClotures.length, ecartCaisse,
+  };
+}
+function lignesZMensuel(z) {
+  const L = (lib, val, fort) => ({lib, val, fort});
+  const T = titre => ({titre});
+  return [
+    T("VENTES"),
+    L("Nombre de tickets", z.nbTickets), L("Articles vendus", z.nbArticles),
+    L("Panier moyen", eur(z.panierMoyen)), L("IDV (articles par ticket)", z.idv.toLocaleString("fr-FR",{maximumFractionDigits:2})),
+    L("Tickets avec carte de fidélité", z.ticketsFideles+" ("+(z.nbTickets?Math.round(z.ticketsFideles/z.nbTickets*100):0)+" %) · "+z.nbClientes+" clientes"),
+    T("CHIFFRE D'AFFAIRES"),
+    L("Ventes au prix affiché (TTC)", eur(z.brut)), L("− Remises accordées", "− "+eur(z.remises)), L("− Retours ("+z.nbRetours+" article"+(z.nbRetours>1?"s":"")+")", "− "+eur(z.retours)),
+    ...(z.nbCorrections?[L("+ Régularisations ("+z.nbCorrections+")", eur(z.corrections))]:[]),
+    L("CA TTC du mois", eur(z.caTTC), true), L("CA HT", eur(z.caHT)), L("TVA collectée 20 %", eur(z.tvaCol)),
+    T("DONT"),
+    L("Produits d'artisans (dépôt)", eur(z.artisans.ca)), L("   commission "+z.artisans.taux+" % / à reverser", eur(z.artisans.commission)+" / "+eur(z.artisans.reverser)),
+    L("Chèques cadeaux vendus", eur(z.chqCadeauxVendus)), L("Retouches", eur(z.retouchesCA)), L("Sacs", eur(z.sacsCA)),
+    T("ENCAISSEMENTS"),
+    L("Carte bancaire", eur(z.modes.cb)), L("Espèces", eur(z.modes.especes)), L("Chèques", eur(z.modes.cheque)),
+    L("Avoirs utilisés", eur(z.modes.avoir)), L("Chèques cadeaux utilisés", eur(z.modes.cadeau)),
+    L("Total encaissé", eur(Object.values(z.modes).reduce((a,b)=>a+b,0)), true),
+    L("Écart de caisse cumulé (espèces)", eur(z.ecartCaisse)),
+    T("ANNULATIONS & AVOIRS"),
+    L("Ventes annulées", z.annulees.nb+" · "+eur(z.annulees.montant)),
+    L("Avoirs émis (retours)", z.avoirsRetour.nb+" · "+eur(z.avoirsRetour.montant)),
+    L("Bons offerts émis (bienvenue, anniversaire…)", z.bons.nb+" · "+eur(z.bons.montant)),
+    T("TVA (CA3)"),
+    L("Base HT imposable (ligne A)", eur(z.caHT)), L("TVA collectée (ligne B1)", eur(z.tvaCol)),
+    L("TVA déductible sur achats (ligne 20)", eur(z.tvaDeduct)), L("TVA nette à payer (ligne 28)", eur(z.tvaNette), true),
+    T("PÉRIODE"),
+    L("Jours avec ventes / Z clôturés", z.nbJoursOuverts+" / "+z.nbZ), L("CA cumulé depuis le 1er janvier", eur(z.cumulAnnee), true),
+  ];
+}
+function renderZMensuel(mois, annee) {
+  const z = calculerZMensuel(mois, annee);
+  const lignes = lignesZMensuel(z);
+  const moisNom = new Date(annee, mois, 1).toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
+  return `
+  <div style="max-width:620px;margin:0 auto;">
+    <div style="font-weight:600;font-size:15px;margin-bottom:10px;text-align:center;">🧾 Z mensuel — ${moisNom.charAt(0).toUpperCase()+moisNom.slice(1)}</div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+      <button onclick="STATE.comptaMonth=${mois===0?11:mois-1};STATE.comptaYear=${mois===0?annee-1:annee};render()" style="background:none;border:1px solid #ddd;border-radius:8px;padding:7px 14px;cursor:pointer;">◀</button>
+      <button onclick="imprimerZMensuel(${mois},${annee})" class="btn-primary" style="width:auto;padding:8px 16px;">🖨️ Imprimer le Z mensuel</button>
+      <button onclick="STATE.comptaMonth=${mois===11?0:mois+1};STATE.comptaYear=${mois===11?annee+1:annee};render()" style="background:none;border:1px solid #ddd;border-radius:8px;padding:7px 14px;cursor:pointer;">▶</button>
+    </div>
+    <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px 18px;">
+      ${lignes.map(l => l.titre
+        ? `<div style="font-weight:700;font-size:12px;color:#993556;margin:12px 0 4px;letter-spacing:.5px;">${l.titre}</div>`
+        : `<div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-bottom:0.5px solid #f0ebee;font-size:13px;${l.fort?"font-weight:700;":""}"><span style="color:${l.fort?"#1a1a1a":"#555"};">${l.lib}</span><span style="white-space:nowrap;">${l.val}</span></div>`).join("")}
+      ${z.jours.length?`<div style="font-weight:700;font-size:12px;color:#993556;margin:14px 0 4px;">DÉTAIL PAR JOUR</div>
+      <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:420px;">
+        <thead><tr style="color:#888;border-bottom:1px solid #e8e0e4;"><th style="text-align:left;padding:4px;">Jour</th><th style="text-align:right;padding:4px;">Tickets</th><th style="text-align:right;padding:4px;">CA TTC</th><th style="text-align:right;padding:4px;">CB</th><th style="text-align:right;padding:4px;">Espèces</th><th style="text-align:right;padding:4px;">Autres</th></tr></thead>
+        <tbody>${z.jours.map(j=>`<tr style="border-bottom:0.5px solid #f0ebee;"><td style="padding:4px;">${new Date(j.date+"T12:00:00").toLocaleDateString("fr-FR",{weekday:"short",day:"2-digit",month:"2-digit"})}</td><td style="padding:4px;text-align:right;">${j.tickets}</td><td style="padding:4px;text-align:right;font-weight:600;">${eur(j.ca)}</td><td style="padding:4px;text-align:right;">${eur(j.cb)}</td><td style="padding:4px;text-align:right;">${eur(j.especes)}</td><td style="padding:4px;text-align:right;">${eur(j.autres)}</td></tr>`).join("")}</tbody>
+      </table></div>`:`<div style="color:#aaa;font-size:13px;padding:10px 0;">Aucune vente ce mois-ci.</div>`}
+    </div>
+    <div style="font-size:11px;color:#999;margin-top:8px;">IDV et panier moyen hors régularisations. Les avoirs et chèques cadeaux utilisés sont des moyens de paiement, pas de l'argent encaissé. À faire valider par ton comptable pour la déclaration.</div>
+  </div>`;
+}
+window.imprimerZMensuel = (mois, annee) => {
+  const z = calculerZMensuel(mois, annee);
+  const lignes = lignesZMensuel(z);
+  const moisNom = new Date(annee, mois, 1).toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Z mensuel ${moisNom}</title><style>
+    body{font-family:Arial,sans-serif;max-width:680px;margin:20px auto;color:#111;font-size:13px}
+    h1{text-align:center;font-size:20px;margin:0}.sous{text-align:center;color:#666;margin:2px 0 14px}
+    .t{font-weight:700;color:#993556;margin:14px 0 4px;font-size:12px;border-bottom:1px solid #993556}
+    .l{display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px dotted #ddd}.f{font-weight:700}
+    table{width:100%;border-collapse:collapse;font-size:12px;margin-top:4px}td,th{padding:3px 5px;border-bottom:1px solid #eee;text-align:right}td:first-child,th:first-child{text-align:left}
+    @media print{body{margin:0}}</style></head><body>
+    <h1>Belle&amp;Jolie — Z MENSUEL</h1><div class="sous">${moisNom.charAt(0).toUpperCase()+moisNom.slice(1)} · édité le ${new Date().toLocaleString("fr-FR")}</div>
+    ${lignes.map(l=>l.titre?`<div class="t">${l.titre}</div>`:`<div class="l ${l.fort?"f":""}"><span>${l.lib}</span><span>${l.val}</span></div>`).join("")}
+    ${z.jours.length?`<div class="t">DÉTAIL PAR JOUR</div><table><tr><th>Jour</th><th>Tickets</th><th>CA TTC</th><th>HT</th><th>TVA</th><th>CB</th><th>Espèces</th><th>Autres</th></tr>
+    ${z.jours.map(j=>`<tr><td>${new Date(j.date+"T12:00:00").toLocaleDateString("fr-FR",{weekday:"short",day:"2-digit",month:"2-digit"})}</td><td>${j.tickets}</td><td>${eur(j.ca)}</td><td>${eur(j.ca/1.2)}</td><td>${eur(j.ca-j.ca/1.2)}</td><td>${eur(j.cb)}</td><td>${eur(j.especes)}</td><td>${eur(j.autres)}</td></tr>`).join("")}
+    <tr style="font-weight:700"><td>Total</td><td>${z.jours.reduce((s,j)=>s+j.tickets,0)}</td><td>${eur(z.caTTC)}</td><td>${eur(z.caHT)}</td><td>${eur(z.tvaCol)}</td><td>${eur(z.modes.cb)}</td><td>${eur(z.modes.especes)}</td><td>${eur(z.modes.cheque+z.modes.avoir+z.modes.cadeau)}</td></tr></table>`:""}
+    <script>window.onload=()=>window.print()<\/script></body></html>`;
+  const w = window.open("","_blank","width=760,height=900"); if(w) { w.document.write(html); w.document.close(); }
+};
+
 // ── Espace Comptabilité : comptabilité + factures clients + factures fournisseurs ──
 function renderEspaceCompta() {
   const sous = [["compta","🧾 Comptabilité"],["factures","📄 Factures clients"],["factures_fourn","📃 Factures fournisseurs"]];
@@ -11930,7 +12075,7 @@ function renderCompta() {
   <div>
     <!-- Tabs vue -->
     <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;">
-      ${[["mensuel","📅 Saisie mensuelle"],["factures","🧾 Détail factures"],["annuel","📊 Tableau de bord annuel"],["declaration","📋 Déclaration CA3"],["depot","🏦 Bordereau de dépôt"]].map(([k,l])=>`
+      ${[["mensuel","📅 Saisie mensuelle"],["factures","🧾 Détail factures"],["annuel","📊 Tableau de bord annuel"],["declaration","📋 Déclaration CA3"],["zmensuel","🧾 Z mensuel"],["depot","🏦 Bordereau de dépôt"]].map(([k,l])=>`
         <button onclick="STATE.comptaView='${k}';render()" style="padding:7px 14px;border-radius:8px;border:none;background:${STATE.comptaView===k?"#993556":"#f5f0f2"};color:${STATE.comptaView===k?"#fff":"#333"};cursor:pointer;font-weight:${STATE.comptaView===k?500:400};font-size:13px;">${l}</button>
       `).join("")}
     </div>
@@ -12162,8 +12307,10 @@ function renderCompta() {
     <button onclick="imprimerCA3('${STATE.comptaMonth}','${STATE.comptaYear}')" class="btn-primary" style="margin-top:14px;max-width:400px;display:block;margin-left:auto;margin-right:auto;">
       🖨️ Imprimer la déclaration CA3
     </button>
+    <button onclick="STATE.comptaView='zmensuel';render()" class="btn-ghost" style="margin-top:8px;max-width:400px;display:block;margin-left:auto;margin-right:auto;width:100%;">🧾 Voir le Z mensuel détaillé</button>
     `:""}
 
+    ${STATE.comptaView==="zmensuel"?renderZMensuel(STATE.comptaMonth, STATE.comptaYear):""}
     ${STATE.comptaView==="depot"?renderDepotBanque():""}
   </div>`;
 }
