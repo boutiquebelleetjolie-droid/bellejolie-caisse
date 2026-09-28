@@ -8290,8 +8290,7 @@ function lignesZMensuel(z) {
   const T = titre => ({titre});
   return [
     T("VENTES"),
-    L("Nombre de tickets", z.nbTickets), L("Articles vendus", z.nbArticles),
-    L("Panier moyen", eur(z.panierMoyen)), L("IDV (articles par ticket)", z.idv.toLocaleString("fr-FR",{maximumFractionDigits:2})),
+    L("Nombre de tickets", z.nbTickets), L("Panier moyen", eur(z.panierMoyen)),
     L("Tickets avec carte de fidélité", z.ticketsFideles+" ("+(z.nbTickets?Math.round(z.ticketsFideles/z.nbTickets*100):0)+" %) · "+z.nbClientes+" clientes"),
     T("CHIFFRE D'AFFAIRES"),
     L("Ventes au prix affiché (TTC)", eur(z.brut)), L("− Remises accordées", "− "+eur(z.remises)), L("− Retours ("+z.nbRetours+" article"+(z.nbRetours>1?"s":"")+")", "− "+eur(z.retours)),
