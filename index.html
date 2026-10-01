@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "28/09 · v32 (dépôt tout cocher)";
+const APP_VERSION = "29/09 · v33 (retours artisans)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -8232,7 +8232,6 @@ function calculerZMensuel(mois, annee) {
       if(i.retour) { retours += m; nbRetours += q; return; }
       brut += m;
       const p = prodMap[i.prodIdOriginal||i.id] || {};
-      if(p.artisanat || i.artisanat) artisansCA += calculerPrixPayeReel(v, i)*q;
       if(i.isChequeCadeau || p.isChequeCadeau) chqCadeauxVendus += m;
       if(i.retoucheInfo || i.ref==="RETOUCHE-CAISSE") retouchesCA += m;
       if(i.ref==="SAC-CAISSE" || i.name==="Sac") sacsCA += m;
@@ -8241,6 +8240,8 @@ function calculerZMensuel(mois, annee) {
   const caTTC = r2(ventes.reduce((s,v)=>s+v.total,0));
   const corrections = r2(ventes.filter(v=>v.correctionManuelle).reduce((s,v)=>s+v.total,0));
   brut += corrections; // régularisations intégrées aux ventes (aucune ligne distincte)
+  { const idsV = idsVentesValides();
+    ventes.forEach(v => { lignesArtisanVente(v, prodMap).forEach(l => artisansCA += l.montant); retoursArtisanSansTicket(v, prodMap, idsV).forEach(l => artisansCA += l.montant); }); }
   const remises = Math.max(0, r2(brut - retours - caTTC));
   const caHT = r2(caTTC/(1+TVA)), tvaCol = r2(caTTC - caHT);
   const modes = {cb:0, especes:0, cheque:0, avoir:0, cadeau:0};
@@ -9385,36 +9386,16 @@ function renderStats() {
   }));
   const topClientsDepot = Object.entries(clientsDepotVenteM).sort((a,b)=>b[1]-a[1]).slice(0,5);
 
-  // ── Artisanat : CA généré + répartition par artisan (montant + nb ventes) ──
+  // ── Artisanat : CA généré + répartition par artisan (articles retournés avec ticket non comptés) ──
   let caArtisanat = 0;
   let nbArtisanat = 0;
   const artisansM = {};
-  vf.forEach(v=>v.panier.filter(x=>!x.retour).forEach(i=>{
-    const pid = i.prodIdOriginal || i.id;
-    const p = prodMapAll[pid];
-    if(p?.artisanat) {
-      const montant = calculerPrixPayeReel(v, i) * (i.qty||1);
-      caArtisanat += montant;
-      nbArtisanat += (i.qty||1);
-      const nomArt = p.nomArtisan?.trim() || "Artisan non renseigné";
-      if(!artisansM[nomArt]) artisansM[nomArt] = {montant:0, qty:0};
-      artisansM[nomArt].montant += montant;
-      artisansM[nomArt].qty += (i.qty||1);
-    }
-  }));
-  // Déduire les retours (montant ET quantité) pour un décompte net juste
-  vf.forEach(v=>v.panier.filter(x=>x.retour&&!x.avoirId).forEach(i=>{
-    const pid = i.prodIdOriginal || i.id;
-    const p = prodMapAll[pid];
-    if(p?.artisanat) {
-      const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
-      const montantRetour = Math.max(0,i.price-remArt) * (i.qty||1);
-      caArtisanat -= montantRetour;
-      nbArtisanat -= (i.qty||1);
-      const nomArt = p.nomArtisan?.trim() || "Artisan non renseigné";
-      if(artisansM[nomArt]) { artisansM[nomArt].montant -= montantRetour; artisansM[nomArt].qty -= (i.qty||1); }
-    }
-  }));
+  { const idsV = idsVentesValides();
+    vf.forEach(v => [...lignesArtisanVente(v, prodMapAll), ...retoursArtisanSansTicket(v, prodMapAll, idsV)].forEach(l => {
+      caArtisanat += l.montant; nbArtisanat += l.qty;
+      if(!artisansM[l.artisan]) artisansM[l.artisan] = {montant:0, qty:0};
+      artisansM[l.artisan].montant += l.montant; artisansM[l.artisan].qty += l.qty;
+    })); }
   const topArtisans = Object.entries(artisansM).sort((a,b)=>b[1].montant-a[1].montant);
 
   // ── Graphique 7 jours ─────────────────────────────────────────
@@ -10184,6 +10165,38 @@ function renderControleZ(mois, annee) {
   </div>`;
 }
 
+// ── Ventes d'artisans nettes des retours ──────────────────────────────
+// Un article d'artisan retourné avec son ticket n'est plus du tout compté comme vendu (la vente
+// d'origine est neutralisée, quelle que soit la date du retour) et le retour lui-même n'apparaît pas.
+// Seul un retour sans ticket d'origine retrouvable est déduit tel quel.
+function lignesArtisanVente(v, prodMap) {
+  const restants = {...(v.articlesRetournes||{})};
+  const out = [];
+  (v.panier||[]).forEach(i => {
+    if(i.retour || i.avoirId) return;
+    const pid = i.prodIdOriginal || i.id;
+    const p = prodMap[pid] || {};
+    if(!(p.artisanat || i.artisanat)) return;
+    const q = i.qty||1, r = Math.min(q, restants[pid]||0);
+    if(r) restants[pid] -= r;
+    const net = q - r; if(net<=0) return;
+    out.push({i, p, qty:net, montant: calculerPrixPayeReel(v, i)*net, artisan: (p.nomArtisan||i.nomArtisan||"").trim()||"Artisan non renseigné"});
+  });
+  return out;
+}
+function retoursArtisanSansTicket(v, prodMap, idsVentes) {
+  return (v.panier||[]).filter(i => i.retour && !i.avoirId).map(i => {
+    const pid = i.prodIdOriginal || String(i.id||"").replace("R_","");
+    const p = prodMap[pid] || {};
+    if(!(p.artisanat || i.artisanat)) return null;
+    if(i.retourVenteId && idsVentes.has(i.retourVenteId)) return null; // neutralisé sur la vente d'origine
+    const q = i.qty||1;
+    const rem = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/q:0;
+    return {i, p, qty:-q, montant: -Math.max(0,i.price-rem)*q, artisan: (p.nomArtisan||i.nomArtisan||"").trim()||"Artisan non renseigné"};
+  }).filter(Boolean);
+}
+function idsVentesValides() { return new Set((STATE.ventes||[]).filter(v=>!v.test&&!v.annulee).map(v=>v.id)); }
+
 // ── Bilan des produits d'artisans (dépôt avec commission) : jour / semaine / mois ──
 function periodeArtisans() {
   const ref = new Date((STATE.artRef||dateLocaleStr())+"T12:00:00");
@@ -10204,21 +10217,13 @@ window.decalerPeriodeArtisans = (sens) => {
 };
 function ventesArtisans(debut, fin) {
   const prodMap = {}; (STATE.products||[]).forEach(p=>prodMap[p.id]=p);
+  const ids = idsVentesValides();
   const lignes = [];
   (STATE.ventes||[]).forEach(v => {
     if(v.test||v.annulee) return;
     const d = dateLocaleStr(new Date(v.date)); if(d<debut || d>fin) return;
-    (v.panier||[]).forEach(i => {
-      if(i.avoirId) return;
-      const p = prodMap[i.prodIdOriginal||i.id] || {};
-      const estArt = p.artisanat || i.artisanat; if(!estArt) return;
-      const artisan = (p.nomArtisan||i.nomArtisan||"").trim() || "Artisan non renseigné";
-      const qty = i.qty||1;
-      let montant;
-      if(i.retour) { const rem = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/qty:0; montant = -Math.max(0,i.price-rem)*qty; }
-      else montant = calculerPrixPayeReel(v, i)*qty;
-      lignes.push({date:v.date, artisan, article:p.name||i.name, qty: i.retour?-qty:qty, montant: Math.round(montant*100)/100, retour:!!i.retour});
-    });
+    lignesArtisanVente(v, prodMap).forEach(l => lignes.push({date:v.date, artisan:l.artisan, article:l.p.name||l.i.name, qty:l.qty, montant:Math.round(l.montant*100)/100, retour:false}));
+    retoursArtisanSansTicket(v, prodMap, ids).forEach(l => lignes.push({date:v.date, artisan:l.artisan, article:l.p.name||l.i.name, qty:l.qty, montant:Math.round(l.montant*100)/100, retour:true}));
   });
   return lignes.sort((a,b)=>new Date(a.date)-new Date(b.date));
 }
