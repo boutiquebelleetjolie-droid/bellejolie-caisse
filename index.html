@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "30/09 · v34 (filtre Octobre Rose)";
+const APP_VERSION = "30/09 · v35 (recherche email)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -3563,11 +3563,11 @@ function renderCaisse() {
           })()}
         `:`
           <div style="display:flex;gap:6px;margin-bottom:6px;">
-            <input id="client-search" value="${STATE.searchClient||''}" oninput="clientSearchInput(this.value)" placeholder="Rechercher client..." style="flex:1;" autocomplete="off" autocorrect="off" autocapitalize="off"/>
+            <input id="client-search" value="${STATE.searchClient||''}" oninput="clientSearchInput(this.value)" placeholder="Cliente : nom, tél. ou email..." style="flex:1;" autocomplete="off" autocorrect="off" autocapitalize="off"/>
             <button onclick="openNewClientModal()" class="btn-ghost" style="white-space:nowrap;">+ Nouveau</button>
           </div>
            <div id="client-results" style="border:0.5px solid #e8e0e4;border-radius:8px;overflow:hidden;display:${STATE.searchClient?'block':'none'};">
-             ${(STATE.clients.filter(c=>normStr(c.prenom+" "+c.nom+" "+c.tel).includes(normStr(STATE.searchClient||''))).slice(0,5).map(c=>`
+             ${(STATE.clients.filter(c=>clienteCorrespond(c, STATE.searchClient)).slice(0,5).map(c=>`
                <div onclick="selectClient('${c.id}')" style="padding:8px 10px;border-bottom:0.5px solid #e8e0e4;cursor:pointer;font-size:13px;">
                  ${c.prenom} ${c.nom} · ${c.tel}
                </div>
@@ -4875,7 +4875,7 @@ window.clientSearchInput = v => {
   if(!v) { div.style.display='none'; return; }
   div.style.display = 'block';
   const q = normStr(v);
-  const matches = STATE.clients.filter(c=>normStr(c.prenom+' '+c.nom+' '+c.tel).includes(q)).slice(0,6);
+  const matches = STATE.clients.filter(c=>clienteCorrespond(c, v)).slice(0,6);
   if(matches.length === 0) {
     div.innerHTML = '<div style="padding:8px 10px;font-size:12px;color:#aaa;">Aucun client trouvé</div>';
   } else {
@@ -6494,7 +6494,7 @@ function renderTransfertBoutiqueModal() {
   if(!p) return "";
   const autres = BOUTIQUES.filter(b=>b.id!==BOUTIQUE_ID_ACTUEL);
   const qClient = normStr(f.clientRecherche||"");
-  const resultatsClients = qClient.length<2 ? [] : STATE.clients.filter(c=>normStr(c.prenom+" "+c.nom+" "+(c.tel||"")).includes(qClient)).slice(0,6);
+  const resultatsClients = qClient.length<2 ? [] : STATE.clients.filter(c=>clienteCorrespond(c, qClient)).slice(0,6);
 
   return `
   <div class="modal-bg" onclick="if(event.target===this)setState({showTransfertBoutique:false})">
@@ -8154,6 +8154,15 @@ window.supprimerMvtDefectueux = (id) => {
 };
 
 // ─── CRM ────────────────────────────────────────────────────────
+// ── Recherche de clientes : prénom, nom, téléphone (avec ou sans espaces), email, code postal ──
+function clienteCorrespond(c, recherche) {
+  const q = normStr(recherche||"").trim();
+  if(!q) return true;
+  const tel = String(c.tel||"");
+  const texte = normStr([c.prenom, c.nom, tel, tel.replace(/[\s.\-]/g,""), c.email, c.cp].filter(Boolean).join(" "));
+  return q.split(/\s+/).every(m => texte.includes(m.replace(/[\s.\-]/g,"")) || texte.includes(m));
+}
+
 // ── Tableau de bord de la clientèle fidèle (gérante uniquement) ─────────
 function lignesArticlesVente(v) {
   // Articles réellement vendus (hors retours, avoirs, sac, retouches, chèques cadeaux, corrections)
@@ -8410,12 +8419,12 @@ function renderEspaceCompta() {
 
 function renderCRM() {
   const s=normStr(STATE.searchProd||"");
-  const filtered=STATE.clients.filter(c=>normStr(`${c.prenom} ${c.nom} ${c.tel} ${c.cp}`).includes(s));
+  const filtered=STATE.clients.filter(c=>clienteCorrespond(c, STATE.searchProd));
   return `
   <div>
     ${renderTableauClientele()}
     <div style="display:flex;gap:10px;margin-bottom:14px;">
-      <input value="${STATE.searchProd||""}" id="stock-search2" oninput="STATE.searchProd=this.value;clearTimeout(window._spTimer);window._spTimer=setTimeout(renderStockOnly,300)" placeholder="Rechercher..." style="flex:1;"/>
+      <input value="${STATE.searchProd||""}" id="stock-search2" oninput="STATE.searchProd=this.value;clearTimeout(window._spTimer);window._spTimer=setTimeout(renderStockOnly,300)" placeholder="Nom, téléphone ou email..." style="flex:1;"/>
       <button onclick="openClientModal(null)" class="btn-primary" style="width:auto;padding:8px 16px;">+ Nouveau client</button>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(265px,1fr));gap:12px;">
