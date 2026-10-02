@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "30/09 · v37 (comptes incassables)";
+const APP_VERSION = "30/09 · v38 (retrouver un bon)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -8631,6 +8631,46 @@ window.supprimerCliente = (id) => {
   setState({showClientDetail:null});
 };
 
+// Retrouver un bon d'après le code reçu par mail : rattacher s'il existe, sinon le recréer avec le même code
+window.retrouverBonCliente = (clientId) => {
+  if(STATE.vendeur.id!=="V1") return;
+  const c = STATE.clients.find(x=>x.id===clientId); if(!c) return;
+  const saisi = prompt("Code du bon indiqué dans le mail (ex. BIENVEN…) :", "");
+  if(saisi===null) return;
+  const code = saisi.trim().toUpperCase().replace(/\s/g,"");
+  if(code.length<4) { alert("Code trop court."); return; }
+  const a = (STATE.avoirs||[]).find(x => String(x.code||"").toUpperCase()===code);
+  const fmt = d => d ? new Date(d).toLocaleDateString("fr-FR") : "—";
+  if(a) {
+    if(a.utilise || !(a.solde>0)) { alert("Ce bon ("+code+") a déjà été utilisé"+(a.dateUtilisation?" le "+fmt(a.dateUtilisation):"")+".\nSolde restant : "+eur(a.solde||0)); return; }
+    const expire = a.expiration && new Date(a.expiration) < new Date();
+    if(a.clientId===c.id && !expire) { alert("Ce bon est déjà sur la fiche de "+c.prenom+" ("+eur(a.solde)+", valable jusqu'au "+fmt(a.expiration)+")."); return; }
+    let maj = {...a, clientId:c.id, client:c};
+    if(expire) {
+      if(!confirm("Ce bon de "+eur(a.solde)+" a expiré le "+fmt(a.expiration)+".\nLe prolonger d'un mois et le rattacher à "+c.prenom+" "+c.nom+" ?")) return;
+      const e = new Date(); e.setMonth(e.getMonth()+1); maj.expiration = e.toISOString();
+    } else if(!confirm("Bon "+code+" de "+eur(a.solde)+" trouvé (valable jusqu'au "+fmt(a.expiration)+").\nLe rattacher à "+c.prenom+" "+c.nom+" ?")) return;
+    STATE.avoirs = STATE.avoirs.map(x=>x.id===a.id ? maj : x);
+    lsSet("bj_avoirs", STATE.avoirs);
+    render(); alert("✅ Bon rattaché à "+c.prenom+" "+c.nom+".");
+    return;
+  }
+  // Bon introuvable : le recréer avec le même code
+  const type = code.startsWith("BIENVEN") ? "bienvenue" : code.startsWith("ANNIV") ? "anniversaire" : null;
+  const montantStr = prompt("Ce bon n'existe plus dans la caisse : il va être recréé avec le code "+code+".\nMontant du bon (€) :", type ? "5" : "");
+  if(montantStr===null) return;
+  const montant = parseFloat(String(montantStr).replace(",","."));
+  if(!(montant>0)) { alert("Montant invalide."); return; }
+  const base = (type==="bienvenue" && c.createdAt) ? new Date(c.createdAt) : new Date();
+  const exp = new Date(base); exp.setMonth(exp.getMonth()+3);
+  if(exp < new Date()) { exp.setTime(Date.now()); exp.setMonth(exp.getMonth()+1); }
+  const nouveau = { id: uid("AV"), code, date: base.toISOString(), expiration: exp.toISOString(), montant, solde: montant, utilise:false,
+    client: c, clientId: c.id, ...(type?{typeAvoir:type}:{}), recreeLe: new Date().toISOString() };
+  STATE.avoirs = [...(STATE.avoirs||[]), nouveau];
+  lsSet("bj_avoirs", STATE.avoirs);
+  render(); alert("✅ Bon "+code+" de "+eur(montant)+" recréé sur la fiche de "+c.prenom+" "+c.nom+" (valable jusqu'au "+fmt(exp)+").");
+};
+
 window.openClientDetail = id => { STATE.showClientDetail=STATE.clients.find(c=>c.id===id); render(); };
 
 // Complète rapidement le domaine de l'email client (Gmail, Outlook...) sans avoir à le taper
@@ -9099,6 +9139,10 @@ function renderClientDetail() {
             style="padding:10px;background:#fbeaf0;color:#993556;border:1px solid #f0c0cc;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;opacity:${c.anniversaire&&c.email?1:0.4};grid-column:1/-1;">
             🎁 Envoyer bon anniversaire 5€
           </button>
+          ${STATE.vendeur.id==="V1"?`<button onclick="retrouverBonCliente('${c.id}')"
+            style="padding:10px;background:#fff8e1;color:#854f0b;border:1px solid #fac775;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;grid-column:1/-1;">
+            🎟️ Retrouver un bon (code reçu par mail)
+          </button>`:""}
           <button onclick="ouvrirModalPromoClient('${c.id}')"
             ${c.email?"":"disabled"}
             style="padding:10px;background:#993556;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;opacity:${c.email?1:0.4};grid-column:1/-1;">
