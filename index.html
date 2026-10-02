@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "29/09 · v33 (retours artisans)";
+const APP_VERSION = "30/09 · v34 (filtre Octobre Rose)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -6954,6 +6954,8 @@ function renderStock() {
   if(filtreDateStock) {
     filtered = filtered.filter(p => (p.dateAjout||"").slice(0,10)===filtreDateStock);
   }
+  const estOR = p => p.octobreRose===true || (Array.isArray(p.octobreRose) && p.octobreRose.length>0);
+  if(STATE.filtreOctobreRose) filtered = filtered.filter(estOR);
   const isV1 = STATE.vendeur.id==="V1";
   const nbEtiq = Object.keys(STATE.etiqSelection||{}).filter(k=>(STATE.etiqSelection||{})[k]>0).length;
 
@@ -6963,6 +6965,8 @@ function renderStock() {
   html += '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;position:sticky;top:52px;z-index:50;background:#f5f0f2;padding:8px 0 8px 0;border-radius:0 0 8px 8px;">';
   html += '<input value="'+(STATE.searchProd||"")+'" id="stock-search" oninput="STATE.searchProd=this.value;clearTimeout(window._spTimer);window._spTimer=setTimeout(renderStockOnly,300)" placeholder="Rechercher..." style="flex:1;min-width:160px;"/>';
   if(nbEtiq>0) html += renderBoutonLotEtiq(nbEtiq);
+  { const nbOR = STATE.products.filter(estOR).length;
+    html += '<button onclick="STATE.filtreOctobreRose=!STATE.filtreOctobreRose;render()" class="btn-ghost" style="white-space:nowrap;'+(STATE.filtreOctobreRose?'background:#c2185b;color:#fff;border-color:#c2185b;':'color:#c2185b;border-color:#f3a6c3;')+'">🎀 Octobre Rose ('+nbOR+')</button>'; }
   if(STATE.vendeur.role!=="apprenti") html += '<button onclick="openProdModal(null)" class="btn-primary" style="width:auto;padding:8px 16px;">+ Nouvel article</button>';
   if(BOUTIQUES.length>1) html += '<button onclick="ouvrirStockAutreBoutique()" class="btn-ghost" style="white-space:nowrap;">🔍 Stock de l\'autre boutique</button>';
   if(BOUTIQUES.length>1) html += '<button onclick="setState({showHistoriqueTransferts:true})" class="btn-ghost" style="white-space:nowrap;">📦↔️ Transferts</button>';
@@ -6979,6 +6983,39 @@ function renderStock() {
   html += '<button onclick="imprimerEtiquettesJour()" style="padding:8px 14px;background:#3b6d11;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;white-space:nowrap;">🏷️ Étiquettes'+(articlesJour.length?' ('+articlesJour.length+')':'')+'</button>';
   html += '</div>';
   html += '</div>';
+
+  // Récapitulatif Octobre Rose : chaque article avec les couleurs réellement concernées
+  if(STATE.filtreOctobreRose) {
+    const liste = filtered.slice().sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+    const aPreciser = liste.filter(p => p.octobreRose===true && (p.couleurs||[]).length>1);
+    html += '<div style="background:#fce4ec;border:1px solid #f3a6c3;border-radius:12px;padding:12px 14px;margin-bottom:14px;">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;"><div style="font-weight:600;font-size:14px;color:#c2185b;">🎀 Articles Octobre Rose ('+liste.length+')</div>';
+    html += '<button onclick="STATE.filtreOctobreRose=false;render()" style="background:none;border:1px solid #c2185b;color:#c2185b;border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;">✕ Fermer</button></div>';
+    if(aPreciser.length) html += '<div style="background:#fff3cd;border-radius:8px;padding:7px 10px;font-size:12px;color:#856404;margin-bottom:8px;">⚠️ '+aPreciser.length+' article'+(aPreciser.length>1?'s ont':' a')+' plusieurs couleurs mais '+(aPreciser.length>1?'sont comptés':'est compté')+' en entier (toutes couleurs). Ouvre '+(aPreciser.length>1?'leur':'sa')+' fiche ✏️ et coche uniquement « Rose ».</div>';
+    if(!liste.length) html += '<div style="font-size:13px;color:#888;">Aucun article en Octobre Rose.</div>';
+    else {
+      html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:420px;background:#fff;border-radius:8px;">';
+      html += '<thead><tr style="color:#888;border-bottom:1px solid #f3d0dc;"><th style="text-align:left;padding:6px;">Article</th><th style="text-align:left;padding:6px;">Couleurs de l\'article</th><th style="text-align:left;padding:6px;">Compté en Octobre Rose</th><th style="text-align:right;padding:6px;">Stock concerné</th><th></th></tr></thead><tbody>';
+      liste.forEach(p => {
+        const couleurs = p.couleurs||[];
+        const toutes = p.octobreRose===true;
+        const concernees = toutes ? couleurs : p.octobreRose;
+        const sv = p.stockVariantes||{};
+        const stockConcerne = (toutes || !couleurs.length) ? (p.stock||0)
+          : Object.entries(sv).filter(([k])=>concernees.some(c=>k.split("_").slice(1).join("_").replace(/^_/,"")===c || k.endsWith("_"+c))).reduce((s,[,v])=>s+(parseInt(v)||0),0);
+        const alerte = toutes && couleurs.length>1;
+        html += '<tr style="border-bottom:0.5px solid #f8e1ea;'+(alerte?'background:#fffaf0;':'')+'">';
+        html += '<td style="padding:6px;font-weight:500;">'+p.name+'<div style="font-size:10px;color:#aaa;">'+(p.ref||"")+'</div></td>';
+        html += '<td style="padding:6px;color:#666;">'+(couleurs.length?couleurs.join(", "):"—")+'</td>';
+        html += '<td style="padding:6px;color:#c2185b;font-weight:600;">'+(toutes?(couleurs.length>1?'⚠️ Toutes les couleurs':'✅ Oui'):'✅ '+concernees.join(", "))+'</td>';
+        html += '<td style="padding:6px;text-align:right;">'+stockConcerne+'</td>';
+        html += '<td style="padding:6px;text-align:right;">'+((isV1)?'<button onclick="openProdModal(\''+p.id+'\')" class="btn-ghost" style="padding:3px 8px;">✏️</button>':'')+'</td>';
+        html += '</tr>';
+      });
+      html += '</tbody></table></div>';
+    }
+    html += '</div>';
+  }
 
   // Groupes de catégories
   const GROUPES = {
