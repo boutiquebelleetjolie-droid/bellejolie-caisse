@@ -88,14 +88,14 @@ const BOUTIQUE_CONFIG = {
   siret:    "",
   // Données "globales" partagées entre boutiques (clients, avoirs, fidélité)
   // Données "locales" propres à cette boutique (ventes, stock, Z de caisse, réservations)
-  DONNEES_GLOBALES: ["bj_clients","bj_avoirs","bj_promotions","bj_transferts"],
+  DONNEES_GLOBALES: ["bj_clients","bj_avoirs","bj_promotions","bj_transferts","bj_clients_suppr","bj_avoirs_suppr"],
   DONNEES_LOCALES:  ["bj_products","bj_ventes","bj_caisse_jour","bj_reservations","bj_annul_lignes","bj_attente","bj_depots_vente","bj_depots_banque","bj_solde_depot_reporte","bj_mouvements_defectueux","bj_ouvertures","bj_registre_personnel"],
 };
 
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "30/09 · v35 (recherche email)";
+const APP_VERSION = "30/09 · v36 (clientes protégées)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -283,6 +283,59 @@ function fusionnerProduits(base, arrivee) {
 }
 function signatureListeProduits(l) { return (l||[]).map(p=>p&&(p.id+":"+(p.majLe||""))).join("|"); }
 
+// ── Fusion générique des listes partagées (clientes, bons/avoirs) ──────────────
+// Même principe que les articles : jamais de remplacement en bloc par la liste d'un autre appareil,
+// fusion élément par élément (le plus récemment modifié gagne), suppressions volontaires mémorisées.
+const LISTES_FUSION = { bj_clients: {etat:"clients", suppr:"bj_clients_suppr", etatSuppr:"clientsSuppr"},
+                        bj_avoirs:  {etat:"avoirs",  suppr:"bj_avoirs_suppr",  etatSuppr:"avoirsSuppr"} };
+const _sigListes = {};
+function sigElem(x) { if(!x) return ""; const {majLe, ...r} = x; try { return JSON.stringify(r); } catch { return ""; } }
+function memoriserSigListe(key, liste) { _sigListes[key] = new Map((liste||[]).filter(x=>x&&x.id).map(x=>[x.id, sigElem(x)])); }
+function horodaterListe(key, liste) {
+  if(!Array.isArray(liste)) return;
+  if(!_sigListes[key]) { memoriserSigListe(key, liste); return; }
+  const now = new Date().toISOString(), ids = new Set();
+  liste.forEach(x => { if(!x||!x.id) return; ids.add(x.id); if(_sigListes[key].get(x.id)!==sigElem(x)) x.majLe = now; });
+  const supprimes = [..._sigListes[key].keys()].filter(id=>!ids.has(id));
+  memoriserSigListe(key, liste);
+  if(supprimes.length) {
+    const cfg = LISTES_FUSION[key];
+    STATE[cfg.etatSuppr] = [...new Set([...(STATE[cfg.etatSuppr]||[]), ...supprimes])];
+    try { localStorage.setItem(cleFirestore(cfg.suppr), JSON.stringify(STATE[cfg.etatSuppr])); } catch{}
+    firestorePush(cfg.suppr, STATE[cfg.etatSuppr]);
+  }
+}
+function fusionnerListe(key, base, arrivee) {
+  const cfg = LISTES_FUSION[key];
+  let suppr; try { suppr = new Set(STATE[cfg.etatSuppr]||[]); } catch { suppr = new Set(); }
+  const m = new Map();
+  (base||[]).forEach(x => { if(x && x.id && !suppr.has(x.id)) m.set(x.id, x); });
+  (arrivee||[]).forEach(x => { if(!x||!x.id||suppr.has(x.id)) return; const ex = m.get(x.id); if(!ex || (x.majLe||"") >= (ex.majLe||"")) m.set(x.id, x); });
+  return [...m.values()];
+}
+function sigListe(l) { return (l||[]).map(x=>x&&(x.id+":"+(x.majLe||""))).join("|"); }
+// Récupération des fiches clientes perdues à partir des copies gardées dans les bons et les tickets
+function recupererClientesPerdues() {
+  try {
+    const ids = new Set((STATE.clients||[]).map(c=>c.id)), suppr = new Set(STATE.clientsSuppr||[]);
+    const trouvees = new Map();
+    const emails = new Set((STATE.clients||[]).map(c=>normStr(c.email||"")).filter(Boolean));
+    // Seulement de vraies fiches : créées dans l'app (date de création) ou ayant une vraie vente,
+    // et dont l'email n'existe pas déjà (évite de ressusciter des comptes de test supprimés)
+    const prendre = (c, venteReelle) => { if(!c || !c.id || ids.has(c.id) || suppr.has(c.id) || !(c.prenom||c.nom)) return;
+      if(!c.createdAt && !venteReelle) return;
+      if(c.email && emails.has(normStr(c.email))) return;
+      const ex = trouvees.get(c.id); if(!ex || (c.montantCumule||0) >= (ex.montantCumule||0)) trouvees.set(c.id, c); };
+    (STATE.avoirs||[]).forEach(a => prendre(a.client, false));
+    (STATE.ventes||[]).forEach(v => { if(!v.test && !v.annulee && !v.correctionManuelle) prendre(v.client, true); });
+    if(!trouvees.size) return 0;
+    STATE.clients = [...(STATE.clients||[]), ...[...trouvees.values()].map(c => ({...c, recupereLe: new Date().toISOString()}))];
+    lsSet("bj_clients", STATE.clients);
+    console.log("Clientes récupérées :", trouvees.size);
+    return trouvees.size;
+  } catch(e) { console.error(e); return 0; }
+}
+
 // ── Journal des tickets : une copie de chaque vente dans son propre document cloud ──
 // Contrairement à la liste bj_ventes (un seul document, réécrit en entier), un ticket du journal
 // ne peut pas être effacé par un appareil en retard qui renvoie une liste périmée.
@@ -404,6 +457,22 @@ function firestorePush(key, val) {
 
   // Articles : les photos partent dans des documents séparés, la liste reste légère
   let aEnvoyer = val;
+  if(LISTES_FUSION[key] && Array.isArray(val)) {
+    const cfgL = LISTES_FUSION[key];
+    const refL = _fbDb.collection("bellejolie").doc(cle);
+    refL.get().then(doc => {
+      const serveur = doc.exists ? (doc.data().value||[]) : [];
+      const fusion = fusionnerListe(key, serveur, val);
+      if(sigListe(fusion)!==sigListe(val)) {
+        STATE[cfgL.etat] = fusion; memoriserSigListe(key, fusion);
+        try { localStorage.setItem(cle, JSON.stringify(fusion)); } catch{}
+        setTimeout(render, 0);
+      }
+      return refL.set({ value: fusion, maj: maintenant, device: DEVICE_ID });
+    }).then(() => { try { localStorage.setItem("bj_dernier_push_local", maintenant); } catch{} })
+    .catch(err => console.error("Firestore push (fusion "+key+") error:", err));
+    return;
+  }
   if(key==="bj_products" && Array.isArray(val)) {
     envoyerPhotosProduits(val);
     const refP = _fbDb.collection("bellejolie").doc(cle);
@@ -461,6 +530,8 @@ const CLES_SYNC_TEMPS_REEL = {
   bj_ventes_suppr: "ventesSuppr",
   bj_retouches: "retouches",
   bj_products_suppr: "produitsSuppr",
+  bj_clients_suppr: "clientsSuppr",
+  bj_avoirs_suppr: "avoirsSuppr",
   bj_commission_artisan: "commissionArtisan",
   bj_releve_tpe: "releveTPE",
 };
@@ -476,6 +547,18 @@ function demarrerSyncTempsReel() {
       if(doc.metadata.hasPendingWrites) return; // écriture locale pas encore confirmée par le serveur, on ignore
       if(CLES_SYNC_PROTEGEES.has(stateKey) && !data.value && STATE[stateKey]) return; // ne pas écraser un réglage configuré par du vide venu d'ailleurs
       // Articles : la liste du cloud n'a pas les photos, on rattache celles déjà présentes ici
+      if(LISTES_FUSION[storageKey]) {
+        try {
+          const cfgL = LISTES_FUSION[storageKey];
+          const recus = data.value||[];
+          const fusion = fusionnerListe(storageKey, STATE[cfgL.etat]||[], recus);
+          STATE[cfgL.etat] = fusion; memoriserSigListe(storageKey, fusion);
+          localStorage.setItem(cleFirestore(storageKey), JSON.stringify(fusion));
+          if(sigListe(fusion)!==sigListe(recus)) firestorePush(storageKey, fusion);
+          render(); afficherBandeauSyncDiscret();
+        } catch(err) { console.error("Erreur fusion "+storageKey+":", err); }
+        return;
+      }
       if(storageKey==="bj_products") {
         try {
           const recus = attacherPhotosLocales(data.value||[]);
@@ -508,6 +591,12 @@ function demarrerSyncTempsReel() {
           (data.value||[]).forEach((sv,i)=>{ if(VENDEURS[i]&&sv.code) VENDEURS[i].code=sv.code; });
         } else {
           STATE[stateKey] = data.value;
+        }
+        if(storageKey==="bj_clients_suppr" || storageKey==="bj_avoirs_suppr") {
+          const k = storageKey==="bj_clients_suppr" ? "bj_clients" : "bj_avoirs", e = LISTES_FUSION[k].etat;
+          const sup = new Set(data.value||[]);
+          const f = (STATE[e]||[]).filter(x=>!sup.has(x.id));
+          if(f.length!==(STATE[e]||[]).length) { STATE[e] = f; memoriserSigListe(k, f); localStorage.setItem(cleFirestore(k), JSON.stringify(f)); }
         }
         if(storageKey==="bj_products_suppr") {
           const supprP = new Set(data.value||[]);
@@ -551,6 +640,7 @@ const DB = {
       try {
         if(key==="bj_ventes") allegerVentes(val);
         if(key==="bj_products") horodaterProduits(val);
+        if(LISTES_FUSION[key]) horodaterListe(key, val);
         localStorage.setItem(cleFirestore(key), JSON.stringify(val));
         firestorePush(key, val); // sauvegarde cloud en tâche de fond, ne bloque jamais l'appli
       } catch(err) {
@@ -986,6 +1076,8 @@ let STATE = {
   ventesSuppr: ls("bj_ventes_suppr", []),
   retouches: ls("bj_retouches", []),
   produitsSuppr: ls("bj_products_suppr", []),
+  clientsSuppr: ls("bj_clients_suppr", []),
+  avoirsSuppr: ls("bj_avoirs_suppr", []),
   commissionArtisan: ls("bj_commission_artisan", 20),
   releveTPE: ls("bj_releve_tpe", {}),
   showRetoucheForm: false, retoucheForm: null, showSuiviRetouches: false, filtreRetouches: "encours",
@@ -18522,6 +18614,9 @@ demarrerSyncTempsReel();
 
 // Journal des tickets (stockage cloud des ventes, un document par vente) : synchro + écoute temps réel
 memoriserSignaturesProduits(STATE.products||[]);
+memoriserSigListe("bj_clients", STATE.clients||[]);
+memoriserSigListe("bj_avoirs", STATE.avoirs||[]);
+setTimeout(() => { if(recupererClientesPerdues()) render(); }, 12000);
 // Arrondi au centime des ventes enregistrées avec des fractions de centime (remises en % non arrondies)
 (function(){
   const r2 = n => Math.round(n*100)/100;
