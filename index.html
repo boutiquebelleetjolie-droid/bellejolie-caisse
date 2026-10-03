@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "30/09 · v38 (retrouver un bon)";
+const APP_VERSION = "01/10 · v39 (détail Octobre Rose)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -10432,6 +10432,88 @@ function retoursArtisanSansTicket(v, prodMap, idsVentes) {
 }
 function idsVentesValides() { return new Set((STATE.ventes||[]).filter(v=>!v.test&&!v.annulee).map(v=>v.id)); }
 
+// ── Octobre Rose : détail des articles vendus (retours avec ticket retirés) ──
+function lignesOctobreRose(mois, annee) {
+  const prodMap = {}; (STATE.products||[]).forEach(p=>prodMap[p.id]=p);
+  const ids = idsVentesValides();
+  const lignes = [];
+  (STATE.ventes||[]).forEach(v => {
+    if(v.test || v.annulee) return;
+    const d = new Date(v.date); if(d.getMonth()!==mois || d.getFullYear()!==annee) return;
+    const restants = {...(v.articlesRetournes||{})};
+    (v.panier||[]).forEach(i => {
+      if(i.avoirId || i.id==="correction_manuelle") return;
+      const pid = i.prodIdOriginal || String(i.id||"").replace(/^R_/,"");
+      const p = prodMap[pid];
+      if(!estOctobreRose(p, i.couleur, v.date)) return;
+      const q = i.qty||1;
+      if(i.retour) {
+        if(i.retourVenteId && ids.has(i.retourVenteId)) return; // déjà retiré de la vente d'origine
+        const rem = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/q:0;
+        lignes.push({date:v.date, venteId:v.id, article:p.name||i.name, couleur:i.couleur||"", taille:i.taille||"", qty:-q, montant:-Math.max(0,i.price-rem)*q, retour:true});
+        return;
+      }
+      const r = Math.min(q, restants[pid]||0); if(r) restants[pid] -= r;
+      const net = q - r; if(net<=0) return;
+      lignes.push({date:v.date, venteId:v.id, article:p.name||i.name, couleur:i.couleur||"", taille:i.taille||"", qty:net, montant:calculerPrixPayeReel(v, i)*net, retour:false});
+    });
+  });
+  return lignes.sort((a,b)=>new Date(a.date)-new Date(b.date)).map(l=>({...l, montant:Math.round(l.montant*100)/100}));
+}
+function renderOctobreRoseDetail(mois, annee) {
+  if(STATE.vendeur.id!=="V1") return "";
+  if(mois!==9) return "";
+  const lignes = lignesOctobreRose(mois, annee);
+  const ca = lignes.reduce((s,l)=>s+l.montant,0), nb = lignes.reduce((s,l)=>s+l.qty,0), don = ca*0.10;
+  const parArticle = {};
+  lignes.forEach(l => { const k = l.article+(l.couleur?" — "+l.couleur:""); const a = parArticle[k] = parArticle[k]||{qty:0, ca:0}; a.qty += l.qty; a.ca += l.montant; });
+  const resume = Object.entries(parArticle).sort((a,b)=>b[1].ca-a[1].ca);
+  const ouvert = !!STATE._orDetailOuvert;
+  const fmtD = d => new Date(d).toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit"})+" "+new Date(d).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+  return `
+  <div style="background:#fff;border:1px solid #f3a6c3;border-radius:12px;padding:14px;margin-bottom:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+      <div style="font-weight:600;font-size:14px;color:#c2185b;">🎀 Octobre Rose ${annee} — détail des ventes</div>
+      <button onclick="imprimerOctobreRose(${annee})" style="background:#c2185b;color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;">🖨️ Imprimer le détail</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:10px;">
+      <div style="background:#fce4ec;border-radius:9px;padding:9px 10px;"><div style="font-size:11px;color:#c2185b;">Articles vendus</div><div style="font-size:18px;font-weight:700;color:#c2185b;">${nb}</div></div>
+      <div style="background:#fce4ec;border-radius:9px;padding:9px 10px;"><div style="font-size:11px;color:#c2185b;">CA Octobre Rose</div><div style="font-size:18px;font-weight:700;color:#c2185b;">${eur(ca)}</div></div>
+      <div style="background:#c2185b;border-radius:9px;padding:9px 10px;"><div style="font-size:11px;color:#fff;">10 % à reverser</div><div style="font-size:18px;font-weight:700;color:#fff;">${eur(don)}</div></div>
+    </div>
+    ${resume.length?`<div style="font-weight:600;font-size:13px;margin:4px 0 6px;">Par article</div>
+    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:320px;">
+      <thead><tr style="color:#888;border-bottom:1px solid #f3d0dc;"><th style="text-align:left;padding:5px;">Article</th><th style="text-align:right;padding:5px;">Qté</th><th style="text-align:right;padding:5px;">CA</th><th style="text-align:right;padding:5px;">10 %</th></tr></thead>
+      <tbody>${resume.map(([k,a])=>`<tr style="border-bottom:0.5px solid #f8e1ea;"><td style="padding:5px;">${k}</td><td style="padding:5px;text-align:right;">${a.qty}</td><td style="padding:5px;text-align:right;font-weight:600;">${eur(a.ca)}</td><td style="padding:5px;text-align:right;color:#c2185b;">${eur(a.ca*0.10)}</td></tr>`).join("")}</tbody>
+    </table></div>
+    <button onclick="STATE._orDetailOuvert=${!ouvert};render()" style="margin-top:10px;background:none;border:1px solid #f3a6c3;color:#c2185b;border-radius:7px;padding:5px 12px;font-size:12px;cursor:pointer;">${ouvert?"▲ Masquer le détail vente par vente":"▼ Voir le détail vente par vente ("+lignes.length+")"}</button>
+    ${ouvert?`<div style="overflow-x:auto;margin-top:8px;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:460px;">
+      <thead><tr style="color:#888;border-bottom:1px solid #f3d0dc;"><th style="text-align:left;padding:5px;">Date</th><th style="text-align:left;padding:5px;">Article</th><th style="text-align:left;padding:5px;">Couleur / taille</th><th style="text-align:right;padding:5px;">Qté</th><th style="text-align:right;padding:5px;">Prix payé</th></tr></thead>
+      <tbody>${lignes.map(l=>`<tr style="border-bottom:0.5px solid #f8e1ea;cursor:pointer;" onclick="voirTicketVenteId('${l.venteId}')"><td style="padding:5px;white-space:nowrap;">${fmtD(l.date)}</td><td style="padding:5px;">${l.article}${l.retour?" <span style='color:#a32d2d;'>(retour sans ticket)</span>":""}</td><td style="padding:5px;color:#666;">${[l.couleur,l.taille].filter(Boolean).join(" · ")||"—"}</td><td style="padding:5px;text-align:right;">${l.qty}</td><td style="padding:5px;text-align:right;font-weight:600;">${eur(l.montant)}</td></tr>`).join("")}</tbody>
+    </table></div>`:""}`:`<div style="font-size:13px;color:#888;">Aucune vente Octobre Rose pour l'instant.</div>`}
+    <div style="font-size:10px;color:#aaa;margin-top:8px;">Seules les couleurs cochées dans les fiches comptent. Les articles rapportés avec leur ticket sont retirés.</div>
+  </div>`;
+}
+window.imprimerOctobreRose = (annee) => {
+  const lignes = lignesOctobreRose(9, annee);
+  const ca = lignes.reduce((s,l)=>s+l.montant,0), nb = lignes.reduce((s,l)=>s+l.qty,0);
+  const parArticle = {};
+  lignes.forEach(l => { const k = l.article+(l.couleur?" — "+l.couleur:""); const a = parArticle[k] = parArticle[k]||{qty:0, ca:0}; a.qty += l.qty; a.ca += l.montant; });
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Octobre Rose ${annee}</title><style>
+    body{font-family:Arial,sans-serif;max-width:700px;margin:20px auto;color:#111;font-size:12px}h1{color:#c2185b;font-size:19px;margin:0}
+    table{width:100%;border-collapse:collapse;margin-top:6px}td,th{padding:4px 6px;border-bottom:1px solid #eee;text-align:left}.r{text-align:right}
+    .tot td{font-weight:700;background:#fce4ec}h2{font-size:14px;color:#c2185b;margin:16px 0 4px}</style></head><body>
+    <h1>Belle&amp;Jolie — Octobre Rose ${annee}</h1><p>Détail des ventes · édité le ${new Date().toLocaleDateString("fr-FR")}</p>
+    <h2>Récapitulatif</h2><table><tr><td>Articles vendus</td><td class="r">${nb}</td></tr><tr><td>CA Octobre Rose TTC</td><td class="r">${eur(ca)}</td></tr>
+    <tr class="tot"><td>Montant reversé (10 %)</td><td class="r">${eur(ca*0.10)}</td></tr></table>
+    <h2>Par article</h2><table><tr><th>Article</th><th class="r">Qté</th><th class="r">CA</th></tr>
+    ${Object.entries(parArticle).sort((a,b)=>b[1].ca-a[1].ca).map(([k,a])=>`<tr><td>${k}</td><td class="r">${a.qty}</td><td class="r">${eur(a.ca)}</td></tr>`).join("")}</table>
+    <h2>Détail vente par vente</h2><table><tr><th>Date</th><th>Article</th><th>Couleur / taille</th><th class="r">Qté</th><th class="r">Prix payé</th></tr>
+    ${lignes.map(l=>`<tr><td>${new Date(l.date).toLocaleDateString("fr-FR")}</td><td>${l.article}${l.retour?" (retour)":""}</td><td>${[l.couleur,l.taille].filter(Boolean).join(" · ")||"—"}</td><td class="r">${l.qty}</td><td class="r">${eur(l.montant)}</td></tr>`).join("")}</table>
+    <script>window.onload=()=>window.print()<\/script></body></html>`;
+  const w = window.open("","_blank","width=760,height=900"); if(w) { w.document.write(html); w.document.close(); }
+};
+
 // ── Bilan des produits d'artisans (dépôt avec commission) : jour / semaine / mois ──
 function periodeArtisans() {
   const ref = new Date((STATE.artRef||dateLocaleStr())+"T12:00:00");
@@ -10982,6 +11064,7 @@ function renderBilan() {
     ${renderSuiviEncaissementsMois(STATE.bilanMonth, STATE.bilanYear)}
     ${renderControleZ(STATE.bilanMonth, STATE.bilanYear)}
     ${renderBilanArtisans()}
+    ${renderOctobreRoseDetail(STATE.bilanMonth, STATE.bilanYear)}
 
     <!-- KPIs principaux — Objectifs mensuel / trim / sem / annuel -->
     ${(()=>{
