@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "01/10 · v40 (artisans regroupés)";
+const APP_VERSION = "01/10 · v41 (stock artisans)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -7101,6 +7101,7 @@ function renderStock() {
   }
   const estOR = p => p.octobreRose===true || (Array.isArray(p.octobreRose) && p.octobreRose.length>0);
   if(STATE.filtreOctobreRose) filtered = filtered.filter(estOR);
+  if(STATE.filtreArtisans) filtered = filtered.filter(p=>p.artisanat);
   const isV1 = STATE.vendeur.id==="V1";
   const nbEtiq = Object.keys(STATE.etiqSelection||{}).filter(k=>(STATE.etiqSelection||{})[k]>0).length;
 
@@ -7110,8 +7111,10 @@ function renderStock() {
   html += '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;position:sticky;top:52px;z-index:50;background:#f5f0f2;padding:8px 0 8px 0;border-radius:0 0 8px 8px;">';
   html += '<input value="'+(STATE.searchProd||"")+'" id="stock-search" oninput="STATE.searchProd=this.value;clearTimeout(window._spTimer);window._spTimer=setTimeout(renderStockOnly,300)" placeholder="Rechercher..." style="flex:1;min-width:160px;"/>';
   if(nbEtiq>0) html += renderBoutonLotEtiq(nbEtiq);
+  { const nbArt = STATE.products.filter(p=>p.artisanat).length;
+    html += '<button onclick="STATE.filtreArtisans=!STATE.filtreArtisans;STATE.filtreOctobreRose=false;render()" class="btn-ghost" style="white-space:nowrap;'+(STATE.filtreArtisans?'background:#6a3d9a;color:#fff;border-color:#6a3d9a;':'color:#6a3d9a;border-color:#d9c2ee;')+'">🎨 Artisans ('+nbArt+')</button>'; }
   { const nbOR = STATE.products.filter(estOR).length;
-    html += '<button onclick="STATE.filtreOctobreRose=!STATE.filtreOctobreRose;render()" class="btn-ghost" style="white-space:nowrap;'+(STATE.filtreOctobreRose?'background:#c2185b;color:#fff;border-color:#c2185b;':'color:#c2185b;border-color:#f3a6c3;')+'">🎀 Octobre Rose ('+nbOR+')</button>'; }
+    html += '<button onclick="STATE.filtreOctobreRose=!STATE.filtreOctobreRose;STATE.filtreArtisans=false;render()" class="btn-ghost" style="white-space:nowrap;'+(STATE.filtreOctobreRose?'background:#c2185b;color:#fff;border-color:#c2185b;':'color:#c2185b;border-color:#f3a6c3;')+'">🎀 Octobre Rose ('+nbOR+')</button>'; }
   if(STATE.vendeur.role!=="apprenti") html += '<button onclick="openProdModal(null)" class="btn-primary" style="width:auto;padding:8px 16px;">+ Nouvel article</button>';
   if(BOUTIQUES.length>1) html += '<button onclick="ouvrirStockAutreBoutique()" class="btn-ghost" style="white-space:nowrap;">🔍 Stock de l\'autre boutique</button>';
   if(BOUTIQUES.length>1) html += '<button onclick="setState({showHistoriqueTransferts:true})" class="btn-ghost" style="white-space:nowrap;">📦↔️ Transferts</button>';
@@ -7128,6 +7131,32 @@ function renderStock() {
   html += '<button onclick="imprimerEtiquettesJour()" style="padding:8px 14px;background:#3b6d11;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;white-space:nowrap;">🏷️ Étiquettes'+(articlesJour.length?' ('+articlesJour.length+')':'')+'</button>';
   html += '</div>';
   html += '</div>';
+
+  // Récapitulatif des produits d'artisans, regroupés par artisan
+  if(STATE.filtreArtisans) {
+    window._canonArtisans = {};
+    const parA = {};
+    filtered.forEach(p => { const n = nomArtisanCanon(p.nomArtisan); (parA[n] = parA[n] || []).push(p); });
+    const noms = Object.keys(parA).sort((a,b)=>a.localeCompare(b));
+    const peutModif = isV1 || peutGererArtisans();
+    html += '<div style="background:#f3e8fc;border:1px solid #d9c2ee;border-radius:12px;padding:12px 14px;margin-bottom:14px;">';
+    html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;"><div style="font-weight:600;font-size:14px;color:#6a3d9a;">🎨 Produits d\'artisans — '+filtered.length+' article'+(filtered.length>1?'s':'')+' · '+noms.length+' artisan'+(noms.length>1?'s':'')+'</div>';
+    html += '<div style="display:flex;gap:6px;">'+(peutModif?'<button onclick="openProdModal(null);STATE.prodForm.artisanat=true;render()" style="background:#6a3d9a;color:#fff;border:none;border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;">+ Article d\'artisan</button>':'')+'<button onclick="STATE.filtreArtisans=false;render()" style="background:none;border:1px solid #6a3d9a;color:#6a3d9a;border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;">✕ Fermer</button></div></div>';
+    if(!noms.length) html += '<div style="font-size:13px;color:#888;">Aucun produit d\'artisan.</div>';
+    noms.forEach(n => {
+      const ps = parA[n].slice().sort((a,b)=>(a.name||"").localeCompare(b.name||""));
+      const unites = ps.reduce((s,p)=>s+(p.stock||0),0), valeur = ps.reduce((s,p)=>s+(p.stock||0)*(p.price||0),0);
+      html += '<div style="background:#fff;border-radius:9px;padding:8px 10px;margin-bottom:8px;">';
+      html += '<div style="display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:13px;margin-bottom:4px;"><strong style="color:#6a3d9a;">'+n+'</strong><span style="color:#888;font-size:12px;">'+ps.length+' réf. · '+unites+' en stock · '+eur(valeur)+'</span></div>';
+      ps.forEach(p => {
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:12px;padding:4px 0;border-top:0.5px dashed #ecdff6;">';
+        html += '<span>'+p.name+(p.tailles&&p.tailles.length?' <span style="color:#aaa;">('+p.tailles.join(", ")+')</span>':'')+'</span>';
+        html += '<span style="white-space:nowrap;color:#555;">'+eur(p.price||0)+' · stock <strong style="color:'+((p.stock||0)<=0?'#a32d2d':'#333')+';">'+(p.stock||0)+'</strong>'+(peutModif?' <button onclick="openProdModal(\''+p.id+'\')" class="btn-ghost" style="padding:2px 7px;margin-left:4px;">✏️</button>':'')+'</span></div>';
+      });
+      html += '</div>';
+    });
+    html += '</div>';
+  }
 
   // Récapitulatif Octobre Rose : chaque article avec les couleurs réellement concernées
   if(STATE.filtreOctobreRose) {
