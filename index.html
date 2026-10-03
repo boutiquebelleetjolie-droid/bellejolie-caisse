@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "02/10 · v44 (impression ticket)";
+const APP_VERSION = "02/10 · v45 (prix en caisse)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -5181,6 +5181,33 @@ window.supprimerLignePanier = (idx) => {
   }
 };
 
+// Articles « prix à indiquer en caisse » : le prix est demandé à chaque ajout, avec la formule en rappel.
+// Chaque ajout crée sa propre ligne (deux prix différents ne sont jamais fusionnés).
+(function(){
+  const addToCartBase = window.addToCart;
+  window.addToCart = (id, taille, couleur, ...rest) => {
+    const p = (STATE.products||[]).find(x=>x.id===id);
+    if(!p || !p.prixLibre) return addToCartBase(id, taille, couleur, ...rest);
+    const nbT = (p.tailles||[]).filter(Boolean).length, nbC = (p.couleurs||[]).filter(Boolean).length;
+    // Plusieurs tailles/couleurs sans choix : le sélecteur s'ouvre d'abord, le prix sera demandé ensuite
+    if((nbT>1 || nbC>1) && taille===undefined && couleur===undefined) return addToCartBase(id, taille, couleur, ...rest);
+    const saisie = prompt("Prix à indiquer pour « "+p.name+" » (€) :"+(p.formulePrix?"\n\nFormule : "+p.formulePrix:""), p.price>0 ? String(p.price).replace(".",",") : "");
+    if(saisie===null) return;
+    const prix = parseFloat(String(saisie).replace(",",".").replace(/\s/g,""));
+    if(isNaN(prix) || prix<0) { alert("Prix invalide."); return; }
+    const avant = STATE.panier.map(l=>({id:l.id, qty:l.qty}));
+    addToCartBase(id, taille, couleur, ...rest);
+    const ajoutee = STATE.panier.find(l=>!avant.some(a=>a.id===l.id));
+    const fusionnee = !ajoutee && STATE.panier.find(l=>{ const a = avant.find(x=>x.id===l.id); return a && l.qty>a.qty; });
+    let base = ajoutee || fusionnee; if(!base) return;
+    const nouvelle = {...base, id: base.id+"_PL"+Date.now().toString(36), prodIdOriginal: base.prodIdOriginal||p.id,
+      price: Math.round(prix*100)/100, prixOriginal: undefined, promoNom: undefined, qty: 1, remise:"", remiseType:"", prixLibre: true};
+    if(ajoutee) STATE.panier = STATE.panier.map(l=>l===ajoutee ? nouvelle : l);
+    else STATE.panier = [...STATE.panier.map(l=>l===fusionnee ? {...l, qty:l.qty-1} : l), nouvelle];
+    render();
+  };
+})();
+
 window.removeFromCartAvecJournal = (id, nom, prix, qty) => {
   if(!confirm("Voulez-vous supprimer « "+nom+" » de ce ticket ?")) return;
   let motif = "";
@@ -7495,7 +7522,7 @@ window.saveProd = () => {
   const f = STATE.prodForm;
   if(!f.name||!f.name.trim())       {alert("Entrez un nom d'article.");   return;}
   if(!f.category)                   {alert("⚠️ Veuillez choisir une catégorie avant d'enregistrer."); return;}
-  if(!f.price||isNaN(parseFloat(f.price))) {alert("Entrez un prix valide."); return;}
+  if(!f.prixLibre && (!f.price||isNaN(parseFloat(f.price)))) {alert("Entrez un prix valide."); return;}
   if(f.stock===""||isNaN(parseInt(f.stock))){alert("Entrez un stock.");      return;}
 
   const existant = STATE.editProdId ? STATE.products.find(p=>p.id===STATE.editProdId) : null;
@@ -7533,7 +7560,9 @@ window.saveProd = () => {
     name:           f.name.trim(),
     marque:         (f.marque||"").trim(),
     category:       f.category||"",
-    price:          parseFloat(f.price),
+    price:          (f.prixLibre && (f.price===""||f.price==null||isNaN(parseFloat(f.price)))) ? 0 : parseFloat(f.price),
+    prixLibre:      !!f.prixLibre,
+    formulePrix:    f.prixLibre ? (f.formulePrix||"") : "",
     stock:          nouveauStock,
     ref:            f.ref||uid("REF-"),
     barcode:        f.barcode||genBC(),
@@ -7766,6 +7795,8 @@ function renderProdModal() {
         : '<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#c2185b;cursor:pointer;margin-bottom:10px;background:#fce4ec;border-radius:7px;padding:6px 10px;"><input type="checkbox" '+(f.octobreRose===true?'checked':'')+' onchange="STATE.prodForm.octobreRose=this.checked" style="width:16px;height:16px;"/> 🎀 Octobre Rose (10% reversés à l\'association)</label>')
       +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#6a3d9a;cursor:pointer;margin-bottom:6px;background:#f3e8fc;border-radius:7px;padding:6px 10px;"><input type="checkbox" '+(f.artisanat?'checked':'')+' onchange="STATE.prodForm.artisanat=this.checked;render()" style="width:16px;height:16px;"/> 🎨 Produit d\'artisan</label>'
       +(f.artisanat?'<div style="margin-bottom:10px;"><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Nom de l\'artisan / atelier</label><input value="'+(f.nomArtisan||'')+'" oninput="STATE.prodForm.nomArtisan=this.value" placeholder="Ex: Atelier Claire M." style="width:100%;box-sizing:border-box;"/></div>':'')
+      +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#185fa5;cursor:pointer;margin-bottom:6px;background:#eef4fd;border-radius:7px;padding:6px 10px;"><input type="checkbox" '+(f.prixLibre?'checked':'')+' onchange="STATE.prodForm.prixLibre=this.checked;render()" style="width:16px;height:16px;"/> 💶 Prix à indiquer en caisse</label>'
+      +(f.prixLibre?'<div style="margin-bottom:10px;"><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Formule de prix (rappelée en caisse)</label><input value="'+String(f.formulePrix||'').replace(/"/g,'&quot;')+'" oninput="STATE.prodForm.formulePrix=this.value" placeholder="Ex : 1 créole 7 € · 2 créoles 12 € · 3 créoles 20 €" style="width:100%;box-sizing:border-box;"/><div style="font-size:10px;color:#888;margin-top:3px;">Le prix de vente peut rester vide : il sera demandé à chaque passage en caisse.</div></div>':'')
       +'</div>'
     +'<div></div>'
     +(isV1?blocPrix:"")
