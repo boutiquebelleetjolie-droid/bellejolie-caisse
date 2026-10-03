@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "02/10 · v46 (formules pampilles)";
+const APP_VERSION = "02/10 · v47 (créole + pampilles)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -5201,9 +5201,12 @@ function parseFormulePrix(txt) {
     const ajoutee = STATE.panier.find(l=>!avant.some(a=>a.id===l.id));
     const fusionnee = !ajoutee && STATE.panier.find(l=>{ const a = avant.find(x=>x.id===l.id); return a && l.qty>a.qty; });
     const base = ajoutee || fusionnee; if(!base) return;
-    const nouvelle = {...base, id: base.id+"_PL"+Date.now().toString(36), prodIdOriginal: base.prodIdOriginal||p.id,
-      name: p.name+(libelle?" — "+libelle:""), price: Math.round(prix*100)/100, prixOriginal: undefined, promoNom: undefined,
-      qty: 1, remise:"", remiseType:"", prixLibre: true, formuleChoisie: libelle||""};
+    // Un libellé qui commence par un nombre (« 2 pampilles ») donne la quantité : stock et relevé au bon nombre
+    const mQ = String(libelle||"").match(/^\s*(\d+)\b/);
+    const qte = mQ ? Math.max(1, parseInt(mQ[1])) : 1;
+    const nouvelle = {...base, id: base.id+"_PL"+Date.now().toString(36)+Math.random().toString(36).slice(2,5), prodIdOriginal: base.prodIdOriginal||p.id,
+      name: p.name+(libelle?" — "+libelle:""), price: Math.round(prix/qte*100)/100, prixOriginal: undefined, promoNom: undefined,
+      qty: qte, remise:"", remiseType:"", prixLibre: true, formuleChoisie: libelle||""};
     if(ajoutee) STATE.panier = STATE.panier.map(l=>l===ajoutee ? nouvelle : l);
     else STATE.panier = [...STATE.panier.map(l=>l===fusionnee ? {...l, qty:l.qty-1} : l), nouvelle];
     STATE.choixPrixLibre = null;
@@ -5236,6 +5239,14 @@ window.choisirFormulePrix = (index) => {
   }
   const o = opts[index]; if(!o) return;
   window._ajouterLignePrixLibre(c.id, c.taille, c.couleur, c.rest, o.prix, o.libelle);
+  // Article lié (ex. pampilles d'artisan) : même nombre que dans le libellé choisi
+  const lie = p.produitLieId && (STATE.products||[]).find(x=>x.id===p.produitLieId);
+  const nb = (String(o.libelle).match(/(\d+)/)||[])[1];
+  if(lie && nb) {
+    const optLie = parseFormulePrix(lie.formulePrix).find(x => (String(x.libelle).match(/^\s*(\d+)/)||[])[1]===nb);
+    if(optLie) window._ajouterLignePrixLibre(lie.id, undefined, undefined, [], optLie.prix, optLie.libelle);
+    else if(lie.price>0) { for(let k=0;k<parseInt(nb);k++) window._ajouterLignePrixLibre(lie.id, undefined, undefined, [], lie.price, ""); }
+  }
 };
 function renderChoixPrixLibre() {
   const c = STATE.choixPrixLibre; if(!c) return "";
@@ -7613,6 +7624,7 @@ window.saveProd = () => {
     price:          (f.prixLibre && (f.price===""||f.price==null||isNaN(parseFloat(f.price)))) ? 0 : parseFloat(f.price),
     prixLibre:      !!f.prixLibre,
     formulePrix:    f.prixLibre ? (f.formulePrix||"") : "",
+    produitLieId:   f.prixLibre ? (f.produitLieId||"") : "",
     stock:          nouveauStock,
     ref:            f.ref||uid("REF-"),
     barcode:        f.barcode||genBC(),
@@ -7846,7 +7858,12 @@ function renderProdModal() {
       +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#6a3d9a;cursor:pointer;margin-bottom:6px;background:#f3e8fc;border-radius:7px;padding:6px 10px;"><input type="checkbox" '+(f.artisanat?'checked':'')+' onchange="STATE.prodForm.artisanat=this.checked;render()" style="width:16px;height:16px;"/> 🎨 Produit d\'artisan</label>'
       +(f.artisanat?'<div style="margin-bottom:10px;"><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Nom de l\'artisan / atelier</label><input value="'+(f.nomArtisan||'')+'" oninput="STATE.prodForm.nomArtisan=this.value" placeholder="Ex: Atelier Claire M." style="width:100%;box-sizing:border-box;"/></div>':'')
       +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#185fa5;cursor:pointer;margin-bottom:6px;background:#eef4fd;border-radius:7px;padding:6px 10px;"><input type="checkbox" '+(f.prixLibre?'checked':'')+' onchange="STATE.prodForm.prixLibre=this.checked;render()" style="width:16px;height:16px;"/> 💶 Prix à indiquer en caisse</label>'
-      +(f.prixLibre?'<div style="margin-bottom:10px;"><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Formule de prix (rappelée en caisse)</label><input value="'+String(f.formulePrix||'').replace(/"/g,'&quot;')+'" oninput="STATE.prodForm.formulePrix=this.value" placeholder="Ex : 1 pampille 7 € · 2 pampilles 12 € · 3 pampilles 20 €" style="width:100%;box-sizing:border-box;"/><div style="font-size:10px;color:#888;margin-top:3px;">Sépare les formules par « · » ou « ; ». En caisse, chaque formule devient un bouton à choisir. Le prix de vente peut rester vide.</div>'+(parseFormulePrix(f.formulePrix).length?'<div style="font-size:11px;color:#185fa5;margin-top:4px;">Aperçu : '+parseFormulePrix(f.formulePrix).map(o=>o.libelle+' → '+eur(o.prix)).join(' · ')+'</div>':'')+'</div>':'')
+      +(f.prixLibre?'<div style="margin-bottom:10px;"><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Formule de prix (rappelée en caisse)</label><input value="'+String(f.formulePrix||'').replace(/"/g,'&quot;')+'" oninput="STATE.prodForm.formulePrix=this.value" placeholder="Ex : 1 pampille 7 € · 2 pampilles 12 € · 3 pampilles 20 €" style="width:100%;box-sizing:border-box;"/><div style="font-size:10px;color:#888;margin-top:3px;">Sépare les formules par « · » ou « ; ». En caisse, chaque formule devient un bouton à choisir. Le prix de vente peut rester vide.</div>'+(parseFormulePrix(f.formulePrix).length?'<div style="font-size:11px;color:#185fa5;margin-top:4px;">Aperçu : '+parseFormulePrix(f.formulePrix).map(o=>o.libelle+' → '+eur(o.prix)).join(' · ')+'</div>':'')
+        +'<label style="font-size:11px;color:#888;display:block;margin:8px 0 3px;">Article ajouté automatiquement avec chaque formule (facultatif)</label>'
+        +'<select onchange="STATE.prodForm.produitLieId=this.value" style="width:100%;box-sizing:border-box;"><option value="">— aucun —</option>'
+        +(STATE.products||[]).filter(x=>x.prixLibre && x.id!==STATE.editProdId).map(x=>'<option value="'+x.id+'" '+(f.produitLieId===x.id?'selected':'')+'>'+x.name+(x.artisanat?' (artisan '+(x.nomArtisan||'')+')':'')+'</option>').join('')
+        +'</select><div style="font-size:10px;color:#888;margin-top:3px;">Ex. sur la créole : « Pampilles Isaline ». En choisissant « avec 2 pampilles », la formule « 2 pampilles » de l\'article lié est ajoutée aussi.</div>'
+        +'</div>':'')
       +'</div>'
     +'<div></div>'
     +(isV1?blocPrix:"")
