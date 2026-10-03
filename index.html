@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "01/10 · v43 (artisans dus)";
+const APP_VERSION = "02/10 · v44 (impression ticket)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -4493,7 +4493,7 @@ function renderCarteCadeauModal() {
             </div>
           `).join("")}
         </div>
-        <button onclick="window.print()" class="btn-primary" style="margin-top:6px;">🖨️ Imprimer la/les carte(s) cadeau</button>
+        <button onclick="imprimerZone('carte-cadeau-print-area')" class="btn-primary" style="margin-top:6px;">🖨️ Imprimer la/les carte(s) cadeau</button>
         <button onclick="setState({showCarteCadeau:null})" style="width:100%;padding:10px;background:#f5f0f2;color:#555;border:none;border-radius:8px;cursor:pointer;font-size:13px;margin-top:8px;">Fermer</button>
       </div>
     </div>
@@ -4603,7 +4603,7 @@ function renderTicketModal() {
             <div style="text-align:center;font-size:10px;color:#888;">Belle&Jolie — Mode & Élégance</div>
           </div>
           <style>@media print{body *{visibility:hidden !important}#ticket-print-area,#ticket-print-area *{visibility:visible !important}#ticket-print-area{position:absolute;top:0;left:0;width:280px;background:#fff;}}</style>
-          <button onclick="window.print();setState({showTicket:null})" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le reçu</button>
+          <button onclick="imprimerZone('ticket-print-area');setTimeout(()=>setState({showTicket:null}),300)" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le reçu</button>
           <button onclick="setState({showTicket:null})" class="btn-ghost" style="width:100%;padding:10px;">Fermer</button>
         </div>
       </div>
@@ -4649,7 +4649,7 @@ function renderTicketModal() {
             <div style="text-align:center;font-size:10px;color:#888;">Avoir valable 3 mois à compter de la date d'émission.<br>Belle&Jolie — Mode & Élégance</div>
           </div>
           <style>@media print{body *{visibility:hidden !important}#ticket-print-area,#ticket-print-area *,#ticket-print-area svg,#ticket-print-area svg *{visibility:visible !important}#ticket-print-area{position:absolute;top:0;left:0;width:280px;background:#fff;}}</style>
-          <button onclick="window.print();setState({showTicket:null})" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le bon d'avoir</button>
+          <button onclick="imprimerZone('ticket-print-area');setTimeout(()=>setState({showTicket:null}),300)" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le bon d'avoir</button>
           `:`
           <div style="background:#eaf3de;border-radius:8px;padding:10px;margin-bottom:14px;font-size:13px;color:#3b6d11;text-align:center;">
             ✅ Remboursement en espèces — pas d'avoir généré
@@ -4708,7 +4708,7 @@ function renderTicketModal() {
             <div style="text-align:center;font-size:10px;color:#888;">Valable jusqu'au ${v.avoir.expiration?new Date(v.avoir.expiration).toLocaleDateString("fr-FR"):"—"}<br>Sur présentation de ce bon.<br>Belle&Jolie — Mode & Élégance</div>
           </div>
           <style>@media print{body *{visibility:hidden}#ticket-print-area,#ticket-print-area *,#ticket-print-area svg,#ticket-print-area svg *{visibility:visible!important}#ticket-print-area{position:absolute;top:0;left:0;width:280px;font-size:12px;}}</style>
-          <button onclick="window.print();setState({showTicket:null})" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le bon d'avoir</button>
+          <button onclick="imprimerZone('ticket-print-area');setTimeout(()=>setState({showTicket:null}),300)" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le bon d'avoir</button>
           <button onclick="ouvrirEnvoiTicket()" style="width:100%;padding:10px;background:#e6f1fb;color:#185fa5;border:1px solid #b3d0f0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:8px;">
             📧 Envoyer le bon par Email
           </button>
@@ -4865,7 +4865,7 @@ function renderTicketModal() {
             <div style="font-size:9px;color:#aaa;margin-top:6px;">Article échangeable sous 30 jours sur présentation du ticket.<br>Non porté, non lavé, sans odeur, étiquette intacte. Aucun remboursement.</div>
           </div>
         </div>
-        <button onclick="window.print();setState({showTicket:null})" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le ticket</button>
+        <button onclick="imprimerZone('ticket-print-area');setTimeout(()=>setState({showTicket:null}),300)" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le ticket</button>
         <button onclick="imprimerTicketCadeau()" style="width:100%;padding:10px;background:#fbf3e6;color:#854f0b;border:1px solid #f0dcb0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:8px;">
           🎁 Ticket cadeau (sans prix)
         </button>
@@ -10318,6 +10318,37 @@ window.saisirMontantsReels = (dateStr) => {
   appliquerMontantsReels(dateStr, cb, esp);
   render();
 };
+// Impression d'une seule zone (ticket, carte cadeau…) dans un cadre invisible : la page imprimée ne
+// contient que cette zone, sans la hauteur du reste de l'application (évite la 2e feuille).
+window.imprimerZone = (idZone) => {
+  const zone = document.getElementById(idZone);
+  if(!zone) { window.print(); return; }
+  const styles = [...document.querySelectorAll("style")].map(st => st.outerHTML).join("");
+  const iframe = document.createElement("iframe");
+  iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;";
+  document.body.appendChild(iframe);
+  const doc = iframe.contentWindow.document;
+  doc.open();
+  doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8">${styles}
+    <style>
+      @page { margin: 2mm; size: auto; }
+      html, body { margin:0 !important; padding:0 !important; background:#fff !important; height:auto !important; min-height:0 !important; overflow:visible !important; }
+      body * { visibility: visible !important; }
+      #${idZone} { position: static !important; margin: 0 auto !important; }
+      .no-print { display:none !important; }
+    </style></head><body>${zone.outerHTML}</body></html>`);
+  doc.close();
+  const lancer = () => {
+    try { iframe.contentWindow.focus(); iframe.contentWindow.print(); } catch(e) { window.print(); }
+    setTimeout(() => iframe.remove(), 2000);
+  };
+  // laisser le temps aux images (logo, code-barres) de se charger
+  const imgs = [...doc.images];
+  if(!imgs.length) setTimeout(lancer, 50);
+  else { let n = 0; const fin = () => { if(++n>=imgs.length) setTimeout(lancer, 50); };
+    imgs.forEach(im => im.complete ? fin() : (im.onload = im.onerror = fin)); setTimeout(lancer, 1500); }
+};
+
 window.reimprimerZDate = (dateStr) => { const z = (STATE.caisseJour||[]).find(zz=>zz.date===dateStr); if(z) imprimerZ(z); };
 // Passer un ticket payé en CB en espèces (le paiement n'est pas passé au terminal)
 window.passerTicketEnEspeces = (venteId) => {
