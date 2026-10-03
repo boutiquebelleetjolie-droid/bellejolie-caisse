@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "01/10 · v39 (détail Octobre Rose)";
+const APP_VERSION = "01/10 · v40 (artisans regroupés)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -10404,6 +10404,20 @@ function renderControleZ(mois, annee) {
 // Un article d'artisan retourné avec son ticket n'est plus du tout compté comme vendu (la vente
 // d'origine est neutralisée, quelle que soit la date du retour) et le retour lui-même n'apparaît pas.
 // Seul un retour sans ticket d'origine retrouvable est déduit tel quel.
+function nomArtisanCanon(nom) {
+  const brut = String(nom||"").trim().replace(/\s+/g," ");
+  if(!brut) return "Artisan non renseigné";
+  const cle = normStr(brut);
+  window._canonArtisans = window._canonArtisans || {};
+  if(!window._canonArtisans[cle]) {
+    // Orthographe de référence : la plus fréquente parmi les fiches articles
+    const variantes = {};
+    (STATE.products||[]).filter(p=>p.artisanat && p.nomArtisan && normStr(String(p.nomArtisan).trim().replace(/\s+/g," "))===cle)
+      .forEach(p => { const n = String(p.nomArtisan).trim().replace(/\s+/g," "); variantes[n] = (variantes[n]||0)+1; });
+    window._canonArtisans[cle] = Object.entries(variantes).sort((a,b)=>b[1]-a[1])[0]?.[0] || brut;
+  }
+  return window._canonArtisans[cle];
+}
 function lignesArtisanVente(v, prodMap) {
   const restants = {...(v.articlesRetournes||{})};
   const out = [];
@@ -10415,7 +10429,7 @@ function lignesArtisanVente(v, prodMap) {
     const q = i.qty||1, r = Math.min(q, restants[pid]||0);
     if(r) restants[pid] -= r;
     const net = q - r; if(net<=0) return;
-    out.push({i, p, qty:net, montant: calculerPrixPayeReel(v, i)*net, artisan: (p.nomArtisan||i.nomArtisan||"").trim()||"Artisan non renseigné"});
+    out.push({i, p, qty:net, montant: calculerPrixPayeReel(v, i)*net, artisan: nomArtisanCanon(p.nomArtisan||i.nomArtisan)});
   });
   return out;
 }
@@ -10427,7 +10441,7 @@ function retoursArtisanSansTicket(v, prodMap, idsVentes) {
     if(i.retourVenteId && idsVentes.has(i.retourVenteId)) return null; // neutralisé sur la vente d'origine
     const q = i.qty||1;
     const rem = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/q:0;
-    return {i, p, qty:-q, montant: -Math.max(0,i.price-rem)*q, artisan: (p.nomArtisan||i.nomArtisan||"").trim()||"Artisan non renseigné"};
+    return {i, p, qty:-q, montant: -Math.max(0,i.price-rem)*q, artisan: nomArtisanCanon(p.nomArtisan||i.nomArtisan)};
   }).filter(Boolean);
 }
 function idsVentesValides() { return new Set((STATE.ventes||[]).filter(v=>!v.test&&!v.annulee).map(v=>v.id)); }
@@ -10571,13 +10585,19 @@ window.imprimerReleveArtisan = (artisan) => {
 };
 function renderBilanArtisans() {
   if(STATE.vendeur.id!=="V1") return "";
+  window._canonArtisans = {};
   if(!(STATE.products||[]).some(p=>p.artisanat)) return "";
   const {debut, fin, libelle, per} = periodeArtisans();
   const taux = STATE.commissionArtisan ?? 20;
   const lignes = ventesArtisans(debut, fin);
   const parA = {};
   lignes.forEach(l => { const a = parA[l.artisan] = parA[l.artisan] || {qty:0, ca:0}; a.qty += l.qty; a.ca += l.montant; });
-  (STATE.products||[]).filter(p=>p.artisanat).forEach(p => { const n = (p.nomArtisan||"").trim()||"Artisan non renseigné"; if(!parA[n]) parA[n] = {qty:0, ca:0}; });
+  (STATE.products||[]).filter(p=>p.artisanat).forEach(p => { const n = nomArtisanCanon(p.nomArtisan); if(!parA[n]) parA[n] = {qty:0, ca:0}; });
+  // Articles de chaque artisan, avec les quantités vendues sur la période
+  const vendusParArticle = {};
+  lignes.forEach(l => { vendusParArticle[l.article] = (vendusParArticle[l.article]||0) + l.qty; });
+  const articlesDe = n => (STATE.products||[]).filter(p=>p.artisanat && nomArtisanCanon(p.nomArtisan)===n);
+  const sansNom = (STATE.products||[]).filter(p=>p.artisanat && !String(p.nomArtisan||"").trim());
   const artisans = Object.entries(parA).sort((a,b)=>b[1].ca-a[1].ca);
   const tot = artisans.reduce((s,[,a])=>({qty:s.qty+a.qty, ca:s.ca+a.ca}), {qty:0, ca:0});
   const btn = (k,l) => `<button onclick="STATE.artPeriode='${k}';render()" style="padding:5px 12px;border-radius:7px;border:none;cursor:pointer;font-size:12px;background:${per===k?'#6a3d9a':'#f3e8fc'};color:${per===k?'#fff':'#6a3d9a'};">${l}</button>`;
@@ -10600,10 +10620,15 @@ function renderBilanArtisans() {
     <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:460px;">
       <thead><tr style="color:#888;border-bottom:1px solid #e8e0e4;"><th style="text-align:left;padding:6px;">Artisan</th><th style="text-align:right;padding:6px;">Articles</th><th style="text-align:right;padding:6px;">Ventes TTC</th><th style="text-align:right;padding:6px;">Commission</th><th style="text-align:right;padding:6px;">À reverser</th><th></th></tr></thead>
       <tbody>${artisans.map(([n,a])=>`<tr style="border-bottom:0.5px solid #f0ebee;">
-        <td style="padding:6px;font-weight:500;">${n}</td><td style="padding:6px;text-align:right;">${a.qty}</td><td style="padding:6px;text-align:right;">${eur(a.ca)}</td>
+        <td style="padding:6px;font-weight:500;cursor:pointer;" onclick="STATE._artOuvert=STATE._artOuvert===this.dataset.a?null:this.dataset.a;render()" data-a="${n.replace(/"/g,"&quot;")}">${STATE._artOuvert===n?"▼":"▶"} ${n}</td><td style="padding:6px;text-align:right;">${a.qty}</td><td style="padding:6px;text-align:right;">${eur(a.ca)}</td>
         <td style="padding:6px;text-align:right;color:#3b6d11;">${eur(a.ca*taux/100)}</td><td style="padding:6px;text-align:right;color:#993556;font-weight:600;">${eur(a.ca*(100-taux)/100)}</td>
-        <td style="padding:6px;text-align:right;"><button onclick="imprimerReleveArtisan(this.dataset.a)" data-a="${n.replace(/"/g,"&quot;")}" style="background:none;border:1px solid #d9c2ee;color:#6a3d9a;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">🖨️ Relevé</button></td></tr>`).join("")}</tbody>
+        <td style="padding:6px;text-align:right;"><button onclick="imprimerReleveArtisan(this.dataset.a)" data-a="${n.replace(/"/g,"&quot;")}" style="background:none;border:1px solid #d9c2ee;color:#6a3d9a;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">🖨️ Relevé</button></td></tr>
+        ${STATE._artOuvert===n?`<tr><td colspan="6" style="padding:4px 6px 10px 22px;background:#faf6fd;">
+          ${articlesDe(n).length?articlesDe(n).map(p=>`<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;border-bottom:0.5px dashed #e6d8f2;">
+            <span>${p.name} · ${eur(p.price||0)}</span><span style="color:#666;white-space:nowrap;">stock ${p.stock||0} · <strong style="color:#6a3d9a;">${vendusParArticle[p.name]||0} vendu${(vendusParArticle[p.name]||0)>1?"s":""}</strong></span></div>`).join(""):`<div style="font-size:12px;color:#aaa;">Aucun article en stock pour cet artisan.</div>`}
+        </td></tr>`:""}`).join("")}</tbody>
     </table></div>
+    ${sansNom.length?`<div style="background:#fff3cd;border-radius:8px;padding:7px 10px;font-size:12px;color:#856404;margin-top:8px;">⚠️ ${sansNom.length} article${sansNom.length>1?"s":""} d'artisan sans nom d'artisan : ${sansNom.map(p=>p.name).join(", ")}. Complète leur fiche pour qu'ils soient comptés au bon artisan.</div>`:""}
     <div style="font-size:11px;color:#888;margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">Taux de commission :
       <input type="text" inputmode="decimal" value="${String(taux).replace(".",",")}" onchange="changerCommissionArtisan(this.value)" style="width:48px;text-align:right;font-size:12px;padding:3px;"/> %
       · les retours sont déduits · articles d'artisans exclus de la valeur du stock</div>
