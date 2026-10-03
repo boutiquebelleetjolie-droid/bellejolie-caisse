@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "01/10 · v42 (catégorie artisans)";
+const APP_VERSION = "01/10 · v43 (artisans dus)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -8468,7 +8468,7 @@ function calculerZMensuel(mois, annee) {
   const corrections = r2(ventes.filter(v=>v.correctionManuelle).reduce((s,v)=>s+v.total,0));
   brut += corrections; // régularisations intégrées aux ventes (aucune ligne distincte)
   { const idsV = idsVentesValides();
-    ventes.forEach(v => { lignesArtisanVente(v, prodMap).forEach(l => artisansCA += l.montant); retoursArtisanSansTicket(v, prodMap, idsV).forEach(l => artisansCA += l.montant); }); }
+    toutes.filter(venteCompteArtisan).forEach(v => { lignesArtisanVente(v, prodMap).forEach(l => artisansCA += l.montant); retoursArtisanSansTicket(v, prodMap, idsV).forEach(l => artisansCA += l.montant); }); }
   const remises = Math.max(0, r2(brut - retours - caTTC));
   const caHT = r2(caTTC/(1+TVA)), tvaCol = r2(caTTC - caHT);
   const modes = {cb:0, especes:0, cheque:0, avoir:0, cadeau:0};
@@ -9662,7 +9662,14 @@ function renderStats() {
   let nbArtisanat = 0;
   const artisansM = {};
   { const idsV = idsVentesValides();
-    vf.forEach(v => [...lignesArtisanVente(v, prodMapAll), ...retoursArtisanSansTicket(v, prodMapAll, idsV)].forEach(l => {
+    const vfArt = [...vf, ...STATE.ventes.filter(v => v.annulee && v.typeAnnulation==="comptable" && !v.test && (() => {
+      const d = new Date(v.date);
+      if(["jour","semaine","mois","annee"].includes(per)) return periodeFrom && d >= periodeFrom && d <= periodeTo;
+      if(per==="detail_mois") return d.getMonth()===STATE.statMonth&&d.getFullYear()===STATE.statYear;
+      if(per==="detail_jour") return d.getDate()===STATE.statDay&&d.getMonth()===STATE.statDayMonth&&d.getFullYear()===STATE.statDayYear;
+      return per==="top"||per==="tout";
+    })())];
+    vfArt.forEach(v => [...lignesArtisanVente(v, prodMapAll), ...retoursArtisanSansTicket(v, prodMapAll, idsV)].forEach(l => {
       caArtisanat += l.montant; nbArtisanat += l.qty;
       if(!artisansM[l.artisan]) artisansM[l.artisan] = {montant:0, qty:0};
       artisansM[l.artisan].montant += l.montant; artisansM[l.artisan].qty += l.qty;
@@ -10480,7 +10487,8 @@ function retoursArtisanSansTicket(v, prodMap, idsVentes) {
     return {i, p, qty:-q, montant: -Math.max(0,i.price-rem)*q, artisan: nomArtisanCanon(p.nomArtisan||i.nomArtisan)};
   }).filter(Boolean);
 }
-function idsVentesValides() { return new Set((STATE.ventes||[]).filter(v=>!v.test&&!v.annulee).map(v=>v.id)); }
+function venteCompteArtisan(v) { return !!v && !v.test && (!v.annulee || v.typeAnnulation==="comptable"); }
+function idsVentesValides() { return new Set((STATE.ventes||[]).filter(venteCompteArtisan).map(v=>v.id)); }
 
 // ── Octobre Rose : détail des articles vendus (retours avec ticket retirés) ──
 function lignesOctobreRose(mois, annee) {
@@ -10587,9 +10595,9 @@ function ventesArtisans(debut, fin) {
   const ids = idsVentesValides();
   const lignes = [];
   (STATE.ventes||[]).forEach(v => {
-    if(v.test||v.annulee) return;
+    if(!venteCompteArtisan(v)) return;
     const d = dateLocaleStr(new Date(v.date)); if(d<debut || d>fin) return;
-    lignesArtisanVente(v, prodMap).forEach(l => lignes.push({date:v.date, artisan:l.artisan, article:l.p.name||l.i.name, qty:l.qty, montant:Math.round(l.montant*100)/100, retour:false}));
+    lignesArtisanVente(v, prodMap).forEach(l => lignes.push({date:v.date, artisan:l.artisan, article:l.p.name||l.i.name, qty:l.qty, montant:Math.round(l.montant*100)/100, retour:false, annuleeCompta:!!v.annulee}));
     retoursArtisanSansTicket(v, prodMap, ids).forEach(l => lignes.push({date:v.date, artisan:l.artisan, article:l.p.name||l.i.name, qty:l.qty, montant:Math.round(l.montant*100)/100, retour:true}));
   });
   return lignes.sort((a,b)=>new Date(a.date)-new Date(b.date));
@@ -18833,7 +18841,8 @@ if(savedVendeurs) savedVendeurs.forEach((sv,i)=>{ if(VENDEURS[i]&&sv.code){VENDE
 (function() {
   const DELAI_PURGE = 24*60*60*1000;
   const avant = STATE.ventes.length;
-  const aPurger = STATE.ventes.filter(v => v.annulee && (Date.now() - new Date(v.dateAnnulation || v.date).getTime()) >= DELAI_PURGE).map(v=>v.id);
+  // Les annulations « comptables » ne sont jamais effacées : l'article est bien parti (dû aux artisans, historique client)
+  const aPurger = STATE.ventes.filter(v => v.annulee && v.typeAnnulation!=="comptable" && (Date.now() - new Date(v.dateAnnulation || v.date).getTime()) >= DELAI_PURGE).map(v=>v.id);
   if(aPurger.length) marquerVentesSupprimees(aPurger);
   STATE.ventes = STATE.ventes.filter(v => !aPurger.includes(v.id));
   if(STATE.ventes.length !== avant) {
