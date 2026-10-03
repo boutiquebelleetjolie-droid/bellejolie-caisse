@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "01/10 · v41 (stock artisans)";
+const APP_VERSION = "01/10 · v42 (catégorie artisans)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -7197,12 +7197,14 @@ function renderStock() {
     "👗 Vêtements — Grande taille": ["Robes","Hauts","Pantalons","Jupes","Shorts","Vestes","Manteaux","Pulls & Gilets","Ensembles","Combinaisons"],
     "👜 Accessoires & Maroquinerie": ["Accessoires","Sacs","Beauté","Décoration"],
     "👠 Chaussures": ["Chaussures"],
+    "🎨 Produits d'artisans (dépôt)": null,
   };
   const GROUPES_GT = {
     "👗 Vêtements — Petite taille": false,
     "👗 Vêtements — Grande taille": true,
     "👜 Accessoires & Maroquinerie": null,
     "👠 Chaussures": null,
+    "🎨 Produits d'artisans (dépôt)": null,
   };
 
   // Si recherche active → afficher tout sans groupes
@@ -7214,6 +7216,8 @@ function renderStock() {
     Object.entries(GROUPES).forEach(([groupe, cats]) => {
       const gtFilter = GROUPES_GT[groupe];
       const prodGroupe = filtered.filter(p => {
+        if(cats===null) return !!p.artisanat;   // groupe des produits d'artisans
+        if(p.artisanat) return false;           // les produits d'artisans n'apparaissent que dans leur groupe
         if(!cats.includes(p.category)) return false;
         if(gtFilter===null) return true; // Accessoires/Chaussures : pas de filtre
         if(gtFilter===true) return p.grandeTaille===true; // Grande taille : seulement si explicitement coché
@@ -7252,8 +7256,11 @@ function renderStock() {
 
       if(ouvert) {
         // Sous-groupes par catégorie
-        cats.forEach(cat => {
-          const prodCat = prodGroupe.filter(p=>p.category===cat);
+        const sousGroupes = cats===null
+          ? (window._canonArtisans = {}, [...new Set(prodGroupe.map(p=>nomArtisanCanon(p.nomArtisan)))].sort())
+          : cats;
+        sousGroupes.forEach(cat => {
+          const prodCat = cats===null ? prodGroupe.filter(p=>nomArtisanCanon(p.nomArtisan)===cat) : prodGroupe.filter(p=>p.category===cat);
           if(!prodCat.length) return;
 
           if(isV1) {
@@ -7283,8 +7290,8 @@ function renderStock() {
     });
 
     // Articles sans catégorie connue
-    const autresCats = Object.values(GROUPES).flat();
-    const autres = filtered.filter(p=>!autresCats.includes(p.category));
+    const autresCats = Object.values(GROUPES).filter(Boolean).flat();
+    const autres = filtered.filter(p=>!p.artisanat && !autresCats.includes(p.category));
     if(autres.length) {
       html += '<div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;margin-bottom:12px;overflow:hidden;">';
       html += '<div style="padding:12px 16px;background:#f5f0f2;font-weight:600;color:#555;">📦 Autres ('+autres.length+')</div>';
@@ -7336,7 +7343,7 @@ function renderStock() {
     html += '</div></div>';
     if(filteredArtisans.length) {
       const qtA = filteredArtisans.reduce((s,p)=>s+(p.stock||0),0), vvA = filteredArtisans.reduce((s,p)=>s+(p.stock||0)*(p.price||0),0);
-      html += '<div style="background:#f3e8fc;border-radius:9px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#6a3d9a;">🎨 <strong>Produits d\'artisans (hors stock)</strong> : '+filteredArtisans.length+' réf. · '+qtA+' unités · valeur de vente '+eur(vvA)+' — suivi dans Bilan → Artisans</div>';
+      html += '<div onclick="STATE.filtreArtisans=true;STATE.filtreOctobreRose=false;render();window.scrollTo(0,0)" style="cursor:pointer;background:#f3e8fc;border-radius:9px;padding:8px 12px;margin-bottom:12px;font-size:12px;color:#6a3d9a;">🎨 <strong>Produits d\'artisans (hors stock)</strong> : '+filteredArtisans.length+' réf. · '+qtA+' unités · valeur de vente '+eur(vvA)+' — <u>voir la liste</u></div>';
     }
 
     // Données selon vue
