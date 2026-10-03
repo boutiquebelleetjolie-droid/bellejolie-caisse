@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "02/10 · v45 (prix en caisse)";
+const APP_VERSION = "02/10 · v46 (formules pampilles)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -1978,6 +1978,7 @@ function renderApp() {
   ${STATE.showTransfertBoutique ? renderTransfertBoutiqueModal() : ""}
   ${STATE.showHistoriqueTransferts ? renderHistoriqueTransfertsModal() : ""}
   ${STATE.showRetoucheForm ? renderRetoucheFormModal() : ""}
+  ${STATE.choixPrixLibre ? renderChoixPrixLibre() : ""}
   ${STATE.showSuiviRetouches ? renderSuiviRetouchesModal() : ""}
   ${STATE.showCorrectionVente ? renderCorrectionVenteModal() : ""}
   ${STATE.showProdModal    ? renderProdModal()       : ""}
@@ -5181,32 +5182,81 @@ window.supprimerLignePanier = (idx) => {
   }
 };
 
-// Articles « prix à indiquer en caisse » : le prix est demandé à chaque ajout, avec la formule en rappel.
-// Chaque ajout crée sa propre ligne (deux prix différents ne sont jamais fusionnés).
+// Articles « prix à indiquer en caisse » : formule de prix (ex. « 1 pampille 7 € · 2 pampilles 12 € »)
+// proposée en boutons au moment de l'ajout ; à défaut de formule, le prix est saisi.
+// Chaque ajout crée sa propre ligne (deux formules différentes ne sont jamais fusionnées).
+function parseFormulePrix(txt) {
+  return String(txt||"").split(/[·;\n|]+/).map(seg => {
+    const m = seg.trim().match(/^(.*?)[\s:=–-]*(\d+(?:[.,]\d{1,2})?)\s*€?\s*$/);
+    if(!m || !m[1].trim()) return null;
+    return {libelle: m[1].trim().replace(/[:=–-]+$/,"").trim(), prix: parseFloat(m[2].replace(",","."))};
+  }).filter(Boolean);
+}
 (function(){
   const addToCartBase = window.addToCart;
+  window._ajouterLignePrixLibre = (id, taille, couleur, rest, prix, libelle) => {
+    const p = (STATE.products||[]).find(x=>x.id===id); if(!p) return;
+    const avant = STATE.panier.map(l=>({id:l.id, qty:l.qty}));
+    addToCartBase(id, taille, couleur, ...(rest||[]));
+    const ajoutee = STATE.panier.find(l=>!avant.some(a=>a.id===l.id));
+    const fusionnee = !ajoutee && STATE.panier.find(l=>{ const a = avant.find(x=>x.id===l.id); return a && l.qty>a.qty; });
+    const base = ajoutee || fusionnee; if(!base) return;
+    const nouvelle = {...base, id: base.id+"_PL"+Date.now().toString(36), prodIdOriginal: base.prodIdOriginal||p.id,
+      name: p.name+(libelle?" — "+libelle:""), price: Math.round(prix*100)/100, prixOriginal: undefined, promoNom: undefined,
+      qty: 1, remise:"", remiseType:"", prixLibre: true, formuleChoisie: libelle||""};
+    if(ajoutee) STATE.panier = STATE.panier.map(l=>l===ajoutee ? nouvelle : l);
+    else STATE.panier = [...STATE.panier.map(l=>l===fusionnee ? {...l, qty:l.qty-1} : l), nouvelle];
+    STATE.choixPrixLibre = null;
+    render();
+  };
   window.addToCart = (id, taille, couleur, ...rest) => {
     const p = (STATE.products||[]).find(x=>x.id===id);
     if(!p || !p.prixLibre) return addToCartBase(id, taille, couleur, ...rest);
     const nbT = (p.tailles||[]).filter(Boolean).length, nbC = (p.couleurs||[]).filter(Boolean).length;
-    // Plusieurs tailles/couleurs sans choix : le sélecteur s'ouvre d'abord, le prix sera demandé ensuite
+    // Plusieurs tailles/couleurs sans choix : le sélecteur s'ouvre d'abord, la formule sera demandée ensuite
     if((nbT>1 || nbC>1) && taille===undefined && couleur===undefined) return addToCartBase(id, taille, couleur, ...rest);
-    const saisie = prompt("Prix à indiquer pour « "+p.name+" » (€) :"+(p.formulePrix?"\n\nFormule : "+p.formulePrix:""), p.price>0 ? String(p.price).replace(".",",") : "");
+    if(parseFormulePrix(p.formulePrix).length) { STATE.choixPrixLibre = {id, taille, couleur, rest}; render(); return; }
+    const saisie = prompt("Prix à indiquer pour « "+p.name+" » (€) :", p.price>0 ? String(p.price).replace(".",",") : "");
     if(saisie===null) return;
     const prix = parseFloat(String(saisie).replace(",",".").replace(/\s/g,""));
     if(isNaN(prix) || prix<0) { alert("Prix invalide."); return; }
-    const avant = STATE.panier.map(l=>({id:l.id, qty:l.qty}));
-    addToCartBase(id, taille, couleur, ...rest);
-    const ajoutee = STATE.panier.find(l=>!avant.some(a=>a.id===l.id));
-    const fusionnee = !ajoutee && STATE.panier.find(l=>{ const a = avant.find(x=>x.id===l.id); return a && l.qty>a.qty; });
-    let base = ajoutee || fusionnee; if(!base) return;
-    const nouvelle = {...base, id: base.id+"_PL"+Date.now().toString(36), prodIdOriginal: base.prodIdOriginal||p.id,
-      price: Math.round(prix*100)/100, prixOriginal: undefined, promoNom: undefined, qty: 1, remise:"", remiseType:"", prixLibre: true};
-    if(ajoutee) STATE.panier = STATE.panier.map(l=>l===ajoutee ? nouvelle : l);
-    else STATE.panier = [...STATE.panier.map(l=>l===fusionnee ? {...l, qty:l.qty-1} : l), nouvelle];
-    render();
+    window._ajouterLignePrixLibre(id, taille, couleur, rest, prix, "");
   };
 })();
+window.choisirFormulePrix = (index) => {
+  const c = STATE.choixPrixLibre; if(!c) return;
+  const p = (STATE.products||[]).find(x=>x.id===c.id); if(!p) return;
+  const opts = parseFormulePrix(p.formulePrix);
+  if(index==="autre") {
+    const saisie = prompt("Prix (€) :", ""); if(saisie===null) return;
+    const prix = parseFloat(String(saisie).replace(",",".").replace(/\s/g,""));
+    if(isNaN(prix) || prix<0) { alert("Prix invalide."); return; }
+    window._ajouterLignePrixLibre(c.id, c.taille, c.couleur, c.rest, prix, "");
+    return;
+  }
+  const o = opts[index]; if(!o) return;
+  window._ajouterLignePrixLibre(c.id, c.taille, c.couleur, c.rest, o.prix, o.libelle);
+};
+function renderChoixPrixLibre() {
+  const c = STATE.choixPrixLibre; if(!c) return "";
+  const p = (STATE.products||[]).find(x=>x.id===c.id); if(!p) return "";
+  const opts = parseFormulePrix(p.formulePrix);
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)setState({choixPrixLibre:null})">
+    <div class="modal" style="max-width:380px;">
+      <div class="modal-header"><span style="font-weight:600;">${p.name}${c.taille?" · "+c.taille:""}${c.couleur?" · "+c.couleur:""}</span>
+        <button onclick="setState({choixPrixLibre:null})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button></div>
+      <div class="modal-body">
+        <div style="font-size:13px;color:#666;margin-bottom:10px;">Formule choisie par la cliente :</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          ${opts.map((o,k)=>`<button onclick="choisirFormulePrix(${k})" style="display:flex;justify-content:space-between;align-items:center;padding:13px 14px;border:1.5px solid #e8d8de;border-radius:10px;background:#fff;cursor:pointer;font-size:15px;">
+            <span>${o.libelle}</span><strong style="color:#993556;">${eur(o.prix)}</strong></button>`).join("")}
+          <button onclick="choisirFormulePrix('autre')" style="padding:10px;border:1px dashed #ccc;border-radius:10px;background:#fafafa;cursor:pointer;font-size:13px;color:#666;">Autre prix…</button>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
 
 window.removeFromCartAvecJournal = (id, nom, prix, qty) => {
   if(!confirm("Voulez-vous supprimer « "+nom+" » de ce ticket ?")) return;
@@ -7796,7 +7846,7 @@ function renderProdModal() {
       +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#6a3d9a;cursor:pointer;margin-bottom:6px;background:#f3e8fc;border-radius:7px;padding:6px 10px;"><input type="checkbox" '+(f.artisanat?'checked':'')+' onchange="STATE.prodForm.artisanat=this.checked;render()" style="width:16px;height:16px;"/> 🎨 Produit d\'artisan</label>'
       +(f.artisanat?'<div style="margin-bottom:10px;"><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Nom de l\'artisan / atelier</label><input value="'+(f.nomArtisan||'')+'" oninput="STATE.prodForm.nomArtisan=this.value" placeholder="Ex: Atelier Claire M." style="width:100%;box-sizing:border-box;"/></div>':'')
       +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#185fa5;cursor:pointer;margin-bottom:6px;background:#eef4fd;border-radius:7px;padding:6px 10px;"><input type="checkbox" '+(f.prixLibre?'checked':'')+' onchange="STATE.prodForm.prixLibre=this.checked;render()" style="width:16px;height:16px;"/> 💶 Prix à indiquer en caisse</label>'
-      +(f.prixLibre?'<div style="margin-bottom:10px;"><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Formule de prix (rappelée en caisse)</label><input value="'+String(f.formulePrix||'').replace(/"/g,'&quot;')+'" oninput="STATE.prodForm.formulePrix=this.value" placeholder="Ex : 1 créole 7 € · 2 créoles 12 € · 3 créoles 20 €" style="width:100%;box-sizing:border-box;"/><div style="font-size:10px;color:#888;margin-top:3px;">Le prix de vente peut rester vide : il sera demandé à chaque passage en caisse.</div></div>':'')
+      +(f.prixLibre?'<div style="margin-bottom:10px;"><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Formule de prix (rappelée en caisse)</label><input value="'+String(f.formulePrix||'').replace(/"/g,'&quot;')+'" oninput="STATE.prodForm.formulePrix=this.value" placeholder="Ex : 1 pampille 7 € · 2 pampilles 12 € · 3 pampilles 20 €" style="width:100%;box-sizing:border-box;"/><div style="font-size:10px;color:#888;margin-top:3px;">Sépare les formules par « · » ou « ; ». En caisse, chaque formule devient un bouton à choisir. Le prix de vente peut rester vide.</div>'+(parseFormulePrix(f.formulePrix).length?'<div style="font-size:11px;color:#185fa5;margin-top:4px;">Aperçu : '+parseFormulePrix(f.formulePrix).map(o=>o.libelle+' → '+eur(o.prix)).join(' · ')+'</div>':'')+'</div>':'')
       +'</div>'
     +'<div></div>'
     +(isV1?blocPrix:"")
