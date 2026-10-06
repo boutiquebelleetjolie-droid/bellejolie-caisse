@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "06/10 · v49 (séparer une ligne)";
+const APP_VERSION = "06/10 · v50 (détail ventes artisans)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -10752,8 +10752,8 @@ function ventesArtisans(debut, fin) {
   (STATE.ventes||[]).forEach(v => {
     if(!venteCompteArtisan(v)) return;
     const d = dateLocaleStr(new Date(v.date)); if(d<debut || d>fin) return;
-    lignesArtisanVente(v, prodMap).forEach(l => lignes.push({date:v.date, artisan:l.artisan, article:l.p.name||l.i.name, qty:l.qty, montant:Math.round(l.montant*100)/100, retour:false, annuleeCompta:!!v.annulee}));
-    retoursArtisanSansTicket(v, prodMap, ids).forEach(l => lignes.push({date:v.date, artisan:l.artisan, article:l.p.name||l.i.name, qty:l.qty, montant:Math.round(l.montant*100)/100, retour:true}));
+    lignesArtisanVente(v, prodMap).forEach(l => lignes.push({date:v.date, venteId:v.id, artisan:l.artisan, article:l.i.name||l.p.name, qty:l.qty, montant:Math.round(l.montant*100)/100, retour:false, annuleeCompta:!!v.annulee}));
+    retoursArtisanSansTicket(v, prodMap, ids).forEach(l => lignes.push({date:v.date, venteId:v.id, artisan:l.artisan, article:l.i.name||l.p.name, qty:l.qty, montant:Math.round(l.montant*100)/100, retour:true}));
   });
   return lignes.sort((a,b)=>new Date(a.date)-new Date(b.date));
 }
@@ -10827,6 +10827,15 @@ function renderBilanArtisans() {
             <span>${p.name} · ${eur(p.price||0)}</span><span style="color:#666;white-space:nowrap;">stock ${p.stock||0} · <strong style="color:#6a3d9a;">${vendusParArticle[p.name]||0} vendu${(vendusParArticle[p.name]||0)>1?"s":""}</strong></span></div>`).join(""):`<div style="font-size:12px;color:#aaa;">Aucun article en stock pour cet artisan.</div>`}
         </td></tr>`:""}`).join("")}</tbody>
     </table></div>
+    ${lignes.length?`<button onclick="STATE._artDetail=!STATE._artDetail;render()" style="margin-top:10px;background:none;border:1px solid #d9c2ee;color:#6a3d9a;border-radius:7px;padding:6px 12px;font-size:12px;cursor:pointer;">${STATE._artDetail?"▲ Masquer le détail des ventes":"▼ Revoir les ventes une par une ("+lignes.length+")"}</button>
+    ${STATE._artDetail?`<div style="font-size:11px;color:#888;margin:8px 0 4px;">Touche une vente pour ouvrir le ticket (✂️ Séparer une ligne pour corriger une répartition).</div>
+    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:460px;">
+      <thead><tr style="color:#888;border-bottom:1px solid #e8e0e4;"><th style="text-align:left;padding:5px;">Date</th><th style="text-align:left;padding:5px;">Artisan</th><th style="text-align:left;padding:5px;">Article</th><th style="text-align:right;padding:5px;">Qté</th><th style="text-align:right;padding:5px;">Montant</th></tr></thead>
+      <tbody>${lignes.filter(l=>!STATE._artOuvert||l.artisan===STATE._artOuvert).map(l=>`<tr onclick="voirTicketVenteId('${l.venteId}')" style="border-bottom:0.5px solid #f0ebee;cursor:pointer;">
+        <td style="padding:5px;white-space:nowrap;">${new Date(l.date).toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit"})} ${new Date(l.date).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</td>
+        <td style="padding:5px;">${l.artisan}</td><td style="padding:5px;">${l.article}${l.retour?' <span style="color:#a32d2d;">(retour)</span>':''}${l.annuleeCompta?' <span style="color:#854f0b;">(annulée compta)</span>':''}</td>
+        <td style="padding:5px;text-align:right;">${l.qty}</td><td style="padding:5px;text-align:right;font-weight:600;">${eur(l.montant)}</td></tr>`).join("")}</tbody>
+    </table></div>`:""}`:""}
     ${sansNom.length?`<div style="background:#fff3cd;border-radius:8px;padding:7px 10px;font-size:12px;color:#856404;margin-top:8px;">⚠️ ${sansNom.length} article${sansNom.length>1?"s":""} d'artisan sans nom d'artisan : ${sansNom.map(p=>p.name).join(", ")}. Complète leur fiche pour qu'ils soient comptés au bon artisan.</div>`:""}
     <div style="font-size:11px;color:#888;margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap;">Taux de commission :
       <input type="text" inputmode="decimal" value="${String(taux).replace(".",",")}" onchange="changerCommissionArtisan(this.value)" style="width:48px;text-align:right;font-size:12px;padding:3px;"/> %
