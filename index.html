@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "06/10 · v50 (détail ventes artisans)";
+const APP_VERSION = "06/10 · v51 (bon anniv. lendemain)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -15463,6 +15463,7 @@ window.verifierAnniversaires = () => {
 };
 
 window.envoyerBonAnniversaire = async (client, annee) => {
+  if(compteCreeAujourdhui(client)) return; // sera envoyé à partir de demain
   // Date anniversaire cette année
   const [jour, mois] = client.anniversaire.split("/");
   const dateAnniv = new Date(annee, parseInt(mois)-1, parseInt(jour));
@@ -15610,7 +15611,13 @@ window.envoyerBonAnniversaire = async (client, annee) => {
 };
 
 // Vérifier en caisse si le client a un bon anniversaire valide
+// Un compte créé aujourd'hui n'a droit à son bon anniversaire qu'à partir du lendemain (comme le bon de bienvenue)
+function compteCreeAujourdhui(client) {
+  const c = client && (client.createdAt ? client : (STATE.clients||[]).find(x=>x.id===(client&&client.id)));
+  return !!(c && c.createdAt && dateLocaleStr(new Date(c.createdAt))===dateLocaleStr());
+}
 window.verifierBonAnniversaireClient = (client) => {
+  if(compteCreeAujourdhui(client)) return null;
   if(!client||!client.anniversaire) return null;
   const now = new Date();
   const [jour, mois] = client.anniversaire.split("/");
