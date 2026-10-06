@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "02/10 · v47 (créole + pampilles)";
+const APP_VERSION = "06/10 · v48 (formules corrigées)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -5206,7 +5206,7 @@ function parseFormulePrix(txt) {
     const qte = mQ ? Math.max(1, parseInt(mQ[1])) : 1;
     const nouvelle = {...base, id: base.id+"_PL"+Date.now().toString(36)+Math.random().toString(36).slice(2,5), prodIdOriginal: base.prodIdOriginal||p.id,
       name: p.name+(libelle?" — "+libelle:""), price: Math.round(prix/qte*100)/100, prixOriginal: undefined, promoNom: undefined,
-      qty: qte, remise:"", remiseType:"", prixLibre: true, formuleChoisie: libelle||""};
+      qty: qte, remise:"", remiseType:"", prixLibre: true, prixSaisi: true, formuleChoisie: libelle||""};
     if(ajoutee) STATE.panier = STATE.panier.map(l=>l===ajoutee ? nouvelle : l);
     else STATE.panier = [...STATE.panier.map(l=>l===fusionnee ? {...l, qty:l.qty-1} : l), nouvelle];
     STATE.choixPrixLibre = null;
@@ -5244,7 +5244,13 @@ window.choisirFormulePrix = (index) => {
   const nb = (String(o.libelle).match(/(\d+)/)||[])[1];
   if(lie && nb) {
     const optLie = parseFormulePrix(lie.formulePrix).find(x => (String(x.libelle).match(/^\s*(\d+)/)||[])[1]===nb);
-    if(optLie) window._ajouterLignePrixLibre(lie.id, undefined, undefined, [], optLie.prix, optLie.libelle);
+    const multiLie = (lie.tailles||[]).filter(Boolean).length>1 || (lie.couleurs||[]).filter(Boolean).length>1;
+    if(optLie && multiLie) {
+      STATE._lieEnAttente = {prodId: lie.id, prix: optLie.prix, libelle: optLie.libelle};
+      STATE.showVarianteModal = {prodId: lie.id, taille:"", couleur: (lie.couleurs||[]).includes(c.couleur) ? c.couleur : ""};
+      render();
+    }
+    else if(optLie) window._ajouterLignePrixLibre(lie.id, undefined, undefined, [], optLie.prix, optLie.libelle);
     else if(lie.price>0) { for(let k=0;k<parseInt(nb);k++) window._ajouterLignePrixLibre(lie.id, undefined, undefined, [], lie.price, ""); }
   }
 };
@@ -5464,6 +5470,16 @@ window.openPayModal = () => {
 };
 
 window.validerPaiement = () => {
+  // Garde-fou : aucun article « prix selon formule » ne doit partir sans prix choisi
+  { const sansPrix = (STATE.panier||[]).filter(l => !l.retour && !l.avoirId && !l.prixSaisi &&
+      (STATE.products||[]).some(x => x.id===(l.prodIdOriginal||l.id) && x.prixLibre));
+    if(sansPrix.length) {
+      const l = sansPrix[0];
+      alert("« "+l.name+" » n'a pas de prix : choisis la formule.");
+      STATE.panier = STATE.panier.map(x => x===l ? {...x, qty:(x.qty||1)-1} : x).filter(x => (x.qty||0)>0);
+      addToCart(l.prodIdOriginal||l.id, l.taille||null, l.couleur||null);
+      return;
+    } }
   if(STATE.vendeur.role==="apprenti") {
     // MODE TEST : rien sauvegardé
     const vente = {
@@ -13977,6 +13993,14 @@ window.confirmerVariante = () => {
   }
   const p = STATE.products.find(x=>x.id===vm.prodId);
   if(!p) return;
+  // Article à prix selon formule : passer par le choix de formule (sinon il entrerait à 0 €)
+  if(p.prixLibre) {
+    STATE.showVarianteModal = null;
+    const att = STATE._lieEnAttente;
+    if(att && att.prodId===vm.prodId) { STATE._lieEnAttente = null; window._ajouterLignePrixLibre(vm.prodId, vm.taille||null, vm.couleur||null, [], att.prix, att.libelle); return; }
+    addToCart(vm.prodId, vm.taille||null, vm.couleur||null);
+    return;
+  }
   // Clé unique : prodId + taille + couleur
   const varKey = `${vm.prodId}_${vm.taille}_${vm.couleur}`;
   const label = [vm.taille, vm.couleur].filter(Boolean).join(" / ");
