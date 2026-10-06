@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "06/10 · v48 (formules corrigées)";
+const APP_VERSION = "06/10 · v49 (séparer une ligne)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -4867,6 +4867,7 @@ function renderTicketModal() {
           </div>
         </div>
         <button onclick="imprimerZone('ticket-print-area');setTimeout(()=>setState({showTicket:null}),300)" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le ticket</button>
+        ${STATE.vendeur.id==="V1" && v.id && (STATE.ventes||[]).some(x=>x.id===v.id) ? `<button onclick="separerLigneTicket('${v.id}')" class="btn-ghost" style="width:100%;margin-bottom:8px;">✂️ Séparer une ligne (ex. créole + pampille)</button>` : ""}
         <button onclick="imprimerTicketCadeau()" style="width:100%;padding:10px;background:#fbf3e6;color:#854f0b;border:1px solid #f0dcb0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:8px;">
           🎁 Ticket cadeau (sans prix)
         </button>
@@ -17059,6 +17060,51 @@ function renderCalendrierSemaine(lundiFin) {
 }
 
 // Ouvrir le ticket d'une vente depuis son id (utilisé par Remises, Retours, Historique...)
+// Répartir une ligne déjà encaissée entre deux articles (le total du ticket ne change pas).
+// Ex. « Pampilles 10 € » → « Pampilles 7 € » + « Créole 3 € ». Le stock de l'article ajouté baisse de 1.
+window.separerLigneTicket = (venteId) => {
+  if(STATE.vendeur.id!=="V1") return;
+  const v = (STATE.ventes||[]).find(x=>x.id===venteId); if(!v) return;
+  const lignes = (v.panier||[]).map((l,i)=>({l,i})).filter(({l})=>!l.retour && !l.avoirId && l.id!=="correction_manuelle" && (l.price||0)*(l.qty||1)>0);
+  if(!lignes.length) { alert("Aucune ligne à séparer sur ce ticket."); return; }
+  let choix = lignes[0];
+  if(lignes.length>1) {
+    const r = prompt("Quelle ligne séparer ?\n\n"+lignes.map(({l},k)=>(k+1)+". "+l.name+" — "+eur((l.price||0)*(l.qty||1))).join("\n"), "1");
+    if(r===null) return;
+    choix = lignes[parseInt(r)-1]; if(!choix) { alert("Numéro invalide."); return; }
+  }
+  const ligne = choix.l, valeur = Math.round((ligne.price||0)*(ligne.qty||1)*100)/100;
+  const q = prompt("Article à sortir de « "+ligne.name+" » (nom ou référence) :", ""); if(q===null || !q.trim()) return;
+  const idLigne = ligne.prodIdOriginal || ligne.id;
+  const trouves = (STATE.products||[]).filter(p => p.id!==idLigne && !p.isChequeCadeau && normStr(p.name+" "+(p.ref||"")).includes(normStr(q.trim())));
+  if(!trouves.length) { alert("Aucun article trouvé pour « "+q+" »."); return; }
+  let art = trouves[0];
+  if(trouves.length>1) {
+    const r = prompt("Plusieurs articles trouvés :\n\n"+trouves.slice(0,9).map((p,k)=>(k+1)+". "+p.name+(p.artisanat?" (artisan "+(p.nomArtisan||"")+")":"")).join("\n"), "1");
+    if(r===null) return;
+    art = trouves.slice(0,9)[parseInt(r)-1]; if(!art) { alert("Numéro invalide."); return; }
+  }
+  const m = prompt("Part de « "+art.name+" » dans les "+eur(valeur)+" (€) :", art.price>0 && art.price<valeur ? String(art.price).replace(".",",") : "");
+  if(m===null) return;
+  const montant = Math.round(parseFloat(String(m).replace(",",".").replace(/\s/g,""))*100)/100;
+  if(isNaN(montant) || montant<=0 || montant>=valeur) { alert("Le montant doit être entre 0 et "+eur(valeur)+"."); return; }
+  const reste = Math.round((valeur-montant)*100)/100;
+  if(!confirm("Ticket du "+new Date(v.date).toLocaleDateString("fr-FR")+" :\n\n• "+ligne.name+" : "+eur(valeur)+" → "+eur(reste)+"\n• "+art.name+" : "+eur(montant)+" (stock −1)\n\nLe total du ticket ne change pas.")) return;
+  const q0 = ligne.qty||1;
+  const nouvelleLigne = { id: art.id+"_SEP"+Date.now().toString(36), prodIdOriginal: art.id, name: art.name, ref: art.ref, category: art.category,
+    price: montant, prixAchat: art.prixAchat||0, qty: 1, remise:"", remiseType:"", artisanat: !!art.artisanat, nomArtisan: art.nomArtisan||"", separeDe: idLigne };
+  const panier = (v.panier||[]).map((l,i)=> i===choix.i ? {...l, price: Math.round(reste/q0*100)/100, remise:"", remiseType:""} : l);
+  panier.splice(choix.i+1, 0, nouvelleLigne);
+  const maj = {...v, panier, modifLe: new Date().toISOString()};
+  STATE.ventes = STATE.ventes.map(x=>x.id===v.id ? maj : x);
+  lsSet("bj_ventes", STATE.ventes);
+  STATE.products = ajusterStock(STATE.products, art.id, -1);
+  lsSet("bj_products", STATE.products);
+  if(STATE.showTicket && STATE.showTicket.id===v.id) STATE.showTicket = {...STATE.showTicket, panier};
+  render();
+  alert("✅ Ligne séparée : "+ligne.name+" "+eur(reste)+" + "+art.name+" "+eur(montant)+".");
+};
+
 window.voirTicketVenteId = (venteId) => {
   const vv = STATE.ventes.find(x=>x.id===venteId);
   if(!vv) { alert("Ticket introuvable (peut-être supprimé)."); return; }
