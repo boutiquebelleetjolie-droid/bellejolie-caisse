@@ -5214,6 +5214,15 @@ function parseFormulePrix(txt) {
   };
   window.addToCart = (id, taille, couleur, ...rest) => {
     const p = (STATE.products||[]).find(x=>x.id===id);
+    if(p && !p.prixLibre && !(parseFloat(p.price)>0) && !p.isChequeCadeau && !p.isService) {
+      const nbT0 = (p.tailles||[]).filter(Boolean).length, nbC0 = (p.couleurs||[]).filter(Boolean).length;
+      if((nbT0>1 || nbC0>1) && taille===undefined && couleur===undefined) return addToCartBase(id, taille, couleur, ...rest);
+      const saisie = prompt("« "+p.name+" » n'a pas de prix dans sa fiche.\nPrix à encaisser (€) :", "");
+      if(saisie===null) return;
+      const prix = parseFloat(String(saisie).replace(",",".").replace(/\s/g,""));
+      if(isNaN(prix) || prix<0) { alert("Prix invalide."); return; }
+      return window._ajouterLignePrixLibre(id, taille, couleur, rest, prix, "");
+    }
     if(!p || !p.prixLibre) return addToCartBase(id, taille, couleur, ...rest);
     const nbT = (p.tailles||[]).filter(Boolean).length, nbC = (p.couleurs||[]).filter(Boolean).length;
     // Plusieurs tailles/couleurs sans choix : le sélecteur s'ouvre d'abord, la formule sera demandée ensuite
@@ -5472,10 +5481,10 @@ window.openPayModal = () => {
 window.validerPaiement = () => {
   // Garde-fou : aucun article « prix selon formule » ne doit partir sans prix choisi
   { const sansPrix = (STATE.panier||[]).filter(l => !l.retour && !l.avoirId && !l.prixSaisi &&
-      (STATE.products||[]).some(x => x.id===(l.prodIdOriginal||l.id) && x.prixLibre));
+      (STATE.products||[]).some(x => x.id===(l.prodIdOriginal||l.id) && (x.prixLibre || (!(parseFloat(x.price)>0) && !x.isChequeCadeau && !x.isService))));
     if(sansPrix.length) {
       const l = sansPrix[0];
-      alert("« "+l.name+" » n'a pas de prix : choisis la formule.");
+      alert("« "+l.name+" » n'a pas de prix : indique-le avant d'encaisser.");
       STATE.panier = STATE.panier.map(x => x===l ? {...x, qty:(x.qty||1)-1} : x).filter(x => (x.qty||0)>0);
       addToCart(l.prodIdOriginal||l.id, l.taille||null, l.couleur||null);
       return;
@@ -7702,7 +7711,7 @@ window.openProdModal = id => {
   }
   STATE.editProdId=id;
   STATE._newCouleur = "";
-  if(id){const p=STATE.products.find(x=>x.id===id);STATE.prodForm={name:p.name,marque:p.marque||"",category:p.category,price:p.price,prixAchat:p.prixAchat||"",_coeffSaisi:"",stock:p.stock,ref:p.ref,barcode:p.barcode,tailles:p.tailles||[],couleurs:p.couleurs||[],photo:p.photo||"",stockVariantes:{...(p.stockVariantes||{})},grandeTaille:p.grandeTaille||false,octobreRose:p.octobreRose||false,artisanat:p.artisanat||false,nomArtisan:p.nomArtisan||"",dateAjout:(p.dateAjout||new Date().toISOString()).slice(0,10)};}
+  if(id){const p=STATE.products.find(x=>x.id===id);STATE.prodForm={name:p.name,marque:p.marque||"",category:p.category,price:p.price,prixAchat:p.prixAchat||"",_coeffSaisi:"",stock:p.stock,ref:p.ref,barcode:p.barcode,tailles:p.tailles||[],couleurs:p.couleurs||[],photo:p.photo||"",stockVariantes:{...(p.stockVariantes||{})},grandeTaille:p.grandeTaille||false,octobreRose:p.octobreRose||false,artisanat:p.artisanat||false,nomArtisan:p.nomArtisan||"",prixLibre:p.prixLibre||false,formulePrix:p.formulePrix||"",produitLieId:p.produitLieId||"",dateAjout:(p.dateAjout||new Date().toISOString()).slice(0,10)};}
   else STATE.prodForm={name:"",marque:"",category:"",price:"",prixAchat:"",_coeffSaisi:"",stock:0,ref:uid("REF-"),barcode:genBC(),tailles:[],couleurs:[],photo:"",stockVariantes:{},grandeTaille:false,octobreRose:false,artisanat:false,nomArtisan:"",enReserve:false,dateAjout:dateLocaleStr()};
   STATE.showProdModal=true; render();
 };
