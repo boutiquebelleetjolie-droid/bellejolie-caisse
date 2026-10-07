@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "06/10 · v51 (bon anniv. lendemain)";
+const APP_VERSION = "07/10 · v52 (frappe protégée)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -1300,8 +1300,43 @@ window.addEventListener("beforeunload", e => {
 });
 setInterval(() => { if(STATE.vendeur && STATE.tab==="caisse" && STATE.panier && STATE.panier.length) render(); }, 60000); // mise à jour du rappel
 
+// ── Protection de la frappe ─────────────────────────────────────────
+// Pendant qu'on tape (et surtout pendant la composition d'un mot par le clavier Android/iOS),
+// les rafraîchissements « d'arrière-plan » (synchro, minuteries) sont reportés : reconstruire
+// l'écran à ce moment-là casse le mot en cours et fait reculer le curseur.
+window._derniereSaisie = 0; window._composition = false; window._evtUtilisateur = false; window._renderReporte = null;
+function _champTexteActif() {
+  const a = document.activeElement, root = document.getElementById("root");
+  if(!a || !root || !root.contains(a)) return null;
+  if(a.tagName==="TEXTAREA") return a;
+  if(a.tagName==="INPUT" && !["checkbox","radio","button","submit","file","date","color","range"].includes((a.type||"").toLowerCase())) return a;
+  return null;
+}
+function _reporterRender(delai) {
+  clearTimeout(window._renderReporte);
+  window._renderReporte = setTimeout(() => { window._renderReporte = null; render(); }, delai);
+}
+["keydown","keyup","click","change","pointerdown","input"].forEach(ev => document.addEventListener(ev, e => {
+  if(!e.isTrusted) return;
+  if(ev==="input" || ev==="keydown") window._derniereSaisie = Date.now();
+  window._evtUtilisateur = true;
+  setTimeout(() => { window._evtUtilisateur = false; }, 0);
+}, true));
+document.addEventListener("compositionstart", () => { window._composition = true; }, true);
+document.addEventListener("compositionend", () => {
+  window._composition = false; window._derniereSaisie = Date.now();
+  if(window._renderReporte) _reporterRender(1200);
+}, true);
+document.addEventListener("focusout", () => { if(window._composition) window._composition = false; }, true);
+
 function render() {
   const root = document.getElementById("root");
+  if(STATE.vendeur && _champTexteActif()) {
+    if(window._composition) { _reporterRender(1500); return; }               // mot en cours : jamais de rafraîchissement
+    const depuis = Date.now() - window._derniereSaisie;
+    if(!window._evtUtilisateur && depuis < 1500) { _reporterRender(1600 - depuis); return; } // rafraîchissement d'arrière-plan pendant la frappe
+  }
+  if(window._renderReporte) { clearTimeout(window._renderReporte); window._renderReporte = null; }
   restaurerTicketEnCours();
   sauvegarderTicketEnCours();
   if (!STATE.vendeur) {
