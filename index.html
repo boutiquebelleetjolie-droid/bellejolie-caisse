@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "07/10 · v52 (frappe protégée)";
+const APP_VERSION = "07/10 · v53 (tailles sur ticket)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -4602,6 +4602,18 @@ window.voirArticleStock = (productId) => {
   render();
 };
 
+// Ticket : nom de l'article sans la variante entre parenthèses, et ligne « Taille M · Rose » à part
+function varianteTicket(i) {
+  const t = String(i.taille||"").trim(), c = String(i.couleur||"").trim().replace(/^_$/,"");
+  const morceaux = [];
+  if(t && !/^(tu|unique|taille unique)$/i.test(t)) morceaux.push("Taille "+t);
+  if(c) morceaux.push(c);
+  return morceaux.join(" · ");
+}
+function nomTicket(i) {
+  const n = String(i.name||"");
+  return (i.taille||i.couleur) ? n.replace(/\s*\([^()]*\)\s*$/,"") : n;
+}
 function renderTicketModal() {
   const v = STATE.showTicket;
   const mL = {cb:"Carte bleue",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Carte cadeau",mixte:"Paiement mixte"};
@@ -4790,7 +4802,8 @@ function renderTicketModal() {
           ${v.panier.filter(x=>!x.retour).map(i=>{
             const prixPaye = calculerPrixPayeReel(v, i);
             const remiseUnit = +(i.price-prixPaye).toFixed(2);
-            return `<div style="display:flex;justify-content:space-between;"><span>${i.qty}× ${i.name.slice(0,18)} <span style="color:#aaa;font-size:9px;">#${i.ref||''}</span></span><span>${eur(prixPaye*i.qty)}</span></div>
+            return `<div style="display:flex;justify-content:space-between;"><span>${i.qty}× ${nomTicket(i).slice(0,18)} <span style="color:#aaa;font-size:9px;">#${i.ref||''}</span></span><span>${eur(prixPaye*i.qty)}</span></div>
+            ${varianteTicket(i)?`<div style="font-size:11px;padding-left:14px;font-weight:600;">${varianteTicket(i)}</div>`:""}
             ${remiseUnit>0.001?`<div style="font-size:10px;color:#2a6e1a;padding-left:8px;">Prix normal ${eur(i.price*i.qty)} — Remise -${eur(remiseUnit*i.qty)}</div>`:""}`;
           }).join("")}
           ${retours.length>0?`
@@ -4799,7 +4812,8 @@ function renderTicketModal() {
             ${retours.map(i=>{
               const remArt = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/i.qty:0;
               const puNet = Math.max(0,i.price-remArt);
-              return `<div style="display:flex;justify-content:space-between;color:#e07c00;"><span>↩ ${i.qty}× ${i.name.slice(0,18)} <span style="color:#aaa;font-size:9px;">#${i.ref||''}</span></span><span>-${eur(puNet*i.qty)}</span></div>
+              return `<div style="display:flex;justify-content:space-between;color:#e07c00;"><span>↩ ${i.qty}× ${nomTicket(i).slice(0,18)} <span style="color:#aaa;font-size:9px;">#${i.ref||''}</span></span><span>-${eur(puNet*i.qty)}</span></div>
+              ${varianteTicket(i)?`<div style="font-size:11px;padding-left:14px;color:#e07c00;">${varianteTicket(i)}</div>`:""}
               ${remArt>0?`<div style="font-size:10px;color:#2a6e1a;padding-left:8px;">Prix normal ${eur(i.price*i.qty)} — Remise reprise -${eur(remArt*i.qty)}</div>`:""}`;
             }).join("")}
           `:""}
