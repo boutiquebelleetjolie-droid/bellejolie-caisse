@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "07/10 · v53 (tailles sur ticket)";
+const APP_VERSION = "07/10 · v54 (fidélité clarifiée)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -2834,6 +2834,30 @@ window.saveVendeurs = () => {
   alert("✅ Vendeurs enregistrés !");
 };
 
+// ─── FIDÉLITÉ : passages et programme ────────────────────────────
+// Un passage = un ticket encaissé pour la cliente. Le seuil des 40 € se juge sur le montant PAYÉ
+// (après remises, bons et retours). Une cliente n'avance que dans UN programme : celui qui correspond
+// à son profil sur ses 8 derniers passages (plus de passages ≥ 40 € → -20 % ; sinon → -15 %).
+function passagesClient(clientId) {
+  return (STATE.ventes||[]).filter(v => (!v.annulee||v.typeAnnulation==="comptable") && !v.test && !v.correctionManuelle
+      && (v.clientId||v.client?.id)===clientId && (parseFloat(v.total)||0)>0)
+    .sort((a,b)=>new Date(b.date)-new Date(a.date));
+}
+function montantPassage(v) { return Math.round((parseFloat(v.total)||0)*100)/100; }
+function profilFidelite(clientId, montantEnCours) {
+  const tous = passagesClient(clientId);
+  const derniers = tous.map(montantPassage);
+  if(montantEnCours>0) derniers.unshift(Math.round(montantEnCours*100)/100);
+  const der8 = derniers.slice(0,8);
+  const nb40 = der8.filter(m=>m>=40).length, nbSous40 = der8.filter(m=>m<40).length;
+  return {
+    programme: nb40>=nbSous40 ? 1 : 2,
+    nb40, nbSous40, nbPassages: tous.length,
+    nb40Total: tous.filter(v=>montantPassage(v)>=40).length,
+    totalPaye: Math.round(tous.reduce((s,v)=>s+montantPassage(v),0)*100)/100,
+  };
+}
+
 // ─── CAISSE ─────────────────────────────────────────────────────
 function calcPanier() {
   const panier = STATE.panier;
@@ -2854,15 +2878,8 @@ function calcPanier() {
   });
   let fidPct=0;
   // Compter les achats >= 40€ sur les 8 derniers passages
-  const nbPassages40 = STATE.client ? (STATE.ventes||[])
-    .filter(v=>(!v.annulee||v.typeAnnulation==="comptable")&&!v.test&&v.client?.id===STATE.client.id)
-    .sort((a,b)=>new Date(b.date)-new Date(a.date))
-    .slice(0,8)
-    .filter(v=>{
-      const net=(v.panier||[]).filter(x=>!x.retour).reduce((s,x)=>s+x.price*(x.qty||1),0)
-               -(v.panier||[]).filter(x=>x.retour&&!x.avoirId).reduce((s,x)=>s+x.price*(x.qty||1),0);
-      return net>=40;
-    }).length : 0;
+  const profilFid = STATE.client ? profilFidelite(STATE.client.id, 0) : null;
+  const nbPassages40 = profilFid ? profilFid.nb40 : 0;
   // Le -20% prend le dessus si 3+ achats >= 40€ sur les 8 derniers passages
   // Compteurs d'utilisation réelle pour l'escalade des paliers (après 3 utilisations, la remise augmente)
   const nbUtilisationsFid20 = STATE.client?.nbUtilisationsFid20 || 0;
@@ -2880,10 +2897,10 @@ function calcPanier() {
   const bonFid20Active = bonFid20Valide && STATE._fidAppliquee20 === STATE.client?.id;
   
   if(STATE.client && stTotal>0 && !bonFid400Actif){
-    const mod8=(STATE.client.totalAchats||0)%8;
-    const mod40=(STATE.client.montantCumule||0)%40;
-    // Palier atteint = remise disponible mais pas auto-appliquée
-    if(mod8>=7&&mod40+stTotal>=40) {
+    const mod8=(profilFid ? profilFid.nb40Total : (STATE.client.totalAchats||0))%8;
+    const progFid = profilFidelite(STATE.client.id, stTotal).programme;
+    // Palier atteint = remise disponible mais pas auto-appliquée (programme -20 % uniquement)
+    if(progFid===1 && mod8>=7 && stTotal>=40) {
       // Marquer la remise comme disponible sur le client
       if(!bonFid20) {
         STATE.client.bonFid20Disponible = new Date().toISOString();
@@ -2895,14 +2912,8 @@ function calcPanier() {
   }
   // Programme -15% : détecter palier atteint (6 passages < 40€ sur 8 derniers + 400€ cumulés)
   if(STATE.client && !bonFid15) {
-    const derniers8 = (STATE.ventes||[])
-      .filter(v=>(!v.annulee||v.typeAnnulation==="comptable")&&!v.test&&v.client?.id===STATE.client.id)
-      .sort((a,b)=>new Date(b.date)-new Date(a.date)).slice(0,8);
-    const nbSous40 = derniers8.filter(v=>{
-      const net=(v.panier||[]).filter(x=>!x.retour).reduce((s,x)=>s+x.price*(x.qty||1),0);
-      return net<40;
-    }).length;
-    if(nbSous40>=6 && (STATE.client.montantCumule||0)>=400) {
+    const nbSous40 = profilFid ? profilFid.nbSous40 : 0;
+    if(profilFid && profilFid.programme===2 && nbSous40>=6 && cumulDepuisBon400(STATE.client.id)>=400) {
       STATE.client.bonFid15Disponible = new Date().toISOString();
       lsSet("bj_clients", STATE.clients);
     }
@@ -3464,7 +3475,7 @@ function renderCaisse() {
             <div style="flex:1;min-width:0;cursor:pointer;" onclick="STATE.showClientDetail=STATE.client;render();" title="Voir la fiche client">
               <div style="font-weight:500;text-decoration:underline;text-decoration-style:dotted;">${STATE.client.prenom} ${STATE.client.nom} <span style="font-size:11px;color:#993556;">ℹ️</span></div>
               <div style="font-size:12px;color:#888;">${STATE.client.tel} · ${STATE.client.cp}</div>
-              <div style="font-size:11px;margin-top:3px;">${STATE.client.totalAchats||0} achats · ${eur(STATE.client.montantCumule||0)}
+              <div style="font-size:11px;margin-top:3px;">${(()=>{const pf=profilFidelite(STATE.client.id,0); return pf.nbPassages+" passage"+(pf.nbPassages>1?"s":"")+" · "+eur(pf.totalPaye);})()}
                 ${(()=>{
                   const bonFid20 = STATE.client?.bonFid20Disponible;
                   const bonFid20Valide = bonFid20 && (Date.now()-new Date(bonFid20)) < 90*24*60*60*1000;
@@ -3495,72 +3506,45 @@ function renderCaisse() {
               ${(()=>{
                 // Progression fidélité en temps réel avec panier actuel
                 const panierTotal = getCaisseSousTotal();
-                const achatsActuels = STATE.client.totalAchats||0;
-                const montantActuel = STATE.client.montantCumule||0;
-                const montantAvecPanier = montantActuel + panierTotal;
-                const achatsAvecPanier = achatsActuels + (panierTotal>=40?1:0);
-                // Compter les achats >= 40€ sur les 8 derniers passages (même logique que calcPanier)
-                const nbPassages40 = STATE.client ? (STATE.ventes||[])
-                  .filter(v=>(!v.annulee||v.typeAnnulation==="comptable")&&!v.test&&v.client?.id===STATE.client.id)
-                  .sort((a,b)=>new Date(b.date)-new Date(a.date))
-                  .slice(0,8)
-                  .filter(v=>{
-                    const net=(v.panier||[]).filter(x=>!x.retour).reduce((s,x)=>s+x.price*(x.qty||1),0)
-                             -(v.panier||[]).filter(x=>x.retour&&!x.avoirId).reduce((s,x)=>s+x.price*(x.qty||1),0);
-                    return net>=40;
-                  }).length : 0;
-                // Programme -20% : 8 passages × 40€
-                const passagesVers20 = Math.min(nbPassages40 + (panierTotal>=40?1:0), 8);
-                const manqueVers20 = 8 - passagesVers20;
-                // Afficher seulement si panier > 0 et pas encore -20%
+                const panierPaye = Math.max(0, getCaisseTotal ? getCaisseTotal() : panierTotal);
+                const pf = profilFidelite(STATE.client.id, panierPaye);
+                // Afficher seulement si panier > 0 et pas encore de remise fidélité appliquée
                 if(panierTotal <= 0 || fidPct > 0) return "";
-                
-                // Programme 2 : 6 passages < 40€ sur 8 derniers + total >= 400€
-                const derniers8 = (STATE.ventes||[])
-                  .filter(v=>(!v.annulee||v.typeAnnulation==="comptable")&&!v.test&&v.client?.id===STATE.client.id)
-                  .sort((a,b)=>new Date(b.date)-new Date(a.date))
-                  .slice(0,8);
-                const nbSous40Sur8 = derniers8.filter(v=>{
-                  const net=(v.panier||[]).filter(x=>!x.retour).reduce((s,x)=>s+x.price*(x.qty||1),0);
-                  return net<40;
-                }).length + (panierTotal>0&&panierTotal<40?1:0);
-                const montantTotal = (STATE.client.montantCumule||0) + panierTotal;
-                const progProg2 = Math.min(nbSous40Sur8, 6);
-                const manqueProg2passages = Math.max(0, 6 - progProg2);
-                const manqueProg2montant = Math.max(0, 400 - montantTotal);
-                const eligibleProg2 = progProg2 >= 6 && montantTotal >= 400;
-
-                const couleur = manqueVers20 <= 2 ? "#3b6d11" : "#854f0b";
-                const bg = manqueVers20 <= 2 ? "#eaf3de" : "#fff3e8";
                 const pctProg1 = fid20Escalade ? 25 : 20;
                 const pctProg2 = fid15Escalade ? 20 : 15;
-                
                 let html = '';
-                
-                // Programme 1 : -20% ou -25% si escalade (8 passages >= 40€)
-                html += '<div style="background:'+bg+';border-radius:8px;padding:6px 10px;margin-top:4px;">'
-                  +'<div style="font-size:11px;color:'+couleur+';font-weight:600;">'
-                  +'🎯 Prog. -'+pctProg1+'%'+(fid20Escalade?' ⭐':'')+' : '+passagesVers20+'/8 passages ≥ 40€'
-                  +(manqueVers20===0?" — <strong>Remise applicable !</strong>":manqueVers20===1?" — Plus qu'1 passage !":"")
-                  +'</div>'
-                  +'<div style="background:#e8e0e4;border-radius:4px;height:4px;margin-top:4px;overflow:hidden;">'
-                  +'<div style="height:100%;width:'+Math.min(100,passagesVers20/8*100)+'%;background:'+couleur+';border-radius:4px;"></div>'
-                  +'</div></div>';
-                
-                // Programme 2 : -15% ou -20% si escalade (6 passages < 40€ + 400€ cumulés)
-                {
+                if(pf.programme===1) {
+                  // Programme -20 % : 8 passages payés ≥ 40 €
+                  const passagesVers20 = Math.min(pf.nb40Total%8 + (panierPaye>=40?1:0), 8);
+                  const manqueVers20 = 8 - passagesVers20;
+                  const couleur = manqueVers20 <= 2 ? "#3b6d11" : "#854f0b";
+                  const bg = manqueVers20 <= 2 ? "#eaf3de" : "#fff3e8";
+                  html += '<div style="background:'+bg+';border-radius:8px;padding:6px 10px;margin-top:4px;">'
+                    +'<div style="font-size:11px;color:'+couleur+';font-weight:600;">'
+                    +'🎯 Fidélité -'+pctProg1+'%'+(fid20Escalade?' ⭐':'')+' : '+passagesVers20+'/8 passages ≥ 40 €'
+                    +(manqueVers20===0?" — <strong>Remise applicable !</strong>":manqueVers20===1?" — Plus qu'1 passage !":"")
+                    +'</div>'
+                    +'<div style="background:#e8e0e4;border-radius:4px;height:4px;margin-top:4px;overflow:hidden;">'
+                    +'<div style="height:100%;width:'+Math.min(100,passagesVers20/8*100)+'%;background:'+couleur+';border-radius:4px;"></div>'
+                    +'</div></div>';
+                } else {
+                  // Programme -15 % : 6 passages payés < 40 € sur les 8 derniers + 400 € cumulés
+                  const montantTotal = cumulDepuisBon400(STATE.client.id) + panierPaye;
+                  const progProg2 = Math.min(pf.nbSous40, 6);
+                  const manqueProg2passages = Math.max(0, 6 - progProg2);
+                  const manqueProg2montant = Math.max(0, 400 - montantTotal);
+                  const eligibleProg2 = progProg2 >= 6 && montantTotal >= 400;
                   const couleur2 = eligibleProg2 ? "#3b6d11" : (manqueProg2passages<=1&&manqueProg2montant<50?"#854f0b":"#185fa5");
                   const bg2 = eligibleProg2 ? "#eaf3de" : "#eef4fd";
                   html += '<div style="background:'+bg2+';border-radius:8px;padding:6px 10px;margin-top:4px;">'
                     +'<div style="font-size:11px;color:'+couleur2+';font-weight:600;">'
-                    +'🎀 Prog. -'+pctProg2+'%'+(fid15Escalade?' ⭐':'')+' : '+progProg2+'/6 passages < 40€ · '+eur(montantTotal)+'/400€'
+                    +'🎀 Fidélité -'+pctProg2+'%'+(fid15Escalade?' ⭐':'')+' : '+progProg2+'/6 passages < 40 € · '+eur(montantTotal)+'/400 €'
                     +(eligibleProg2?' — <strong>Bon -'+pctProg2+'% à générer !</strong>':manqueProg2passages===0?' · encore '+eur(manqueProg2montant):'')
                     +'</div>'
                     +'<div style="background:#e8e0e4;border-radius:4px;height:4px;margin-top:3px;overflow:hidden;">'
                     +'<div style="height:100%;width:'+Math.min(100,Math.min(progProg2/6,montantTotal/400)*100)+'%;background:'+couleur2+';border-radius:4px;"></div>'
                     +'</div></div>';
                 }
-                
                 return html;
               })()}
               ${(()=>{
@@ -4194,38 +4178,27 @@ function getNbPassagesSous40Recents(c) {
 function clientEligibleBon400(c) {
   if(!c) return false;
   // Récupérer les 8 derniers passages (toutes ventes non annulées)
-  const passages = (STATE.ventes||[])
-    .filter(v=>(!v.annulee||v.typeAnnulation==="comptable")&&!v.test&&v.client?.id===c.id)
-    .sort((a,b)=>new Date(b.date)-new Date(a.date))
-    .slice(0,8);
+  const passages = passagesClient(c.id).slice(0,8);
   if(passages.length < 8) return false;
-  // Si 3+ achats >= 40€ : le -20% prend le dessus, pas éligible au bon -15%
-  const nbSur40 = passages.filter(v=>{
-    const net=(v.panier||[]).filter(x=>!x.retour).reduce((s,x)=>s+x.price*(x.qty||1),0)
-              -(v.panier||[]).filter(x=>x.retour&&!x.avoirId).reduce((s,x)=>s+x.price*(x.qty||1),0);
-    return net>=40;
-  }).length;
-  if(nbSur40 >= 3) return false;
-  // Compter combien sont < 40€
-  const nbSous40 = passages.filter(v=>{
-    const net=(v.panier||[]).filter(x=>!x.retour).reduce((s,x)=>s+x.price*(x.qty||1),0)
-              -(v.panier||[]).filter(x=>x.retour&&!x.avoirId).reduce((s,x)=>s+x.price*(x.qty||1),0);
-    return net>0 && net<40;
-  }).length;
+  // Une seule progression : le bon -15 % ne concerne que le profil « petits paniers »
+  const pf = profilFidelite(c.id, 0);
+  if(pf.programme !== 2) return false;
+  const nbSous40 = passages.filter(v=>montantPassage(v)<40).length;
   if(nbSous40 < 6) return false;
   // Calculer le total cumulé depuis le dernier bon 400 utilisé ou créé
   const dernierBon400 = (STATE.avoirs||[])
     .filter(a=>a.clientId===c.id && a.typeAvoir==="fidelite400")
     .sort((a,b)=>new Date(b.date)-new Date(a.date))[0];
   const dateRef = dernierBon400 ? new Date(dernierBon400.date) : new Date(0);
-  const totalDepuis = (STATE.ventes||[])
-    .filter(v=>(!v.annulee||v.typeAnnulation==="comptable")&&!v.test&&v.client?.id===c.id&&new Date(v.date)>dateRef)
-    .reduce((s,v)=>{
-      const net=(v.panier||[]).filter(x=>!x.retour).reduce((s2,x)=>s2+x.price*(x.qty||1),0)
-                -(v.panier||[]).filter(x=>x.retour&&!x.avoirId).reduce((s2,x)=>s2+x.price*(x.qty||1),0);
-      return s+Math.max(0,net);
-    },0);
+  const totalDepuis = cumulDepuisBon400(c.id);
   return totalDepuis >= 400;
+}
+// Montant payé cumulé depuis le dernier bon -15 % (base des 400 €)
+function cumulDepuisBon400(clientId) {
+  const dernier = (STATE.avoirs||[]).filter(a=>a.clientId===clientId && a.typeAvoir==="fidelite400")
+    .sort((a,b)=>new Date(b.date)-new Date(a.date))[0];
+  const ref = dernier ? new Date(dernier.date) : new Date(0);
+  return Math.round(passagesClient(clientId).filter(v=>new Date(v.date)>ref).reduce((s,v)=>s+montantPassage(v),0)*100)/100;
 }
 
 // Vérifie si un bon 400 a déjà été généré depuis le dernier palier
@@ -5733,8 +5706,9 @@ window.validerPaiement = () => {
   if(STATE.client) {
     const achatsBruts = STATE.panier.filter(x=>!x.retour).reduce((s,x)=>s+x.price*x.qty,0);
     const retoursBruts = STATE.panier.filter(x=>x.retour&&!x.avoirId).reduce((s,x)=>s+x.price*x.qty,0);
-    const netAchat = achatsBruts - retoursBruts;
-    // Compter dans la fidélité seulement si le net dépasse 40€
+    const netAchat = Math.round(Math.max(0,total)*100)/100; // montant réellement payé
+    void achatsBruts; void retoursBruts;
+    // Compter dans la fidélité seulement si le montant payé atteint 40€
     if(netAchat >= 40) {
       STATE.clients=STATE.clients.map(c=>c.id===STATE.client.id?{
         ...c,
@@ -8783,7 +8757,11 @@ function renderCRM() {
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(265px,1fr));gap:12px;">
       ${filtered.map(c=>{
-        const r=8-((c.totalAchats||0)%8), rm=Math.max(0,40-((c.montantCumule||0)%40));
+        const pfc = profilFidelite(c.id, 0);
+        const r = 8-(pfc.nb40Total%8);
+        const texteFid = pfc.programme===1
+          ? "🎯 Fidélité -20 % : encore "+r+" passage"+(r>1?"s":"")+" ≥ 40 €"
+          : "🎀 Fidélité -15 % : "+Math.min(pfc.nbSous40,6)+"/6 passages < 40 € · "+eur(cumulDepuisBon400(c.id))+"/400 €";
         return `
         <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;">
           <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
@@ -8802,9 +8780,9 @@ function renderCRM() {
             </div>
           </div>
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
-            ${[["Achats",c.totalAchats||0],["Dépensé",eur(c.montantCumule||0)],["CP",c.cp||"—"]].map(([l,v])=>`<div style="background:#f5f0f2;border-radius:6px;padding:5px 8px;text-align:center;"><div style="font-size:11px;color:#888;">${l}</div><div style="font-weight:500;font-size:12px;">${v}</div></div>`).join("")}
+            ${[["Passages",pfc.nbPassages],["Dépensé",eur(pfc.totalPaye)],["CP",c.cp||"—"]].map(([l,v])=>`<div style="background:#f5f0f2;border-radius:6px;padding:5px 8px;text-align:center;"><div style="font-size:11px;color:#888;">${l}</div><div style="font-weight:500;font-size:12px;">${v}</div></div>`).join("")}
           </div>
-          <div style="margin-top:8px;font-size:11px;background:#fbeaf0;border-radius:6px;padding:5px 8px;color:#993556;">🎁 Encore ${r} achat${r>1?"s":""} et ${eur(rm)} pour -20%</div>
+          <div style="margin-top:8px;font-size:11px;background:#fbeaf0;border-radius:6px;padding:5px 8px;color:#993556;">${texteFid}</div>
         </div>`;
       }).join("")}
     </div>
