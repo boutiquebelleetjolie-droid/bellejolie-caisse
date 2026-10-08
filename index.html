@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "08/10 · v58 (chaussettes paillettes)";
+const APP_VERSION = "08/10 · v59 (chaussettes, corrections masquées)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -10688,11 +10688,11 @@ function idsVentesValides() { return new Set((STATE.ventes||[]).filter(venteComp
 
 // ── Ventes du mois par famille d'accessoires (sacs, colliers, bracelets, bagues, boucles d'oreilles) ──
 const FAMILLES_ACCESSOIRES = [
-  ["sacs","👜 Sacs & pochettes"],["colliers","📿 Colliers"],["bracelets","✨ Bracelets"],["bagues","💍 Bagues"],["boucles","🌸 Boucles d'oreilles"],["chaussettes","🧦 Chaussettes à paillettes"],
+  ["sacs","👜 Sacs & pochettes"],["colliers","📿 Colliers"],["bracelets","✨ Bracelets"],["bagues","💍 Bagues"],["boucles","🌸 Boucles d'oreilles"],["chaussettes","🧦 Chaussettes"],
 ];
 function familleArticle(nom, categorie) {
   const t = normStr(nom||""), c = normStr(categorie||"");
-  if(/chaussette/.test(t) && /paillette/.test(t)) return "chaussettes";
+  if(/chaussette/.test(t)) return "chaussettes";
   if(/\bsacs?\b|pochette|banane|cabas|besace|cartable/.test(t) || c==="sacs") return "sacs";
   if(/collier|sautoir|pendentif|ras de cou|choker|\bchaines?\b|medaille/.test(t)) return "colliers";
   if(/bracelet|jonc|manchette|gourmette/.test(t)) return "bracelets";
@@ -11364,8 +11364,9 @@ function renderBilan() {
     ${(()=>{
       const corrections = (STATE.ventes||[]).filter(v=>v.correctionManuelle).sort((a,b)=>new Date(b.date)-new Date(a.date));
       if(!corrections.length) return "";
+      if(!STATE._voirCorrections) return `<div style="text-align:right;margin:-2px 0 12px;"><button onclick="STATE._voirCorrections=true;render()" style="background:none;border:none;color:#aaa;cursor:pointer;font-size:11px;text-decoration:underline;">Voir les corrections manuelles (${corrections.length})</button></div>`;
       return `<div style="background:#fff8e1;border:1px solid #f0dcb0;border-radius:9px;padding:8px 12px;margin-bottom:16px;font-size:12px;">
-        <div style="font-weight:500;color:#854f0b;margin-bottom:4px;">Corrections manuelles existantes :</div>
+        <div style="display:flex;justify-content:space-between;font-weight:500;color:#854f0b;margin-bottom:4px;">Corrections manuelles existantes :<button onclick="STATE._voirCorrections=false;render()" style="background:none;border:none;color:#854f0b;cursor:pointer;font-size:12px;">✕ Masquer</button></div>
         ${corrections.map(v=>`
           <div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;">
             <span>${new Date(v.date).toLocaleDateString("fr-FR")} — ${eur(v.total)} <span style="color:#aaa;">(${v.noteCorrection||"sans note"})</span></span>
