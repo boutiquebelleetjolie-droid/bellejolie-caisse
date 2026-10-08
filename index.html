@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "08/10 · v60 (contrôle Z masqué)";
+const APP_VERSION = "08/10 · v61 (suivi chaussures)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -10706,40 +10706,60 @@ function familleArticle(nom, categorie) {
   if(/boucle d.?oreille|creole|pampille|puce|\bbo\b/.test(t) || (c==="bijoux" && /boucle/.test(t))) return "boucles";
   return null;
 }
-function ventesParFamille(mois, annee) {
+function ventesParFamille(mois, annee, familles, classer) {
+  familles = familles || FAMILLES_ACCESSOIRES; classer = classer || familleArticle;
   const prodMap = {}; (STATE.products||[]).forEach(p=>prodMap[p.id]=p);
-  const res = {}; FAMILLES_ACCESSOIRES.forEach(([k])=>res[k]={qty:0, ca:0, articles:{}});
+  const res = {}; familles.forEach(([k])=>res[k]={qty:0, ca:0, articles:{}});
   (STATE.ventes||[]).forEach(v => {
     if(v.test || v.annulee) return;
     const d = new Date(v.date); if(d.getMonth()!==mois || d.getFullYear()!==annee) return;
     (v.panier||[]).forEach(i => {
       if(i.avoirId || i.id==="correction_manuelle" || estArticleSac(i)) return;
       const p = prodMap[i.prodIdOriginal||String(i.id||"").replace(/^R_/,"")] || {};
-      const nom = p.name || i.name, f = familleArticle(nom, p.category||i.category); if(!f) return;
+      const nom = p.name || i.name, f = classer(nom, p.category||i.category); if(!f || !res[f]) return;
       const q = (i.qty||1) * (i.retour ? -1 : 1);
       const montant = i.retour ? -Math.max(0,(i.price||0)-(i.remiseType==="pct"?(i.price||0)*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/(i.qty||1):0))*(i.qty||1)
                                : calculerPrixPayeReel(v, i)*(i.qty||1);
       res[f].qty += q; res[f].ca += montant;
-      const a = res[f].articles[nom] = res[f].articles[nom] || {qty:0, ca:0}; a.qty += q; a.ca += montant;
+      const a = res[f].articles[nom] = res[f].articles[nom] || {qty:0, ca:0, tailles:{}}; a.qty += q; a.ca += montant;
+      if(i.taille && !/^(tu|unique)$/i.test(i.taille)) a.tailles[i.taille] = (a.tailles[i.taille]||0) + q;
     });
   });
   return res;
 }
-function renderBilanFamilles(mois, annee) {
+const FAMILLES_CHAUSSURES = [["baskets","👟 Baskets"],["bottes","🥾 Bottes & bottines"],["ballerines","🩰 Ballerines"],["mocassins","👞 Mocassins"],["escarpins","👠 Escarpins"],["sandales","🩴 Sandales & mules"],["autres","Autres chaussures"]];
+function familleChaussure(nom, categorie) {
+  const t = normStr(nom||""), c = normStr(categorie||"");
+  if(/chaussette/.test(t)) return null;
+  if(/basket|sneaker|running|tennis/.test(t)) return "baskets";
+  if(/botte|bottine|boots?\b|godillot|ranger|chelsea/.test(t)) return "bottes";
+  if(/ballerine|babies|salome/.test(t)) return "ballerines";
+  if(/mocassin|derby|richelieu|loafer/.test(t)) return "mocassins";
+  if(/escarpin|talon/.test(t)) return "escarpins";
+  if(/sandale|\bmules?\b|tong|claquette|espadrille|sabot/.test(t)) return "sandales";
+  return c==="chaussures" ? "autres" : null;
+}
+function renderBilanFamilles(mois, annee, type) {
   if(STATE.vendeur.id!=="V1") return "";
-  const r = ventesParFamille(mois, annee);
-  const ouvert = STATE._famOuverte;
+  const chaus = type==="chaussures";
+  const familles = chaus ? FAMILLES_CHAUSSURES : FAMILLES_ACCESSOIRES;
+  const r = ventesParFamille(mois, annee, familles, chaus ? familleChaussure : familleArticle);
+  const cle = chaus ? "_famChausOuverte" : "_famOuverte";
+  const ouvert = STATE[cle];
+  const visibles = familles.filter(([k])=>!(chaus && k==="autres" && !r[k].qty));
+  const totQ = visibles.reduce((s,[k])=>s+r[k].qty,0), totCA = visibles.reduce((s,[k])=>s+r[k].ca,0);
+  const fmtT = t => Object.entries(t||{}).filter(([,q])=>q).sort((a,b)=>String(a[0]).localeCompare(String(b[0]),"fr",{numeric:true})).map(([tl,q])=>`${tl}${q>1?" ×"+q:""}`).join(" · ");
   return `
   <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;margin-bottom:16px;">
-    <div style="font-weight:600;font-size:14px;margin-bottom:10px;">👜 Accessoires & bijoux vendus</div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;font-weight:600;font-size:14px;margin-bottom:10px;">${chaus?"👟 Chaussures vendues":"👜 Accessoires & bijoux vendus"}${chaus?`<span style="font-size:12px;font-weight:500;color:#993556;">${totQ} paire${Math.abs(totQ)>1?"s":""} · ${eur(totCA)}</span>`:""}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;">
-      ${FAMILLES_ACCESSOIRES.map(([k,l])=>`<div onclick="STATE._famOuverte=STATE._famOuverte==='${k}'?null:'${k}';render()" style="cursor:pointer;background:${ouvert===k?'#993556':'#fbeaf0'};border-radius:9px;padding:9px 10px;">
+      ${visibles.map(([k,l])=>`<div onclick="STATE.${cle}=STATE.${cle}==='${k}'?null:'${k}';render()" style="cursor:pointer;background:${ouvert===k?'#993556':'#fbeaf0'};border-radius:9px;padding:9px 10px;">
         <div style="font-size:11px;color:${ouvert===k?'#fff':'#993556'};">${l}</div>
         <div style="font-size:18px;font-weight:700;color:${ouvert===k?'#fff':'#993556'};">${r[k].qty}</div>
         <div style="font-size:10px;color:${ouvert===k?'#fbeaf0':'#888'};">${eur(r[k].ca)}</div></div>`).join("")}
     </div>
-    ${ouvert?`<div style="margin-top:10px;font-size:12px;">${Object.entries(r[ouvert].articles).sort((a,b)=>b[1].qty-a[1].qty).map(([n,a])=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:0.5px solid #f0ebee;"><span>${n}</span><span><strong>${a.qty}</strong> · ${eur(a.ca)}</span></div>`).join("")||'<div style="color:#aaa;">Aucune vente.</div>'}</div>`:""}
-    <div style="font-size:10px;color:#aaa;margin-top:8px;">Quantités nettes des retours · sacs de caisse à 0,20 € exclus · touche une famille pour le détail.</div>
+    ${ouvert&&r[ouvert]?`<div style="margin-top:10px;font-size:12px;">${Object.entries(r[ouvert].articles).sort((a,b)=>b[1].qty-a[1].qty).map(([n,a])=>`<div style="padding:4px 0;border-bottom:0.5px solid #f0ebee;"><div style="display:flex;justify-content:space-between;"><span>${n}</span><span><strong>${a.qty}</strong> · ${eur(a.ca)}</span></div>${fmtT(a.tailles)?`<div style="font-size:11px;color:#888;">Tailles : ${fmtT(a.tailles)}</div>`:""}</div>`).join("")||'<div style="color:#aaa;">Aucune vente.</div>'}</div>`:""}
+    <div style="font-size:10px;color:#aaa;margin-top:8px;">Quantités nettes des retours${chaus?"":" · sacs de caisse à 0,20 € exclus"} · touche une famille pour le détail${chaus?" et les pointures":""}.</div>
   </div>`;
 }
 
@@ -11395,7 +11415,7 @@ function renderBilan() {
 
     ${renderSuiviEncaissementsMois(STATE.bilanMonth, STATE.bilanYear)}
     ${renderControleZ(STATE.bilanMonth, STATE.bilanYear)}
-    ${renderBilanFamilles(STATE.bilanMonth, STATE.bilanYear)}
+    ${renderBilanFamilles(STATE.bilanMonth, STATE.bilanYear)}${renderBilanFamilles(STATE.bilanMonth, STATE.bilanYear,"chaussures")}
     ${renderBilanArtisans()}
     ${renderOctobreRoseDetail(STATE.bilanMonth, STATE.bilanYear)}
 
