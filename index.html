@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "07/10 · v55 (fidélité visible)";
+const APP_VERSION = "08/10 · v56 (familles accessoires)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -10686,6 +10686,56 @@ function retoursArtisanSansTicket(v, prodMap, idsVentes) {
 function venteCompteArtisan(v) { return !!v && !v.test && (!v.annulee || v.typeAnnulation==="comptable"); }
 function idsVentesValides() { return new Set((STATE.ventes||[]).filter(venteCompteArtisan).map(v=>v.id)); }
 
+// ── Ventes du mois par famille d'accessoires (sacs, colliers, bracelets, bagues, boucles d'oreilles) ──
+const FAMILLES_ACCESSOIRES = [
+  ["sacs","👜 Sacs & pochettes"],["colliers","📿 Colliers"],["bracelets","✨ Bracelets"],["bagues","💍 Bagues"],["boucles","🌸 Boucles d'oreilles"],
+];
+function familleArticle(nom, categorie) {
+  const t = normStr(nom||""), c = normStr(categorie||"");
+  if(/\bsacs?\b|pochette|banane|cabas|besace|cartable/.test(t) || c==="sacs") return "sacs";
+  if(/collier|sautoir|pendentif/.test(t)) return "colliers";
+  if(/bracelet|jonc|manchette|gourmette/.test(t)) return "bracelets";
+  if(/\bbagues?\b|chevaliere/.test(t)) return "bagues";
+  if(/boucle d.?oreille|creole|pampille|puce/.test(t) || (c==="bijoux" && /boucle/.test(t))) return "boucles";
+  return null;
+}
+function ventesParFamille(mois, annee) {
+  const prodMap = {}; (STATE.products||[]).forEach(p=>prodMap[p.id]=p);
+  const res = {}; FAMILLES_ACCESSOIRES.forEach(([k])=>res[k]={qty:0, ca:0, articles:{}});
+  (STATE.ventes||[]).forEach(v => {
+    if(v.test || v.annulee) return;
+    const d = new Date(v.date); if(d.getMonth()!==mois || d.getFullYear()!==annee) return;
+    (v.panier||[]).forEach(i => {
+      if(i.avoirId || i.id==="correction_manuelle" || estArticleSac(i)) return;
+      const p = prodMap[i.prodIdOriginal||String(i.id||"").replace(/^R_/,"")] || {};
+      const nom = p.name || i.name, f = familleArticle(nom, p.category||i.category); if(!f) return;
+      const q = (i.qty||1) * (i.retour ? -1 : 1);
+      const montant = i.retour ? -Math.max(0,(i.price||0)-(i.remiseType==="pct"?(i.price||0)*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/(i.qty||1):0))*(i.qty||1)
+                               : calculerPrixPayeReel(v, i)*(i.qty||1);
+      res[f].qty += q; res[f].ca += montant;
+      const a = res[f].articles[nom] = res[f].articles[nom] || {qty:0, ca:0}; a.qty += q; a.ca += montant;
+    });
+  });
+  return res;
+}
+function renderBilanFamilles(mois, annee) {
+  if(STATE.vendeur.id!=="V1") return "";
+  const r = ventesParFamille(mois, annee);
+  const ouvert = STATE._famOuverte;
+  return `
+  <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;margin-bottom:16px;">
+    <div style="font-weight:600;font-size:14px;margin-bottom:10px;">👜 Accessoires & bijoux vendus</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;">
+      ${FAMILLES_ACCESSOIRES.map(([k,l])=>`<div onclick="STATE._famOuverte=STATE._famOuverte==='${k}'?null:'${k}';render()" style="cursor:pointer;background:${ouvert===k?'#993556':'#fbeaf0'};border-radius:9px;padding:9px 10px;">
+        <div style="font-size:11px;color:${ouvert===k?'#fff':'#993556'};">${l}</div>
+        <div style="font-size:18px;font-weight:700;color:${ouvert===k?'#fff':'#993556'};">${r[k].qty}</div>
+        <div style="font-size:10px;color:${ouvert===k?'#fbeaf0':'#888'};">${eur(r[k].ca)}</div></div>`).join("")}
+    </div>
+    ${ouvert?`<div style="margin-top:10px;font-size:12px;">${Object.entries(r[ouvert].articles).sort((a,b)=>b[1].qty-a[1].qty).map(([n,a])=>`<div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:0.5px solid #f0ebee;"><span>${n}</span><span><strong>${a.qty}</strong> · ${eur(a.ca)}</span></div>`).join("")||'<div style="color:#aaa;">Aucune vente.</div>'}</div>`:""}
+    <div style="font-size:10px;color:#aaa;margin-top:8px;">Quantités nettes des retours · sacs de caisse à 0,20 € exclus · touche une famille pour le détail.</div>
+  </div>`;
+}
+
 // ── Octobre Rose : détail des articles vendus (retours avec ticket retirés) ──
 function lignesOctobreRose(mois, annee) {
   const prodMap = {}; (STATE.products||[]).forEach(p=>prodMap[p.id]=p);
@@ -11337,6 +11387,7 @@ function renderBilan() {
 
     ${renderSuiviEncaissementsMois(STATE.bilanMonth, STATE.bilanYear)}
     ${renderControleZ(STATE.bilanMonth, STATE.bilanYear)}
+    ${renderBilanFamilles(STATE.bilanMonth, STATE.bilanYear)}
     ${renderBilanArtisans()}
     ${renderOctobreRoseDetail(STATE.bilanMonth, STATE.bilanYear)}
 
