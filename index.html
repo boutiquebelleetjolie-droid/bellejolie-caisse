@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "08/10 · v57 (colliers & bagues)";
+const APP_VERSION = "08/10 · v58 (chaussettes paillettes)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -10688,10 +10688,11 @@ function idsVentesValides() { return new Set((STATE.ventes||[]).filter(venteComp
 
 // ── Ventes du mois par famille d'accessoires (sacs, colliers, bracelets, bagues, boucles d'oreilles) ──
 const FAMILLES_ACCESSOIRES = [
-  ["sacs","👜 Sacs & pochettes"],["colliers","📿 Colliers"],["bracelets","✨ Bracelets"],["bagues","💍 Bagues"],["boucles","🌸 Boucles d'oreilles"],
+  ["sacs","👜 Sacs & pochettes"],["colliers","📿 Colliers"],["bracelets","✨ Bracelets"],["bagues","💍 Bagues"],["boucles","🌸 Boucles d'oreilles"],["chaussettes","🧦 Chaussettes à paillettes"],
 ];
 function familleArticle(nom, categorie) {
   const t = normStr(nom||""), c = normStr(categorie||"");
+  if(/chaussette/.test(t) && /paillette/.test(t)) return "chaussettes";
   if(/\bsacs?\b|pochette|banane|cabas|besace|cartable/.test(t) || c==="sacs") return "sacs";
   if(/collier|sautoir|pendentif|ras de cou|choker|\bchaines?\b|medaille/.test(t)) return "colliers";
   if(/bracelet|jonc|manchette|gourmette/.test(t)) return "bracelets";
