@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "08/10 · v56 (familles accessoires)";
+const APP_VERSION = "08/10 · v57 (colliers & bagues)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -10693,10 +10693,10 @@ const FAMILLES_ACCESSOIRES = [
 function familleArticle(nom, categorie) {
   const t = normStr(nom||""), c = normStr(categorie||"");
   if(/\bsacs?\b|pochette|banane|cabas|besace|cartable/.test(t) || c==="sacs") return "sacs";
-  if(/collier|sautoir|pendentif/.test(t)) return "colliers";
+  if(/collier|sautoir|pendentif|ras de cou|choker|\bchaines?\b|medaille/.test(t)) return "colliers";
   if(/bracelet|jonc|manchette|gourmette/.test(t)) return "bracelets";
-  if(/\bbagues?\b|chevaliere/.test(t)) return "bagues";
-  if(/boucle d.?oreille|creole|pampille|puce/.test(t) || (c==="bijoux" && /boucle/.test(t))) return "boucles";
+  if(/\bbagues?\b|chevaliere|anneau|alliance|solitaire|\bring\b/.test(t)) return "bagues";
+  if(/boucle d.?oreille|creole|pampille|puce|\bbo\b/.test(t) || (c==="bijoux" && /boucle/.test(t))) return "boucles";
   return null;
 }
 function ventesParFamille(mois, annee) {
