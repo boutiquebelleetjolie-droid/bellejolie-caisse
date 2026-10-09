@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "08/10 · v61 (suivi chaussures)";
+const APP_VERSION = "09/10 · v62 (articles roses → Octobre Rose)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -1054,6 +1054,36 @@ function estOctobreRose(p, couleur, dateVente) {
   if(Array.isArray(p.octobreRose)) return p.octobreRose.includes(couleur);
   return false;
 }
+// Détection des articles roses (nom ou couleur) pour Octobre Rose
+const RE_ROSE = /\b(roses?|fuchsia|fushia|fuschia|framboise|pink|magenta|corail|saumon|poudre|blush|bubble ?gum|barbie|lilas rose)\b/;
+const RE_ROSE_NOM = /\b(roses?|fuchsia|fushia|fuschia|framboise|pink|magenta)\b/;
+function couleursRoses(p) { return (p.couleurs||[]).filter(c => RE_ROSE.test(normStr(c))); }
+function articleRoseNonNote(p) {
+  if(!p || p.isChequeCadeau || p.isService) return null;
+  if(p.octobreRose===true) return null;
+  const cr = couleursRoses(p);
+  const deja = Array.isArray(p.octobreRose) ? p.octobreRose : [];
+  if(cr.length) { const manque = cr.filter(c=>!deja.includes(c)); return manque.length ? {couleurs:manque} : null; }
+  if(RE_ROSE_NOM.test(normStr(p.name||"")) && !deja.length) return {couleurs:null};
+  return null;
+}
+window.ajouterRosesOctobreRose = () => {
+  const coches = [...document.querySelectorAll('input[data-rose-id]')].filter(x=>x.checked).map(x=>x.dataset.roseId);
+  if(!coches.length) { alert("Aucun article coché."); return; }
+  let n = 0;
+  STATE.products.forEach(p => {
+    if(!coches.includes(p.id)) return;
+    const r = articleRoseNonNote(p); if(!r) return;
+    if(r.couleurs) {
+      const deja = Array.isArray(p.octobreRose) ? p.octobreRose : [];
+      p.octobreRose = [...new Set([...deja, ...r.couleurs])];
+    } else p.octobreRose = true;
+    n++;
+  });
+  STATE._rosesOuvert = false;
+  setState({products:[...STATE.products]});
+  alert("🎀 "+n+" article"+(n>1?"s ajoutés":" ajouté")+" à Octobre Rose.");
+};
 function estArticleSac(i) {
   return !!i && normStr(i.name||"").includes("sac") && (parseFloat(i.price)||0) <= 0.5;
 }
@@ -7316,6 +7346,22 @@ function renderStock() {
     html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;"><div style="font-weight:600;font-size:14px;color:#c2185b;">🎀 Articles Octobre Rose ('+liste.length+')</div>';
     html += '<button onclick="STATE.filtreOctobreRose=false;render()" style="background:none;border:1px solid #c2185b;color:#c2185b;border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;">✕ Fermer</button></div>';
     if(aPreciser.length) html += '<div style="background:#fff3cd;border-radius:8px;padding:7px 10px;font-size:12px;color:#856404;margin-bottom:8px;">⚠️ '+aPreciser.length+' article'+(aPreciser.length>1?'s ont':' a')+' plusieurs couleurs mais '+(aPreciser.length>1?'sont comptés':'est compté')+' en entier (toutes couleurs). Ouvre '+(aPreciser.length>1?'leur':'sa')+' fiche ✏️ et coche uniquement « Rose ».</div>';
+    if(isV1) {
+      const roses = STATE.products.map(p=>({p, r:articleRoseNonNote(p)})).filter(x=>x.r).sort((a,b)=>(b.p.stock||0)-(a.p.stock||0) || (a.p.name||"").localeCompare(b.p.name||""));
+      if(roses.length) {
+        html += '<div style="background:#fff;border:1px dashed #f3a6c3;border-radius:9px;padding:8px 10px;margin-bottom:10px;">';
+        html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;"><span style="font-size:13px;color:#c2185b;font-weight:600;">🔍 '+roses.length+' article'+(roses.length>1?'s roses pas encore notés':' rose pas encore noté')+'</span><button onclick="STATE._rosesOuvert=!STATE._rosesOuvert;render()" style="background:none;border:1px solid #c2185b;color:#c2185b;border-radius:7px;padding:3px 10px;font-size:12px;cursor:pointer;">'+(STATE._rosesOuvert?'▲ Fermer':'▼ Voir la liste')+'</button></div>';
+        if(STATE._rosesOuvert) {
+          html += '<div style="font-size:11px;color:#888;margin:6px 0;">Repérés par le nom ou la couleur (rose, fuchsia, framboise, corail, poudré…). Seule la couleur rose est notée quand l\'article en a plusieurs. Décoche ceux qui ne doivent pas compter.</div>';
+          html += '<div style="display:flex;gap:6px;margin-bottom:6px;"><button onclick="document.querySelectorAll(\'input[data-rose-id]\').forEach(x=>x.checked=true)" style="background:none;border:1px solid #ddd;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">Tout cocher</button><button onclick="document.querySelectorAll(\'input[data-rose-id]\').forEach(x=>x.checked=false)" style="background:none;border:1px solid #ddd;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">Tout décocher</button></div>';
+          roses.forEach(({p,r}) => {
+            html += '<label style="display:flex;align-items:center;gap:8px;font-size:12px;padding:4px 0;border-top:0.5px solid #f8e1ea;cursor:pointer;"><input type="checkbox" data-rose-id="'+p.id+'" '+((p.stock||0)>0?'checked':'')+' style="width:15px;height:15px;"/><span style="flex:1;">'+p.name+' <span style="color:#c2185b;">'+(r.couleurs?'· '+r.couleurs.join(", "):'')+'</span>'+((p.couleurs||[]).length>1&&r.couleurs?' <span style="color:#aaa;">(sur '+p.couleurs.join(", ")+')</span>':'')+'</span><span style="color:'+((p.stock||0)<=0?'#a32d2d':'#888')+';white-space:nowrap;">stock '+(p.stock||0)+'</span></label>';
+          });
+          html += '<button onclick="ajouterRosesOctobreRose()" style="width:100%;margin-top:8px;padding:9px;background:#c2185b;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">🎀 Ajouter les articles cochés à Octobre Rose</button>';
+        }
+        html += '</div>';
+      }
+    }
     if(!liste.length) html += '<div style="font-size:13px;color:#888;">Aucun article en Octobre Rose.</div>';
     else {
       html += '<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:420px;background:#fff;border-radius:8px;">';
