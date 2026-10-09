@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "09/10 · v62 (articles roses → Octobre Rose)";
+const APP_VERSION = "09/10 · v63 (Octobre Rose 3→31/10)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -1048,7 +1048,7 @@ function estOctobreRose(p, couleur, dateVente) {
   if(!p) return false;
   if(dateVente) {
     const d = new Date(dateVente);
-    if(d.getMonth()!==9) return false; // 9 = octobre (0-indexé) — hors campagne au-delà du 31/10
+    if(d.getMonth()!==9 || d.getDate()<3) return false; // campagne du 3 au 31 octobre inclus (9 = octobre, 0-indexé)
   }
   if(p.octobreRose===true) return true;
   if(Array.isArray(p.octobreRose)) return p.octobreRose.includes(couleur);
@@ -10061,7 +10061,7 @@ function renderStats() {
       </div>
       ${caOctobreRose>0?`
       <div style="background:#fce4ec;border:0.5px solid #f5c2d6;border-radius:12px;padding:14px;">
-        <div style="font-weight:500;font-size:13px;margin-bottom:4px;color:#c2185b;">🎀 Octobre Rose</div>
+        <div style="font-weight:500;font-size:13px;margin-bottom:4px;color:#c2185b;">🎀 Octobre Rose <span style="font-weight:400;font-size:11px;">(du 3 au 31 octobre)</span></div>
         <div style="font-size:22px;font-weight:700;color:#c2185b;margin-bottom:2px;">${eur(caOctobreRose)}</div>
         <div style="font-size:11px;color:#c2185b;opacity:0.8;margin-bottom:8px;">CA réalisé sur les articles marqués Octobre Rose (retours déjà déduits)</div>
         <div style="background:#fff;border-radius:8px;padding:8px 12px;display:flex;justify-content:space-between;align-items:center;">
@@ -10850,7 +10850,7 @@ function renderOctobreRoseDetail(mois, annee) {
   return `
   <div style="background:#fff;border:1px solid #f3a6c3;border-radius:12px;padding:14px;margin-bottom:16px;">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-      <div style="font-weight:600;font-size:14px;color:#c2185b;">🎀 Octobre Rose ${annee} — détail des ventes</div>
+      <div style="font-weight:600;font-size:14px;color:#c2185b;">🎀 Octobre Rose ${annee} — détail des ventes du 3 au 31 octobre</div>
       <button onclick="imprimerOctobreRose(${annee})" style="background:#c2185b;color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;">🖨️ Imprimer le détail</button>
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:10px;">
