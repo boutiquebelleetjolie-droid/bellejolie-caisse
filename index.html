@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "09/10 · v63 (Octobre Rose 3→31/10)";
+const APP_VERSION = "10/10 · v64 (référence inexistante)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -2258,6 +2258,30 @@ window.ajouterSac = () => {
   addToCart(sacProd.id);
 };
 
+// ─── Article sans référence (prix saisi à la main) — gérante et Sabrina uniquement ───
+window.ajouterArticleSansRef = () => {
+  if(!peutGererArtisans()) { alert("Réservé à la gérante et à Sabrina."); return; }
+  const nom = prompt("Désignation de l'article (référence inexistante) :", "Article sans référence");
+  if(nom===null) return;
+  const prixStr = prompt("Prix TTC de \""+(nom.trim()||"Article sans référence")+"\" :", "");
+  if(prixStr===null) return;
+  const prix = parseFloat(String(prixStr).replace(",", ".").replace(/[^0-9.]/g,""));
+  if(isNaN(prix) || prix<=0) { alert("Prix invalide."); return; }
+  let prod = STATE.products.find(p=>p.ref==="SANS-REF-CAISSE");
+  if(!prod) {
+    prod = { id:"SANSREF_"+Date.now(), name:"Article sans référence", ref:"SANS-REF-CAISSE", barcode:"SANSREF", price:0, prixAchat:0,
+      category:"Divers", stock:0, isService:true, tailles:[], couleurs:[], grandeTaille:false, enReserve:false, dateAjout:dateLocaleStr() };
+    STATE.products = [...STATE.products, prod];
+    lsSet("bj_products", STATE.products);
+  }
+  STATE.panier = [...STATE.panier, {
+    id: uid("SREF")+Math.random().toString(36).slice(2,5), prodIdOriginal: prod.id, ref: prod.ref, category: prod.category,
+    name: (nom.trim()||"Article sans référence")+" (sans réf.)", price: Math.round(prix*100)/100, prixAchat: 0, qty: 1, remise:"", remiseType:"",
+    prixSaisi: true, sansRef: true, saisiPar: STATE.vendeur?.nom||STATE.vendeur?.id||"",
+  }];
+  render();
+};
+
 // ─── Chèque cadeau (vente) ──────────────────────────────────────
 window.ouvrirVenteChequeCadeau = () => {
   STATE._montantChequeCadeau = "";
@@ -3826,6 +3850,7 @@ function renderCaisse() {
           <button onclick="ouvrirRetoucheForm()" style="flex:1;padding:9px;background:#f3e8fc;color:#6a3d9a;border:1px solid #d9c2ee;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">✂️ + Retouche — 10€</button>
           <button onclick="setState({showSuiviRetouches:true})" style="padding:9px 10px;background:#fff;color:#6a3d9a;border:1px solid #d9c2ee;border-radius:8px;cursor:pointer;font-size:12px;white-space:nowrap;">📋 Suivi${(STATE.retouches||[]).filter(r=>r.statut!=="recuperee").length?" ("+(STATE.retouches||[]).filter(r=>r.statut!=="recuperee").length+")":""}</button>
         </div>
+        ${peutGererArtisans()?`<button onclick="ajouterArticleSansRef()" style="width:100%;padding:9px;background:#eef4fd;color:#185fa5;border:1px solid #b3d0f0;border-radius:8px;cursor:pointer;font-size:13px;margin-bottom:8px;font-weight:500;">🏷️ + Référence inexistante — prix à saisir</button>`:""}
         <button onclick="ouvrirVenteChequeCadeau()" style="width:100%;padding:9px;background:#fbf3e6;color:#854f0b;border:1px solid #f0dcb0;border-radius:8px;cursor:pointer;font-size:13px;margin-bottom:8px;font-weight:500;">🎁 Vendre un chèque cadeau</button>
         <div style="font-weight:500;font-size:13px;margin-bottom:8px;">🏷️ Remise globale panier</div>
         <!-- Bouton rapide réseaux sociaux -->
