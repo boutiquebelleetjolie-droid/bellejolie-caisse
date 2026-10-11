@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "11/10 · v78 (emails par semaine et par boutique)";
+const APP_VERSION = "11/10 · v79 (synchro économe)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -318,15 +318,19 @@ function sigListe(l) { return (l||[]).map(x=>x&&(x.id+":"+(x.majLe||""))).join("
 // ── Journal individuel (un document cloud par cliente / par bon) ──
 // Aucun appareil, même ancien, ne peut effacer ces documents en réécrivant la liste globale.
 const _jlPret = {}, _jlSigs = {};
+function h32(str) { let h = 5381; for(let i=0;i<str.length;i++) h = ((h<<5)+h+str.charCodeAt(i))|0; return (h>>>0).toString(36)+":"+str.length; }
+const _jlSauveT = {};
+function sauverJLSigs(key) { clearTimeout(_jlSauveT[key]); _jlSauveT[key] = setTimeout(()=>{ try { localStorage.setItem("bj_jl_sig__"+key, JSON.stringify(_jlSigs[key]||{})); } catch{} }, 1500); }
 function prefixeJL(key) { return "jl__"+key+"__"; }
 function journaliserListe(key, liste) {
   if(!_fbDb || !_jlPret[key] || !Array.isArray(liste)) return;
   const sigs = _jlSigs[key] = _jlSigs[key] || {};
-  const aEcrire = liste.filter(x => x && x.id && sigs[x.id]!==sigElem(x));
+  const aEcrire = liste.filter(x => x && x.id && sigs[x.id]!==h32(sigElem(x)));
   for(let i=0; i<aEcrire.length; i+=400) {
     const lot = aEcrire.slice(i, i+400), batch = _fbDb.batch();
-    lot.forEach(x => batch.set(_fbDb.collection("bellejolie").doc(prefixeJL(key)+x.id), {value:x, maj:new Date().toISOString(), device:DEVICE_ID}));
-    batch.commit().then(() => lot.forEach(x => sigs[x.id] = sigElem(x))).catch(err => console.error("Journal "+key+" :", err));
+    const majJ = new Date().toISOString();
+    lot.forEach(x => batch.set(_fbDb.collection("bellejolie").doc(prefixeJL(key)+x.id), {value:x, maj:majJ, ["jl_"+key]:majJ, device:DEVICE_ID}));
+    batch.commit().then(() => { lot.forEach(x => sigs[x.id] = h32(sigElem(x))); sauverJLSigs(key); }).catch(err => console.error("Journal "+key+" :", err));
   }
 }
 function ecouterJournalListe(key) {
@@ -336,7 +340,8 @@ function ecouterJournalListe(key) {
     const recus = [];
     snap.docChanges().forEach(ch => { if(ch.type!=="removed") { const x = ch.doc.data(); if(x && x.value) recus.push(x.value); } });
     const sigs = _jlSigs[key] = _jlSigs[key] || {};
-    recus.forEach(x => { if(x && x.id) sigs[x.id] = sigElem(x); });
+    recus.forEach(x => { if(x && x.id) sigs[x.id] = h32(sigElem(x)); });
+    sauverJLSigs(key);
     if(recus.length) {
       const avant = sigListe(STATE[cfg.etat]||[]);
       const fusion = fusionnerListe(key, STATE[cfg.etat]||[], recus);
@@ -377,6 +382,84 @@ function recupererClientesPerdues() {
 // Contrairement à la liste bj_ventes (un seul document, réécrit en entier), un ticket du journal
 // ne peut pas être effacé par un appareil en retard qui renvoie une liste périmée.
 // Sert à réparer automatiquement la liste au démarrage si des ventes y ont disparu.
+
+// ── Synchronisation économe : ne télécharger que ce qui a changé depuis la dernière fois ──
+// Chaque ticket / fiche du journal porte un champ daté propre à son type (jv_<boutique>, jl_bj_clients, jl_bj_avoirs).
+// Au démarrage, si une synchro complète a eu lieu il y a moins de 3 jours, on ne lit que les documents
+// modifiés depuis (avec 3 h de marge pour les horloges décalées). Rien n'est jamais effacé : tout l'historique
+// reste dans le cloud et sur l'appareil ; une synchro complète est refaite automatiquement tous les 3 jours.
+const SYNC_MARGE_MS = 3*3600*1000, SYNC_COMPLETE_JOURS = 3;
+function cleRepereSync() { return "bj_sync_repere__"+BOUTIQUE_ID_ACTUEL; }
+function majRepereSync(iso, complete) {
+  try {
+    const o = JSON.parse(localStorage.getItem(cleRepereSync())||"{}");
+    if(iso && (!o.wm || iso > o.wm)) o.wm = iso;
+    if(complete) { o.complete = new Date().toISOString(); o.v = 2; }
+    localStorage.setItem(cleRepereSync(), JSON.stringify(o));
+  } catch{}
+}
+function repereSyncIncrementale() {
+  try {
+    const o = JSON.parse(localStorage.getItem(cleRepereSync())||"null");
+    if(!o || o.v!==2 || !o.wm || !o.complete) return null;
+    if(Date.now() - new Date(o.complete).getTime() > SYNC_COMPLETE_JOURS*864e5) return null;
+    if(!(STATE.ventes||[]).length && !(STATE.clients||[]).length) return null;
+    if(!localStorage.getItem("bj_journal_sig__"+BOUTIQUE_ID_ACTUEL) || !localStorage.getItem("bj_jl_sig__bj_clients") || !localStorage.getItem("bj_jl_sig__bj_avoirs")) return null;
+    return o;
+  } catch { return null; }
+}
+function appliquerVentesRecues(recues) {
+  if(!recues.length) return;
+  const cleSig = "bj_journal_sig__"+BOUTIQUE_ID_ACTUEL;
+  let sigs = {}; try { sigs = JSON.parse(localStorage.getItem(cleSig)||"{}"); } catch{}
+  const copies = new Map(recues.map(v=>[v.id, JSON.parse(JSON.stringify(v))]));
+  allegerVentes(recues);
+  const fusion = fusionnerListesVentes(STATE.ventes||[], recues);
+  fusion.forEach(v => { const j = copies.get(v.id); if(j && signatureJournal(j)===signatureJournal(v)) sigs[v.id] = signatureJournal(v); });
+  try { localStorage.setItem(cleSig, JSON.stringify(sigs)); } catch{}
+  if(signatureVentes(fusion)!==signatureVentes(STATE.ventes||[])) {
+    STATE.ventes = fusion;
+    try { localStorage.setItem(cleFirestore("bj_ventes"), JSON.stringify(fusion)); } catch{}
+    render(); afficherBandeauSyncDiscret();
+  }
+}
+function appliquerJLRecus(key, recus) {
+  const cfg = LISTES_FUSION[key]; if(!recus.length) return;
+  const sigs = _jlSigs[key] = _jlSigs[key] || {};
+  recus.forEach(x => { if(x && x.id) sigs[x.id] = h32(sigElem(x)); });
+  sauverJLSigs(key);
+  const avant = sigListe(STATE[cfg.etat]||[]);
+  const fusion = fusionnerListe(key, STATE[cfg.etat]||[], recus);
+  if(sigListe(fusion)!==avant) {
+    STATE[cfg.etat] = fusion; memoriserSigListe(key, fusion);
+    try { localStorage.setItem(cleFirestore(key), JSON.stringify(fusion)); } catch{}
+    firestorePush(key, fusion);
+    render();
+  }
+}
+function demarrerSyncIncrementale(o) {
+  if(!_fbDb) return;
+  const depuis = new Date(new Date(o.wm).getTime() - SYNC_MARGE_MS).toISOString();
+  ["bj_clients","bj_avoirs"].forEach(k => { try { _jlSigs[k] = JSON.parse(localStorage.getItem("bj_jl_sig__"+k)||"{}"); } catch { _jlSigs[k] = {}; } _jlPret[k] = true; });
+  window._journalPret = true;
+  const col = _fbDb.collection("bellejolie");
+  const ecoute = (champ, traiter) => col.where(champ, ">", depuis).onSnapshot(snap => {
+    const recus = []; let maxMaj = null;
+    snap.docChanges().forEach(ch => { if(ch.type==="removed") return; const x = ch.doc.data(); if(!x) return;
+      if(x[champ] && (!maxMaj || x[champ] > maxMaj)) maxMaj = x[champ]; if(x.value) recus.push(x.value); });
+    if(recus.length) traiter(recus);
+    if(maxMaj) majRepereSync(maxMaj, false);
+  }, err => {
+    console.error("Synchro économe impossible ("+champ+"), retour à la synchro complète :", err);
+    try { localStorage.removeItem(cleRepereSync()); } catch{}
+  });
+  ecoute("jv_"+BOUTIQUE_ID_ACTUEL, appliquerVentesRecues);
+  ecoute("jl_bj_clients", l => appliquerJLRecus("bj_clients", l));
+  ecoute("jl_bj_avoirs", l => appliquerJLRecus("bj_avoirs", l));
+  // Envoyer ce qui aurait été fait ici hors connexion
+  setTimeout(() => { journaliserVentes(STATE.ventes||[]); journaliserListe("bj_clients", STATE.clients||[]); journaliserListe("bj_avoirs", STATE.avoirs||[]); }, 4000);
+  console.log("Synchro économe depuis "+depuis);
+}
 function prefixeJournal() { return "journal__"+BOUTIQUE_ID_ACTUEL+"__"; }
 function signatureJournal(v) { return versionVente(v)+":"+JSON.stringify(v).length; }
 function journaliserVentes(liste) {
@@ -396,7 +479,8 @@ function ecrireJournal(aEcrire, sigs, cleSig) {
   for(let i=0; i<aEcrire.length; i+=400) {
     const lot = aEcrire.slice(i, i+400);
     const batch = _fbDb.batch();
-    lot.forEach(v => batch.set(col.doc(prefixeJournal()+v.id), { value:v, date:v.date||"", maj:new Date().toISOString(), device:DEVICE_ID }));
+    const majJ = new Date().toISOString();
+    lot.forEach(v => batch.set(col.doc(prefixeJournal()+v.id), { value:v, date:v.date||"", maj:majJ, ["jv_"+BOUTIQUE_ID_ACTUEL]:majJ, device:DEVICE_ID }));
     batch.commit().then(() => {
       lot.forEach(v => { sigs[v.id] = signatureJournal(v); });
       try { localStorage.setItem(cleSig, JSON.stringify(sigs)); } catch{}
@@ -427,6 +511,7 @@ async function synchroniserJournalAuDemarrage() {
     const aEcrire = fusion.filter(v => sigs[v.id]!==signatureJournal(v));
     if(aEcrire.length) ecrireJournal(aEcrire, sigs, cleSig);
     console.log("Journal : "+journal.length+" tickets lus, "+aEcrire.length+" écrits");
+    majRepereSync(window._debutSyncComplete || new Date().toISOString(), true);
   } catch(err) {
     console.error("Synchro du journal impossible:", err);
     window._journalPret = true;
@@ -19729,8 +19814,10 @@ memoriserSignaturesProduits(STATE.products||[]);
 memoriserSigListe("bj_clients", STATE.clients||[]);
 memoriserSigListe("bj_avoirs", STATE.avoirs||[]);
 setTimeout(() => { if(recupererClientesPerdues()) render(); }, 12000);
-ecouterJournalListe("bj_clients");
-ecouterJournalListe("bj_avoirs");
+const _repereSync = repereSyncIncrementale();
+window._debutSyncComplete = new Date().toISOString();
+if(_repereSync) demarrerSyncIncrementale(_repereSync);
+else { ecouterJournalListe("bj_clients"); ecouterJournalListe("bj_avoirs"); }
 // Arrondi au centime des ventes enregistrées avec des fractions de centime (remises en % non arrondies)
 (function(){
   const r2 = n => Math.round(n*100)/100;
@@ -19743,7 +19830,7 @@ ecouterJournalListe("bj_avoirs");
   });
   if(n) { lsSet("bj_ventes", STATE.ventes); console.log("Ventes arrondies au centime :", n); }
 })();
-synchroniserJournalAuDemarrage();
+if(!_repereSync) synchroniserJournalAuDemarrage();
 // 11/09 : montants réels confirmés par la gérante (CB 359,40 € · espèces 24,99 €) — appliqué une seule fois,
 // après la synchro, uniquement si la caisse de ce jour ne correspond pas déjà.
 // Septembre 2026 : montants réels (CB = terminal, espèces = Z d'origine / tiroir), confirmés par la
@@ -19799,7 +19886,7 @@ setTimeout(() => {
   lsSet("bj_products", STATE.products);
   render();
 }, 8000);
-ecouterJournalVentes();
+if(!_repereSync) ecouterJournalVentes();
 // Relevés du terminal de septembre 2026 transmis par la gérante (une seule fois, sans écraser une saisie)
 setTimeout(() => {
   if(BOUTIQUE_ID_ACTUEL!=="boutique_1" || localStorage.getItem("bj_seed_tpe_2026_09")) return;
