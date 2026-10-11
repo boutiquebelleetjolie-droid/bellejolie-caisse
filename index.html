@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "11/10 · v72 (codes communs aux 2 boutiques)";
+const APP_VERSION = "11/10 · v73 (objectifs Maurepas)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -814,7 +814,7 @@ const MOTIFS_RETOUR = [
 
 // ── OBJECTIFS CA ─────────────────────────────────────────────────────────
 // Objectifs principaux revus à +6% le 23/07/2026 (base précédente : 170 000€ → 180 200€)
-const OBJECTIFS_MENSUEL = {
+const OBJECTIFS_CHARTRES = {
   0:14840,  // Janvier  — soldes d'hiver
   1: 9540,  // Février  — creux
   2:13780,  // Mars     — printemps
@@ -829,7 +829,7 @@ const OBJECTIFS_MENSUEL = {
   11:25440, // Décembre — fêtes
 }; // CA annuel objectif (11 mois actifs) : 180 200€
 // Objectifs secondaires (anciennement "boostés +17%") revus à +6% le 23/07/2026 (base précédente : 198 900€ → 210 834€)
-const OBJECTIFS_BOOST = {
+const OBJECTIFS_BOOST_CHARTRES = {
   0:17363,
   1:11162,
   2:16123,
@@ -843,6 +843,50 @@ const OBJECTIFS_BOOST = {
   10:22324,
   11:29765,
 }; // Total annuel objectif secondaire : 210 834€
+
+// ── Objectifs de Maurepas (ouverture le 21/11/2026) ──
+// Base = prévisionnel réaliste (21 000 € TTC/mois en moyenne, saisonnalité + montée en charge), +10 % ;
+// objectif boost = objectif principal +17 % (même logique que Chartres).
+const MAUREPAS_OUVERTURE = new Date(2026, 10, 21);
+const MAUREPAS_PREVI_AN1 = { "2026-10":5729, "2026-11":26775, "2027-0":16958, "2027-1":14175, "2027-2":18952, "2027-3":19950,
+  "2027-4":22050, "2027-5":21000, "2027-6":21000, "2027-7":16800, "2027-8":18900, "2027-9":21000 };
+const MAUREPAS_SAISON = [0.95,0.75,0.95,1.0,1.05,1.0,1.0,0.8,0.9,1.0,1.1,1.5];
+const MAUREPAS_MAJ_OBJ = 1.10, MAUREPAS_MAJ_BOOST = 1.17;
+function objectifMoisMaurepas(y, m) {
+  const k = y+"-"+m;
+  if(MAUREPAS_PREVI_AN1[k] !== undefined) return Math.round(MAUREPAS_PREVI_AN1[k]*MAUREPAS_MAJ_OBJ);
+  const d = new Date(y, m, 1);
+  if(d < new Date(2026, 10, 1)) return Math.round(21000*MAUREPAS_SAISON[m]*MAUREPAS_MAJ_OBJ); // avant ouverture (affichage seulement)
+  const ans = Math.max(1, Math.floor(((y-2026)*12 + m - 10)/12)); // années après la 1re
+  return Math.round(21000*MAUREPAS_SAISON[m]*Math.pow(1.08, ans)*MAUREPAS_MAJ_OBJ);
+}
+function anneeExerciceMaurepas(m) { // année du mois m dans l'exercice en cours (novembre → octobre)
+  const now = new Date(); let debut = now.getMonth() >= 10 ? now.getFullYear() : now.getFullYear()-1;
+  if(debut < 2026) debut = 2026;
+  return m >= 10 ? debut : debut+1;
+}
+const OBJECTIFS_MENSUEL = BOUTIQUE_ID_ACTUEL==="boutique_2"
+  ? Object.fromEntries([...Array(12).keys()].map(m=>[m, objectifMoisMaurepas(anneeExerciceMaurepas(m), m)]))
+  : OBJECTIFS_CHARTRES;
+const OBJECTIFS_BOOST = BOUTIQUE_ID_ACTUEL==="boutique_2"
+  ? Object.fromEntries(Object.entries(OBJECTIFS_MENSUEL).map(([m,v])=>[m, Math.round(v*MAUREPAS_MAJ_BOOST)]))
+  : OBJECTIFS_BOOST_CHARTRES;
+// Poids des jours à Maurepas (0=dim … 6=sam) et heures d'ouverture
+const MAUREPAS_POIDS_JOUR = {0:0, 1:0.8, 2:0.9, 3:1.0, 4:0.95, 5:1.05, 6:1.6};
+function maurepasJourOuvert(d) {
+  if(d.getDay()===0) return false;
+  if(d < MAUREPAS_OUVERTURE) return false;
+  if((d.getMonth()===11 && d.getDate()===25) || (d.getMonth()===0 && d.getDate()===1) || (d.getMonth()===4 && d.getDate()===1)) return false;
+  return true;
+}
+function objJourMaurepas(date) {
+  if(!maurepasJourOuvert(date)) return 0;
+  const y = date.getFullYear(), m = date.getMonth();
+  const caM = objectifMoisMaurepas(y, m); if(!caM) return 0;
+  let somme = 0; const nb = new Date(y, m+1, 0).getDate();
+  for(let j=1; j<=nb; j++) { const d = new Date(y, m, j); if(maurepasJourOuvert(d)) somme += MAUREPAS_POIDS_JOUR[d.getDay()]; }
+  return somme>0 ? Math.round(caM * MAUREPAS_POIDS_JOUR[date.getDay()] / somme) : 0;
+}
 // % du CA hebdo par jour — samedi à 28%, semaine réduite en conséquence
 // Total = 100% (dimanche fermé)
 const PCT_JOUR = {0:7, 1:11, 2:19, 3:13, 4:21, 5:29, 6:0};
@@ -949,6 +993,7 @@ function objSemCalc(dateQuelconque) {
 }
 
 function objJourCalc(date) {
+  if(BOUTIQUE_ID_ACTUEL==="boutique_2") return objJourMaurepas(date);
   const m = date.getMonth();
   const dow = date.getDay(); // 0=dim, 1=lun, 2=mar, 3=mer, 4=jeu, 5=ven, 6=sam
   if(dow===0) return 0; // dimanche fermé
@@ -9685,7 +9730,7 @@ function pctJourDe(date) { return PCT_JOUR[(date.getDay()+6)%7] || 0; }
 function fractionJourEcoulee(now) {
   const wd = now.getDay();
   if(wd===0) return 0;
-  const hOuv = wd===1 ? 13.5 : 10, hFerm = 18.5;
+  const hOuv = BOUTIQUE_ID_ACTUEL==="boutique_2" ? 10 : (wd===1 ? 13.5 : 10), hFerm = BOUTIQUE_ID_ACTUEL==="boutique_2" ? 20 : 18.5;
   const heureActuelle = now.getHours() + now.getMinutes()/60;
   if(heureActuelle <= hOuv) return 0;
   if(heureActuelle >= hFerm) return 1;
@@ -9775,6 +9820,7 @@ function renderPaceWidget(periode) {
 const REPARTITION_HORAIRE_FIXE = {10:5, 11:8, 12:16, 13:13, 14:9, 15:11, 16:13, 17:12, 18:13};
 
 function calculerRepartitionHoraire(weekday) {
+  if(BOUTIQUE_ID_ACTUEL==="boutique_2") return {10:5, 11:8, 12:12, 13:11, 14:10, 15:10, 16:11, 17:12, 18:12, 19:9};
   return REPARTITION_HORAIRE_FIXE;
 }
 
@@ -9796,8 +9842,8 @@ function renderPaceHoraireWidget() {
   if(!repartHoraire) return "";
 
   // Heures d'ouverture : Lundi 13h30–18h30, Mardi–Samedi 10h00–18h30 (on arrondit à l'heure pleine)
-  const heureOuv = wd===1 ? 13 : 10;
-  const heureFerm = 18; // dernière heure pleine avant 18h30
+  const heureOuv = BOUTIQUE_ID_ACTUEL==="boutique_2" ? 10 : (wd===1 ? 13 : 10);
+  const heureFerm = BOUTIQUE_ID_ACTUEL==="boutique_2" ? 19 : 18; // dernière heure pleine avant la fermeture
 
   const heureActuelle = now.getHours() + now.getMinutes()/60;
   let poidsEcoule = 0, poidsTotalJour = 0;
