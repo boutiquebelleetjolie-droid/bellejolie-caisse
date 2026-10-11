@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "11/10 · v70 (copie d'articles entre boutiques)";
+const APP_VERSION = "11/10 · v71 (bascule boutique)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -2013,7 +2013,9 @@ function renderApp() {
       <div style="font-size:12px;color:#888;">${STATE.vendeur.nom}</div>
       ${STATE.vendeur.id==="V1"?`<button onclick="showVendeurSettings()" style="background:none;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px;color:#666;">⚙️ PIN</button>`:""}
       ${STATE.vendeur.id==="V1"?`<button onclick="setState({showRegistrePersonnel:true})" style="background:none;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px;color:#666;">👥 Personnel</button>`:""}
-      ${BOUTIQUE_ID_ACTUEL!=="boutique_1"?`<span style="background:#fbeaf0;color:#993556;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:600;">🏬 ${boutiqueActuelle().nom}</span>`:""}
+      ${STATE.vendeur.id==="V1"&&BOUTIQUES.length>1
+        ? `<button onclick="basculerBoutique()" title="Passer sur l'autre boutique" style="background:#993556;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;">🏬 ${boutiqueActuelle().nom.replace("Belle & Jolie — ","")} ⇄ ${(BOUTIQUES.find(b=>b.id!==BOUTIQUE_ID_ACTUEL)||{nom:""}).nom.replace("Belle & Jolie — ","")}</button>`
+        : (BOUTIQUE_ID_ACTUEL!=="boutique_1"?`<span style="background:#fbeaf0;color:#993556;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:600;">🏬 ${boutiqueActuelle().nom}</span>`:"")}
       ${STATE.vendeur.id==="V1"&&BOUTIQUES.length>1?`<button onclick="ouvrirVueToutesBoutiques()" style="background:none;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px;color:#666;">🏬🏬 Toutes boutiques</button>`:""}
     </div>
   </div>
@@ -2393,6 +2395,16 @@ window.logout = () => {
 window.showVendeurSettings = () => { STATE.vendeurForm = JSON.parse(JSON.stringify(VENDEURS)); setState({showVendeurSettings:true}); };
 
 // ─── PARAMÈTRES VENDEURS ────────────────────────────────────────
+
+// ─── Bascule rapide d'une boutique à l'autre (gérante) ───
+window.basculerBoutique = () => {
+  const autre = BOUTIQUES.find(b=>b.id!==BOUTIQUE_ID_ACTUEL); if(!autre) return;
+  if((STATE.panier||[]).length && !confirm("Un ticket est en cours ici. Il restera en attente dans cette boutique.\n\nPasser sur "+autre.nom+" ?")) return;
+  try { localStorage.setItem("bj_boutique_id", autre.id); } catch{}
+  const u = new URL(window.location.href);
+  if(u.searchParams.has("boutique")) { u.searchParams.set("boutique", autre.id); window.location.href = u.toString(); }
+  else window.location.reload();
+};
 window.changerBoutiqueAppareil = (nouvelId) => {
   if(nouvelId===BOUTIQUE_ID_ACTUEL) return;
   const b = BOUTIQUES.find(x=>x.id===nouvelId);
@@ -6949,11 +6961,18 @@ window.validerTransfertBoutique = async () => {
     const docProdDest = await _fbDb.collection("bellejolie").doc(cleProdDest).get();
     let produitsDest = docProdDest.exists ? (docProdDest.data().value||[]) : [];
     const idx = produitsDest.findIndex(x=>x.ref===p.ref);
+    let idDest;
     if(idx>=0) {
-      produitsDest[idx] = {...produitsDest[idx], stock:(produitsDest[idx].stock||0)+f.qty, majLe:new Date().toISOString()};
+      idDest = produitsDest[idx].id;
     } else {
-      produitsDest = [...produitsDest, {...p, id:uid("PROD"), stock:f.qty, reserveQty:0, photo:"", aPhoto:false, majLe:new Date().toISOString()}];
+      idDest = uid("PROD");
+      const sv0 = {}; Object.keys(p.stockVariantes||{}).forEach(k=>sv0[k]=0);
+      const { photo: _phT, ...pSansPhoto } = p;
+      produitsDest = [...produitsDest, {...pSansPhoto, id:idDest, stock:0, stockVariantes:sv0, reserveQty:0, aPhoto:!!p.photo, copieDe:{boutique:BOUTIQUE_ID_ACTUEL, id:p.id}}];
+      if(p.photo) { try { await _fbDb.collection("bellejolie").doc("photo__"+bDest.id+"__"+idDest).set({value:p.photo, maj:new Date().toISOString(), device:DEVICE_ID}); } catch(e) { console.error("Photo non copiée", e); } }
     }
+    // Ajout du stock (variante taille/couleur comprise) dans la boutique de destination
+    produitsDest = ajusterStock(produitsDest, idDest, f.qty, f.taille||null, f.couleur||null).map(x=>x.id===idDest?{...x, majLe:new Date().toISOString()}:x);
     await _fbDb.collection("bellejolie").doc(cleProdDest).set({value:produitsDest, maj:new Date().toISOString(), device:DEVICE_ID});
 
     // 3. Créer la réservation là-bas si une cliente a été choisie
@@ -6967,7 +6986,7 @@ window.validerTransfertBoutique = async () => {
         id: uid("RSV"), date: now.toISOString(), expiration: expiration.toISOString(),
         clientId: f.clientChoisi.id, clientNom: f.clientChoisi.prenom+" "+f.clientChoisi.nom,
         clientEmail: f.clientChoisi.email||"", clientTel: f.clientChoisi.tel||"",
-        articles: [{id: idx>=0?produitsDest[idx].id:produitsDest[produitsDest.length-1].id, name:p.name, price:p.price, qty:f.qty, taille:f.taille||null, couleur:f.couleur||null}],
+        articles: [{id: idDest, name:p.name, price:p.price, qty:f.qty, taille:f.taille||null, couleur:f.couleur||null}],
         note: "🔄 Transfert depuis "+boutiqueActuelle().nom+(f.note?" — "+f.note:""),
         statut: "active", rappelEnvoye: false, vendeur: STATE.vendeur.nom,
       };
