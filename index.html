@@ -95,10 +95,10 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "11/10 · v69 (correction auto des emails)";
+const APP_VERSION = "11/10 · v70 (copie d'articles entre boutiques)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
-  { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
+  { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
 ];
 // Identifiant de la boutique de CET appareil : réglage 100% local, jamais synchronisé entre appareils.
 // Un paramètre d'URL (?boutique=boutique_2) permet d'ouvrir UN ONGLET précis sur une boutique
@@ -6993,6 +6993,43 @@ window.validerTransfertBoutique = async () => {
   }
 };
 
+
+// ─── Copier des articles de l'autre boutique (fiche identique, stock indépendant) ───
+window.basculerCopieArticle = (bId, pId, on) => {
+  const k = bId+"|"+pId; const s = new Set(STATE._copieSel||[]);
+  if(on) s.add(k); else s.delete(k);
+  STATE._copieSel = [...s]; render();
+};
+window.cocherCopieArticles = (bId, ids) => {
+  const s = new Set(STATE._copieSel||[]); (ids||[]).forEach(id=>s.add(bId+"|"+id));
+  STATE._copieSel = [...s]; render();
+};
+window.copierArticlesAutreBoutique = async () => {
+  const sel = STATE._copieSel||[]; if(!sel.length) return;
+  const data = Array.isArray(STATE.stockAutreBoutiqueData) ? STATE.stockAutreBoutiqueData : [];
+  if(!confirm(`Copier ${sel.length} article${sel.length>1?"s":""} dans ${boutiqueActuelle().nom} ?\n\nLes fiches sont reprises à l'identique avec un stock à 0 ici : tu ajustes ensuite le stock de cette boutique. L'autre boutique n'est pas modifiée.`)) return;
+  const refsIci = new Set((STATE.products||[]).map(x=>String(x.ref||"").trim().toLowerCase()).filter(Boolean));
+  const copies = []; let deja = 0;
+  for(const k of sel) {
+    const [bId, pId] = k.split("|");
+    const src = (data.find(b=>b.id===bId)?.products||[]).find(p=>p.id===pId); if(!src) continue;
+    const ref = String(src.ref||"").trim().toLowerCase();
+    if(ref && refsIci.has(ref)) { deja++; continue; }
+    let photo = "";
+    if(src.aPhoto && _fbDb) {
+      try { const d = await _fbDb.collection("bellejolie").doc("photo__"+bId+"__"+src.id).get(); if(d.exists) photo = d.data().value||""; } catch(err) { console.error("Photo non récupérée", err); }
+    }
+    const { majLe, photo: _ph, aPhoto, stockVariantes, ...reste } = src;
+    const sv = {}; Object.keys(stockVariantes||{}).forEach(x=>sv[x]=0);
+    copies.push({ ...reste, id: uid("P"), stock: 0, stockVariantes: sv, enReserve: false, dateAjout: dateLocaleStr(),
+      copieDe: { boutique: bId, id: src.id }, ...(photo ? {photo, aPhoto: true} : {aPhoto: false}) });
+    if(ref) refsIci.add(ref);
+  }
+  STATE._copieSel = [];
+  if(!copies.length) { alert(deja ? "Ces articles existent déjà dans cette boutique (même référence)." : "Aucun article copié."); render(); return; }
+  setState({ products: [...STATE.products, ...copies] });
+  alert(`✅ ${copies.length} article${copies.length>1?"s copiés":" copié"} avec un stock à 0.${deja?`\n${deja} déjà présent${deja>1?"s":""} ici (ignoré${deja>1?"s":""}).`:""}\n\nPense à ajuster le stock de cette boutique dans l'onglet Stock.`);
+};
 window.ouvrirStockAutreBoutique = async () => {
   STATE.showStockAutreBoutique = true;
   STATE.stockAutreBoutiqueData = null;
@@ -7055,27 +7092,37 @@ function renderStockAutreBoutiqueModal() {
         <button onclick="setState({showStockAutreBoutique:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
       </div>
       <div class="modal-body" style="overflow-y:auto;flex:1;">
-        <div style="font-size:11px;color:#888;margin-bottom:10px;">Lecture en direct depuis le cloud, en consultation seule (impossible de vendre ou modifier depuis ici).</div>
+        <div style="font-size:11px;color:#888;margin-bottom:10px;">Lecture en direct depuis le cloud. On ne peut ni vendre ni modifier l'autre boutique d'ici, mais tu peux copier des fiches articles dans cette boutique.</div>
         ${STATE.stockAutreBoutiqueChargement?`<div style="text-align:center;color:#aaa;padding:30px 0;">Chargement…</div>`
           : data==="erreur" ? `<div style="text-align:center;color:#a32d2d;padding:20px 0;">⚠️ Erreur de chargement. Vérifie ta connexion et réessaie.</div>`
           : !data ? "" : data.map(b=>{
             const liste = (b.products||[]).filter(p=>!q || normStr(p.name+" "+p.ref+" "+(p.marque||"")).includes(q));
+            const peutCopier = STATE.vendeur?.id==="V1";
+            const refsIci = new Set((STATE.products||[]).map(x=>String(x.ref||"").trim().toLowerCase()).filter(Boolean));
+            const sel = new Set(STATE._copieSel||[]);
             return `
             <div style="margin-bottom:16px;">
               <div style="font-weight:600;font-size:13px;margin-bottom:8px;">🏬 ${b.nom} <span style="color:#aaa;font-weight:400;">(${b.products.length} référence${b.products.length>1?"s":""})</span></div>
               <input type="text" value="${STATE.stockAutreBoutiqueRecherche||''}" oninput="STATE.stockAutreBoutiqueRecherche=this.value;render()" placeholder="Rechercher un article..." style="width:100%;box-sizing:border-box;margin-bottom:8px;"/>
               <div style="max-height:280px;overflow-y:auto;border:0.5px solid #e8e0e4;border-radius:10px;">
                 ${liste.length===0?`<div style="padding:14px;color:#aaa;font-size:12px;text-align:center;">${q?"Aucun résultat":"Aucun article"}</div>`:
-                liste.slice(0,100).map(p=>`
-                  <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;border-bottom:0.5px solid #f0ebee;font-size:12px;">
-                    <div><strong>${p.name}</strong><div style="color:#888;font-size:10px;">Réf. ${p.ref}${p.category?" · "+p.category:""}</div></div>
+                liste.slice(0,300).map(p=>{ const deja = refsIci.has(String(p.ref||"").trim().toLowerCase()) && String(p.ref||"").trim(); return `
+                  <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 10px;border-bottom:0.5px solid #f0ebee;font-size:12px;">
+                    ${peutCopier?(deja?`<span title="Déjà dans cette boutique" style="color:#3b6d11;font-size:13px;">✓</span>`:`<input type="checkbox" ${sel.has(b.id+"|"+p.id)?"checked":""} onchange="basculerCopieArticle('${b.id}','${p.id}',this.checked)" style="width:16px;height:16px;flex-shrink:0;"/>`):""}
+                    <div style="flex:1;"><strong>${p.name}</strong><div style="color:#888;font-size:10px;">Réf. ${p.ref}${p.category?" · "+p.category:""}${deja?' · <span style="color:#3b6d11;">déjà ici</span>':""}</div></div>
                     <div style="text-align:right;">
                       <div style="font-weight:600;">${p.stock||0} en stock</div>
                       <div style="color:#888;font-size:10px;">${eur(p.price||0)}</div>
                     </div>
                   </div>
-                `).join("")}
+                `;}).join("")}
               </div>
+              ${peutCopier && liste.length?`<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+                <button onclick="cocherCopieArticles('${b.id}',${jsonForAttr(liste.slice(0,300).filter(p=>!(String(p.ref||"").trim() && refsIci.has(String(p.ref||"").trim().toLowerCase()))).map(p=>p.id))})" style="background:none;border:1px solid #ddd;border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;">Tout cocher${q?" (résultats)":""}</button>
+                <button onclick="STATE._copieSel=[];render()" style="background:none;border:1px solid #ddd;border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;">Tout décocher</button>
+                <button onclick="copierArticlesAutreBoutique()" ${sel.size?"":"disabled"} style="flex:1;background:${sel.size?"#993556":"#ccc"};color:#fff;border:none;border-radius:7px;padding:7px 10px;font-size:13px;font-weight:500;cursor:${sel.size?"pointer":"default"};">📥 Copier ${sel.size||""} article${sel.size>1?"s":""} dans ${boutiqueActuelle().nom.replace("Belle & Jolie — ","")}</button>
+              </div>
+              <div style="font-size:10px;color:#aaa;margin-top:4px;">La copie reprend nom, référence, code-barres, prix, prix d'achat, catégorie, tailles, couleurs et photo, avec un stock à 0 à ajuster ici. Le stock de l'autre boutique n'est pas touché.</div>`:""}
             </div>`;
           }).join("")}
       </div>
