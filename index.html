@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "10/10 · v64 (référence inexistante)";
+const APP_VERSION = "11/10 · v65 (modèle mail dépôt-vente)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -753,6 +753,7 @@ const CATEGORIES_VETEMENTS = ["Robes","Hauts","Pantalons","Jupes","Shorts","Vest
 // Pack de templates prêts à l'emploi pour les emails promo (individuel et groupé)
 // Format : [label affiché sur le bouton, message (avec [Prénom] à remplacer), objet de l'email]
 const PROMO_TEMPLATES = [
+  ["👗 Dépôt-vente","Bonjour [Prénom],\n\nC'est la grande nouveauté de la rentrée chez Belle&Jolie : le dépôt-vente en boutique ! Le premier dépôt a lieu samedi prochain, le 17 octobre.\n\nVotre dressing déborde de pièces que vous ne portez plus ? Offrez-leur une seconde vie et renouvelez votre garde-robe sans vous ruiner.\n\nComment ça marche :\n• Vous déposez jusqu'à 10 articles.\n• Nous sélectionnons les articles et fixons le prix de vente ensemble.\n• Vos articles sont mis en vente pendant 1 mois.\n• 80 % du prix de vente vous revient en bon d'achat, valable 3 mois sur votre compte fidélité.\n• Passé ce délai, les articles non vendus sont à récupérer, ou peuvent être renouvelés une seule fois pour un mois supplémentaire.\n\n⚠️ L'inscription à l'avance est obligatoire : passez nous voir en boutique ou envoyez-nous un message sur nos réseaux sociaux pour réserver votre place.\n\nNous avons hâte de découvrir vos trésors !\n\nÉlodie et toute l'équipe Belle&Jolie\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres\nLundi : 13h30–18h30 · Mardi au Samedi : 10h00–18h30","Samedi 17 octobre : notre 1er dépôt-vente en boutique 👗"],
   ["🌸 Nouveautés","Bonjour [Prénom],\n\nDe nouvelles pièces viennent d'arriver en boutique et on a tout de suite pensé à vous ! 🌸\n\nVenez découvrir nos dernières nouveautés avant qu'elles ne partent — les tailles s'envolent vite chez nous 😉\n\nOn vous attend avec le sourire !\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres\nLundi : 13h30–18h30 · Mardi au Samedi : 10h00–18h30","Nouvelles collections Belle&Jolie 🌸"],
   ["🏷️ Promo / Soldes","Bonjour [Prénom],\n\nPetite surprise cette semaine : -XX% sur une sélection d'articles jusqu'au [date] !\n\nUne belle occasion de se faire plaisir 😍 Venez vite, les meilleures pièces partent en premier !\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres\nLundi : 13h30–18h30 · Mardi au Samedi : 10h00–18h30","Offre exclusive Belle&Jolie 🏷️"],
   ["❤️ Vous nous manquez","Bonjour [Prénom],\n\nCela fait un moment que nous ne vous avons pas vue... vous nous manquez ! 🌸\n\nDe très belles pièces vous attendent en boutique. Venez faire un tour, on serait ravies de vous revoir !\n\nBelle&Jolie — 12 rue du Bois Merrain, Chartres\nLundi : 13h30–18h30 · Mardi au Samedi : 10h00–18h30","Vous nous manquez ! — Belle&Jolie ❤️"],
