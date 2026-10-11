@@ -88,14 +88,14 @@ const BOUTIQUE_CONFIG = {
   siret:    "",
   // Données "globales" partagées entre boutiques (clients, avoirs, fidélité)
   // Données "locales" propres à cette boutique (ventes, stock, Z de caisse, réservations)
-  DONNEES_GLOBALES: ["bj_clients","bj_avoirs","bj_promotions","bj_transferts","bj_clients_suppr","bj_avoirs_suppr","bj_vendeurs","bj_ejs_service","bj_ejs_template","bj_ejs_key","bj_lien_avis_google","bj_commission_artisan","bj_journal_emails"],
+  DONNEES_GLOBALES: ["bj_clients","bj_avoirs","bj_promotions","bj_transferts","bj_clients_suppr","bj_avoirs_suppr","bj_vendeurs","bj_ejs_service","bj_ejs_template","bj_ejs_key","bj_lien_avis_google","bj_commission_artisan","bj_journal_emails","bj_quota_emails"],
   DONNEES_LOCALES:  ["bj_products","bj_ventes","bj_caisse_jour","bj_reservations","bj_annul_lignes","bj_attente","bj_depots_vente","bj_depots_banque","bj_solde_depot_reporte","bj_mouvements_defectueux","bj_ouvertures","bj_registre_personnel"],
 };
 
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "11/10 · v77 (objectifs Maurepas sur 1 an)";
+const APP_VERSION = "11/10 · v78 (emails par semaine et par boutique)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -16914,12 +16914,12 @@ function journaliserEmail(params, ok) {
     if(!email || /boutiquebelleetjolie@gmail\.com/i.test(email) || /^(sauvegarde|relevé clôture|releve cloture)/i.test(sujet)) return; // emails internes
     const c = (STATE.clients||[]).find(x=>String(x.email||"").trim().toLowerCase()===email.toLowerCase());
     const jour = dateLocaleStr();
-    const id = "EM_"+jour+"_"+String(sujet).slice(0,80);
+    const id = "EM_"+(BOUTIQUE_ID_ACTUEL==="boutique_1"?"":BOUTIQUE_ID_ACTUEL+"_")+jour+"_"+String(sujet).slice(0,80);
     const liste = STATE.journalEmails || [];
     let e = liste.find(x=>x.id===id);
     const now = new Date().toISOString();
     if(!e) {
-      e = {id, d: now, dn: now, sujet, type: typeEmail(sujet), apercu: String(params?.articles||"").slice(0,600), dest: []};
+      e = {id, b: BOUTIQUE_ID_ACTUEL, d: now, dn: now, sujet, type: typeEmail(sujet), apercu: String(params?.articles||"").slice(0,600), dest: []};
       STATE.journalEmails = [e, ...liste];
     }
     e.dn = now;
@@ -16943,6 +16943,43 @@ function journaliserEmail(params, ok) {
   };
   if(!essai()) { const t = setInterval(()=>{ if(essai()) clearInterval(t); }, 1000); }
 })();
+
+// ─── Emails envoyés par semaine, par boutique, comparés au nombre de tickets ───
+function lundiDe(d) { const x = new Date(d); x.setHours(0,0,0,0); const wd = (x.getDay()+6)%7; x.setDate(x.getDate()-wd); return x; }
+function renderEmailsParSemaine(j) {
+  const quota = parseInt(ls("bj_quota_emails", 5000)) || 5000;
+  const nomB = id => (BOUTIQUES.find(b=>b.id===id)||{nom:id}).nom.replace("Belle & Jolie — ","");
+  const ici = BOUTIQUE_ID_ACTUEL;
+  const semaines = []; const l0 = lundiDe(new Date());
+  for(let k=7; k>=0; k--) { const d = new Date(l0); d.setDate(d.getDate()-7*k); semaines.push(d); }
+  const cle = d => dateLocaleStr(lundiDe(d));
+  const emails = {}; // cle -> {ici, autres}
+  (j||[]).forEach(e => (e.dest||[]).forEach(x => {
+    if(!x.ok) return;
+    const k = cle(new Date(e.d)); const b = e.b || "boutique_1";
+    emails[k] = emails[k] || {ici:0, autres:0, auto:0, camp:0};
+    if(b===ici) { emails[k].ici++; if(e.type==="Campagne") emails[k].camp++; else emails[k].auto++; } else emails[k].autres++;
+  }));
+  const tickets = {};
+  (STATE.ventes||[]).forEach(v => { if(v.test||v.annulee||v.correctionManuelle) return; const k = cle(new Date(v.date)); tickets[k] = (tickets[k]||0)+1; });
+  const debutMois = new Date(); debutMois.setDate(1); debutMois.setHours(0,0,0,0);
+  const moisTous = (j||[]).filter(e=>new Date(e.d)>=debutMois).reduce((s,e)=>s+(e.dest||[]).filter(x=>x.ok).length,0);
+  const pct = Math.min(100, moisTous/quota*100);
+  return `
+    <div style="background:#f9f6f8;border-radius:9px;padding:10px;margin-bottom:10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px;margin-bottom:4px;">
+        <span><strong>Ce mois-ci, toutes boutiques : ${moisTous} / ${quota} emails</strong> (quota EmailJS commun)</span>
+        <span style="color:#888;">Quota mensuel : <input type="number" value="${quota}" onchange="lsSet('bj_quota_emails', parseInt(this.value)||5000);render()" style="width:70px;font-size:12px;padding:2px 4px;"/></span>
+      </div>
+      <div style="background:#fff;border-radius:5px;height:7px;overflow:hidden;margin-bottom:10px;"><div style="height:100%;width:${pct}%;background:${pct>=90?'#a32d2d':pct>=70?'#e07c00':'#3b6d11'};"></div></div>
+      <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:420px;">
+        <thead><tr style="color:#888;border-bottom:1px solid #eadfe4;"><th style="text-align:left;padding:4px;">Semaine du</th><th style="text-align:right;padding:4px;">Tickets ${nomB(ici)}</th><th style="text-align:right;padding:4px;">Emails ${nomB(ici)}</th><th style="text-align:right;padding:4px;">dont auto / campagnes</th><th style="text-align:right;padding:4px;">Emails par ticket</th>${BOUTIQUES.length>1?`<th style="text-align:right;padding:4px;">Emails ${BOUTIQUES.filter(b=>b.id!==ici).map(b=>nomB(b.id)).join(", ")}</th>`:""}</tr></thead>
+        <tbody>${semaines.map(d=>{ const k = dateLocaleStr(d); const em = emails[k]||{ici:0,autres:0,auto:0,camp:0}; const t = tickets[k]||0;
+          return `<tr style="border-bottom:0.5px solid #f0ebee;"><td style="padding:4px;">${d.toLocaleDateString("fr-FR",{day:"2-digit",month:"2-digit"})}</td><td style="padding:4px;text-align:right;">${t}</td><td style="padding:4px;text-align:right;font-weight:600;">${em.ici}</td><td style="padding:4px;text-align:right;color:#888;">${em.auto} / ${em.camp}</td><td style="padding:4px;text-align:right;">${t?(em.ici/t).toFixed(1):"-"}</td>${BOUTIQUES.length>1?`<td style="padding:4px;text-align:right;color:#888;">${em.autres}</td>`:""}</tr>`; }).join("")}</tbody>
+      </table></div>
+      <div style="font-size:10px;color:#aaa;margin-top:4px;">Comptage à partir du 11/10/2026. Les campagnes sont comptées pour la boutique depuis laquelle elles sont envoyées. Les tickets de l'autre boutique se voient en basculant dessus.</div>
+    </div>`;
+}
 function renderSuiviEmails() {
   const j = STATE.journalEmails || [];
   const filtre = STATE._filtreSuiviEmails || "tous";
@@ -16957,6 +16994,7 @@ function renderSuiviEmails() {
         <div style="font-weight:500;font-size:13px;">📬 Suivi des emails envoyés <span style="color:#888;font-weight:400;">· ${nbMois} ce mois-ci</span></div>
         <div style="display:flex;gap:4px;">${btn("tous","Tous")}${btn("campagnes","Campagnes")}${btn("auto","Automatiques")}</div>
       </div>
+      ${renderEmailsParSemaine(j)}
       ${liste.length ? `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:460px;">
         <thead><tr style="color:#888;border-bottom:1px solid #f0ebee;"><th style="text-align:left;padding:5px;">Date</th><th style="text-align:left;padding:5px;">Type</th><th style="text-align:left;padding:5px;">Objet</th><th style="text-align:right;padding:5px;">Envoyés</th><th style="text-align:right;padding:5px;">Erreurs</th></tr></thead><tbody>
         ${liste.slice(0,100).map(e => {
