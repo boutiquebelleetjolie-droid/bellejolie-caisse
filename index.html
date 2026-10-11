@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "11/10 · v68 (emails à revoir)";
+const APP_VERSION = "11/10 · v69 (correction auto des emails)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -3700,6 +3700,10 @@ function renderCaisse() {
           </div>
           ${(()=>{
             const cc = (STATE.clients||[]).find(x=>x.id===STATE.client.id) || STATE.client;
+            if(!cc.emailARevoir && cc.emailCorrigeAuto) return `<div style="background:#fff8e1;border:1px solid #f0dcb0;border-radius:8px;padding:8px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+              <div style="font-size:12px;color:#854f0b;"><strong>📧 Email corrigé automatiquement</strong> : ${cc.email} (avant : ${cc.emailAncien||"?"}). Confirme l'adresse avec la cliente.</div>
+              <span style="display:flex;gap:6px;"><button onclick="confirmerEmailClient('${cc.id}')" style="background:#3b6d11;color:#fff;border:none;border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;">✓ C'est bon</button><button onclick="corrigerEmailClient('${cc.id}')" style="background:#fff;color:#854f0b;border:1px solid #f0dcb0;border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;">✏️ Corriger</button></span>
+            </div>`;
             if(!cc.emailARevoir) return "";
             return `<div style="background:#fde8e8;border:1px solid #f09595;border-radius:8px;padding:8px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
               <div style="font-size:12px;color:#a32d2d;"><strong>⚠️ Email à revoir</strong> — ${cc.email||"(vide)"} n'existe pas (mail revenu en erreur). Demande la bonne adresse à la cliente.</div>
@@ -16865,6 +16869,71 @@ function renderSuiviEmails() {
         ${[...anciens].reverse().slice(0,20).map(h=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:0.5px solid #f0ebee;font-size:12px;"><span>${new Date(h.date).toLocaleDateString("fr-FR")} · ${h.sujet} <span style="color:#aaa;">(${h.segment||""})</span></span><span style="white-space:nowrap;"><strong>${h.nb}</strong> envoyé${h.nb>1?"s":""}${h.erreurs?` · <span style="color:#a32d2d;">${h.erreurs} erreur${h.erreurs>1?"s":""}</span>`:""}</span></div>`).join("")}` : ""}
     </div>`;
 }
+
+// ─── Corrections automatiques des fautes de frappe évidentes dans les emails ───
+function distOSA(a, b) {
+  const m=a.length, n=b.length, d=[];
+  for(let i=0;i<=m;i++){ d[i]=[i]; }
+  for(let j=0;j<=n;j++){ d[0][j]=j; }
+  for(let i=1;i<=m;i++) for(let j=1;j<=n;j++) {
+    const c = a[i-1]===b[j-1]?0:1;
+    d[i][j] = Math.min(d[i-1][j]+1, d[i][j-1]+1, d[i-1][j-1]+c);
+    if(i>1&&j>1&&a[i-1]===b[j-2]&&a[i-2]===b[j-1]) d[i][j]=Math.min(d[i][j], d[i-2][j-2]+1);
+  }
+  return d[m][n];
+}
+const DOMAINES_COURANTS = ["gmail.com","hotmail.fr","hotmail.com","yahoo.fr","yahoo.com","orange.fr","wanadoo.fr","laposte.net","free.fr","sfr.fr","icloud.com","outlook.fr","outlook.com","live.fr","aol.com","neuf.fr","bbox.fr","numericable.fr"];
+function corrigerFragment(local, nomRef) {
+  const N = normStr(nomRef||"").replace(/[^a-z]/g,"");
+  if(N.length < 4) return local;
+  const L = local.toLowerCase();
+  if(L.includes(N)) return local;
+  const tol = N.length >= 6 ? 2 : 1;
+  let best = null;
+  for(let len=N.length-1; len<=N.length+1; len++) {
+    for(let i=0; i+len<=L.length; i++) {
+      const w = L.slice(i, i+len);
+      if(!/^[a-z]+$/.test(w)) continue;
+      if(w[0]!==N[0] && w.slice(-1)!==N.slice(-1)) continue; // garde-fou : 1re ou dernière lettre identique
+      const dd = distOSA(w, N);
+      if(dd<=0 || dd>tol) continue;
+      const align = ((i===0 || !/[a-z]/.test(L[i-1])) ? 1 : 0) + ((i+len===L.length || !/[a-z]/.test(L[i+len])) ? 1 : 0);
+      const better = !best || dd<best.d || (dd===best.d && (align>best.align || (align===best.align && len>best.len)));
+      if(better) best = {i, len, d: dd, align};
+    }
+  }
+  return best ? L.slice(0,best.i) + N + L.slice(best.i+best.len) : local;
+}
+function proposerCorrectionEmail(c) {
+  const e = String(c.email||"").trim().toLowerCase().replace(/\s+/g,"").replace(/;/g,".").replace(/,/g,".");
+  const at = e.lastIndexOf("@"); if(at<1) return null;
+  let local = e.slice(0,at), dom = e.slice(at+1);
+  if(!DOMAINES_COURANTS.includes(dom)) {
+    let best=null; DOMAINES_COURANTS.forEach(d=>{ const dd=distOSA(dom,d); if(dd>0&&dd<=2&&(!best||dd<best.d)) best={d:dd,dom:d}; });
+    if(best) dom = best.dom;
+  }
+  local = corrigerFragment(local, c.prenom);
+  local = corrigerFragment(local, c.nom);
+  const prop = local+"@"+dom;
+  return prop!==e ? prop : null;
+}
+window.appliquerCorrectionsEmails = () => {
+  const ids = [...document.querySelectorAll('input[data-email-fix]')].filter(x=>x.checked).map(x=>x.dataset.emailFix);
+  if(!ids.length) { alert("Aucune correction cochée."); return; }
+  const now = new Date().toISOString();
+  const clients = (STATE.clients||[]).map(c => {
+    if(!ids.includes(c.id)) return c;
+    const prop = proposerCorrectionEmail(c); if(!prop) return c;
+    return {...c, emailAncien: c.email, email: prop, emailARevoir: false, emailCorrigeAuto: true, emailCorrigeLe: now};
+  });
+  setState({clients});
+  alert(`✅ ${ids.length} email${ids.length>1?"s":""} corrigé${ids.length>1?"s":""}. Un message orange s'affichera en caisse pour confirmer l'adresse avec la cliente.`);
+};
+window.confirmerEmailClient = (id) => {
+  const clients = (STATE.clients||[]).map(c => c.id===id ? {...c, emailCorrigeAuto:false} : c);
+  if(STATE.client?.id===id) STATE.client = clients.find(c=>c.id===id);
+  setState({clients});
+};
 // ─── Emails en erreur : retirer l'adresse sans supprimer la fiche cliente ───
 function noterEmailEnErreur(id) {
   STATE.emailsEnErreur = [...new Set([...(STATE.emailsEnErreur||ls("bj_emails_erreur", [])), id])];
@@ -16925,7 +16994,7 @@ window.corrigerEmailClient = (id) => {
   if(v===null) return;
   const nv = v.trim();
   if(nv) { const r = raisonEmailInvalide(nv); if(r && !confirm(`Attention : ${r} (${nv}).\nEnregistrer quand même ?`)) return; }
-  const maj = {...c, email: nv, emailARevoir: false, emailAncien: c.email, emailCorrigeLe: new Date().toISOString()};
+  const maj = {...c, email: nv, emailARevoir: false, emailCorrigeAuto: false, emailAncien: c.email, emailCorrigeLe: new Date().toISOString()};
   const clients = (STATE.clients||[]).map(x=>x.id===id ? maj : x);
   if(STATE.client?.id===id) { STATE.client = maj; STATE._ficheIncomplete = calculerFicheIncomplete(maj); }
   setState({clients});
@@ -16961,6 +17030,18 @@ function renderEmailsErreur() {
       </div>
       ${ouvert?`
       <div style="font-size:12px;color:#888;margin:8px 0;">Dans Gmail, recherche <strong>from:mailer-daemon</strong>, ouvre les messages « Adresse introuvable » et copie-colle leur contenu ici (plusieurs à la suite, c'est possible). Rien n'est supprimé : les fiches sont marquées « email à revoir », un message rouge s'affiche en caisse pour corriger l'adresse avec la cliente, et ces adresses sont exclues des emails promo d'ici là.</div>
+      ${(()=>{
+        const fixes = (STATE.clients||[]).filter(c=>c.emailARevoir).map(c=>({c, p: proposerCorrectionEmail(c)})).filter(x=>x.p);
+        const restent = (STATE.clients||[]).filter(c=>c.emailARevoir).length - fixes.length;
+        if(!fixes.length && !restent) return "";
+        return `<div style="background:#fff8e1;border:1px solid #f0dcb0;border-radius:9px;padding:10px;margin-bottom:10px;">
+          <div style="font-size:12px;font-weight:600;color:#854f0b;margin-bottom:4px;">✨ Corrections proposées (${fixes.length})</div>
+          <div style="font-size:11px;color:#888;margin-bottom:6px;">Fautes de frappe évidentes, repérées grâce au prénom, au nom et aux domaines courants (gmail.com, orange.fr…). Décoche celles qui te semblent fausses.</div>
+          ${fixes.map(({c,p})=>`<label style="display:flex;gap:8px;align-items:flex-start;padding:4px 0;border-top:0.5px solid #f3e6c4;font-size:12px;cursor:pointer;"><input type="checkbox" data-email-fix="${c.id}" checked style="width:15px;height:15px;margin-top:2px;"/><span><strong>${c.prenom||""} ${c.nom||""}</strong><br/><span style="color:#a32d2d;text-decoration:line-through;">${c.email}</span> → <span style="color:#3b6d11;font-weight:600;">${p}</span></span></label>`).join("")}
+          ${fixes.length?`<button onclick="appliquerCorrectionsEmails()" style="width:100%;margin-top:6px;padding:9px;background:#3b6d11;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">✨ Appliquer les corrections cochées</button>`:""}
+          ${restent?`<div style="font-size:11px;color:#a32d2d;margin-top:6px;">${restent} adresse${restent>1?"s":""} sans correction évidente : à demander à la cliente (bandeau rouge en caisse).</div>`:""}
+        </div>`;
+      })()}
       <textarea id="bounce-txt" placeholder="Colle ici les messages d'erreur de Gmail ou une liste d'adresses…" style="width:100%;min-height:80px;font-size:12px;border:1px solid #ddd;border-radius:8px;padding:8px;box-sizing:border-box;"></textarea>
       <button onclick="analyserEmailsErreur()" style="width:100%;margin-top:6px;padding:8px;background:#f5f0f2;color:#993556;border:1px solid #e8d8de;border-radius:8px;cursor:pointer;font-size:13px;">🔍 Rechercher les adresses dans le texte collé</button>
       ${cands.length?`
