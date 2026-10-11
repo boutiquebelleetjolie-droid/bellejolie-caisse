@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "11/10 · v65 (modèle mail dépôt-vente)";
+const APP_VERSION = "11/10 · v66 (emails en erreur)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -16745,6 +16745,7 @@ function renderPromo() {
       </div>
     </div>
 
+    ${renderEmailsErreur()}
     <!-- Historique envois -->
     ${(STATE.historiquePromo||[]).length>0?`
     <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;">
@@ -16760,6 +16761,84 @@ function renderPromo() {
       `).join("")}
     </div>`:""}
   </div>`;
+}
+
+// ─── Emails en erreur : retirer l'adresse sans supprimer la fiche cliente ───
+function noterEmailEnErreur(id) {
+  STATE.emailsEnErreur = [...new Set([...(STATE.emailsEnErreur||ls("bj_emails_erreur", [])), id])];
+  lsSet("bj_emails_erreur", STATE.emailsEnErreur);
+}
+const DOMAINES_ERRONES_EXACTS = /@(?:gmail\.(?:con|co|cm|om|fr|comm|cpm)|hotmail\.(?:con|co|cm|om)|outlook\.(?:con|co|cm)|yahoo\.(?:con|co|cm|om)|orange\.(?:con|co|cm|com)|wanadoo\.(?:con|co|com)|free\.(?:con|co)|sfr\.(?:con|co)|laposte\.(?:con|co|com)|icloud\.(?:con|co|fr))$/i;
+const DOMAINES_ERRONES_PREFIXES = /@(?:gmial|gmai|gmal|gamil|gnail|gmaill|gmil|hotmial|hotmai|homail|hotmal|hotamil|outlok|outllok|yaho|yahooo|orage|ornage|wanado|iclou)\./i;
+function raisonEmailInvalide(e) {
+  const v = String(e||"").trim();
+  if(!v) return "";
+  if(/\s/.test(v)) return "espace dans l'adresse";
+  if(!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(v)) return "format invalide";
+  if(/\.\.|@\.|\.@|\.$/.test(v)) return "format invalide";
+  if(DOMAINES_ERRONES_EXACTS.test(v) || DOMAINES_ERRONES_PREFIXES.test(v)) return "faute de frappe probable dans le domaine";
+  return "";
+}
+function candidatsEmailsErreur() {
+  const errIds = new Set(STATE.emailsEnErreur || ls("bj_emails_erreur", []));
+  const colles = new Set((STATE._bounceEmails||[]).map(x=>x.toLowerCase()));
+  const res = [];
+  (STATE.clients||[]).forEach(c => {
+    const e = String(c.email||"").trim(); if(!e) return;
+    const raisons = [];
+    if(colles.has(e.toLowerCase())) raisons.push("revenu en erreur (message Gmail collé)");
+    if(errIds.has(c.id)) raisons.push("échec lors d'un envoi depuis la caisse");
+    const fmt = raisonEmailInvalide(e); if(fmt) raisons.push(fmt);
+    if(raisons.length) res.push({c, raisons});
+  });
+  return res.sort((a,b)=>(a.c.nom||"").localeCompare(b.c.nom||""));
+}
+window.analyserEmailsErreur = () => {
+  const txt = (document.getElementById("bounce-txt")||{}).value || "";
+  const trouves = [...new Set((txt.match(/[A-Z0-9._%+'-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi)||[]).map(x=>x.toLowerCase()))]
+    .filter(x => !/mailer-daemon|postmaster|googlemail\.com$|boutiquebelleetjolie@gmail\.com/i.test(x));
+  STATE._bounceEmails = trouves;
+  const connus = new Set((STATE.clients||[]).map(c=>String(c.email||"").trim().toLowerCase()));
+  const nb = trouves.filter(x=>connus.has(x)).length;
+  STATE._voirEmailsErreur = true;
+  render();
+  alert(trouves.length ? `${trouves.length} adresse${trouves.length>1?"s":""} trouvée${trouves.length>1?"s":""} dans le texte collé, dont ${nb} correspond${nb>1?"ent":""} à une fiche cliente.` : "Aucune adresse email trouvée dans le texte collé.");
+};
+window.retirerEmailsErreur = () => {
+  const ids = [...document.querySelectorAll('input[data-email-err]')].filter(x=>x.checked).map(x=>x.dataset.emailErr);
+  if(!ids.length) { alert("Aucune fiche cochée."); return; }
+  if(!confirm(`Retirer l'adresse email de ${ids.length} fiche${ids.length>1?"s":""} cliente${ids.length>1?"s":""} ?\n\nLes comptes, l'historique d'achats et la fidélité sont conservés. Seule l'adresse email est effacée.`)) return;
+  const now = new Date().toISOString();
+  const clients = (STATE.clients||[]).map(c => ids.includes(c.id) ? {...c, emailRetire: c.email, emailRetireLe: now, email: ""} : c);
+  STATE.emailsEnErreur = (STATE.emailsEnErreur||ls("bj_emails_erreur", [])).filter(id=>!ids.includes(id));
+  lsSet("bj_emails_erreur", STATE.emailsEnErreur);
+  STATE._bounceEmails = [];
+  setState({clients});
+  alert(`✅ Adresse email retirée de ${ids.length} fiche${ids.length>1?"s":""}. Les comptes sont conservés.`);
+};
+function renderEmailsErreur() {
+  const cands = candidatsEmailsErreur();
+  const ouvert = STATE._voirEmailsErreur;
+  return `
+    <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <div style="font-weight:500;font-size:13px;">🧹 Emails en erreur ${cands.length?`<span style="color:#a32d2d;">(${cands.length} à vérifier)</span>`:""}</div>
+        <button onclick="STATE._voirEmailsErreur=!STATE._voirEmailsErreur;render()" style="background:none;border:1px solid #993556;color:#993556;border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;">${ouvert?"▲ Fermer":"▼ Ouvrir"}</button>
+      </div>
+      ${ouvert?`
+      <div style="font-size:12px;color:#888;margin:8px 0;">Dans Gmail, recherche <strong>from:mailer-daemon</strong>, ouvre les messages « Adresse introuvable » et copie-colle leur contenu ici (plusieurs à la suite, c'est possible). Seule l'adresse email est retirée : la fiche cliente, ses achats et sa fidélité sont conservés.</div>
+      <textarea id="bounce-txt" placeholder="Colle ici les messages d'erreur de Gmail ou une liste d'adresses…" style="width:100%;min-height:80px;font-size:12px;border:1px solid #ddd;border-radius:8px;padding:8px;box-sizing:border-box;"></textarea>
+      <button onclick="analyserEmailsErreur()" style="width:100%;margin-top:6px;padding:8px;background:#f5f0f2;color:#993556;border:1px solid #e8d8de;border-radius:8px;cursor:pointer;font-size:13px;">🔍 Rechercher les adresses dans le texte collé</button>
+      ${cands.length?`
+        <div style="font-size:12px;font-weight:500;margin:12px 0 4px;">Fiches concernées</div>
+        <div style="display:flex;gap:6px;margin-bottom:6px;"><button onclick="document.querySelectorAll('input[data-email-err]').forEach(x=>x.checked=true)" style="background:none;border:1px solid #ddd;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">Tout cocher</button><button onclick="document.querySelectorAll('input[data-email-err]').forEach(x=>x.checked=false)" style="background:none;border:1px solid #ddd;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">Tout décocher</button></div>
+        ${cands.map(({c,raisons})=>`<label style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-top:0.5px solid #f0ebee;font-size:12px;cursor:pointer;">
+          <input type="checkbox" data-email-err="${c.id}" checked style="width:15px;height:15px;margin-top:2px;"/>
+          <span style="flex:1;"><strong>${c.prenom||""} ${c.nom||""}</strong> — ${c.email}<br/><span style="color:#a32d2d;font-size:11px;">${raisons.join(" · ")}</span></span></label>`).join("")}
+        <button onclick="retirerEmailsErreur()" style="width:100%;margin-top:8px;padding:10px;background:#993556;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">🧹 Retirer l'email des fiches cochées (comptes conservés)</button>
+      `:`<div style="font-size:12px;color:#3b6d11;margin-top:8px;">✓ Aucune adresse en erreur repérée pour l'instant.</div>`}
+      `:""}
+    </div>`;
 }
 
 window.envoyerEmailsPromo = async () => {
@@ -16883,6 +16962,7 @@ window.envoyerEmailsPromo = async () => {
     } catch(err) {
       console.error(`Erreur envoi à ${c.email}:`, err);
       erreurs++;
+      noterEmailEnErreur(c.id);
     }
   }
 
@@ -16973,6 +17053,7 @@ window.envoyerFileAttentePromo = async () => {
     } catch(err) {
       console.error(`Erreur envoi à ${c.email}:`, err);
       erreurs++;
+      noterEmailEnErreur(c.id);
     }
   }
 
