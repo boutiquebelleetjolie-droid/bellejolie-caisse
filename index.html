@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "11/10 · v67 (suivi des emails)";
+const APP_VERSION = "11/10 · v68 (emails à revoir)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -3698,6 +3698,14 @@ function renderCaisse() {
               <button onclick="setState({client:null});STATE._ficheIncomplete=null;" style="background:none;border:none;font-size:20px;color:#aaa;">×</button>
             </div>
           </div>
+          ${(()=>{
+            const cc = (STATE.clients||[]).find(x=>x.id===STATE.client.id) || STATE.client;
+            if(!cc.emailARevoir) return "";
+            return `<div style="background:#fde8e8;border:1px solid #f09595;border-radius:8px;padding:8px 12px;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+              <div style="font-size:12px;color:#a32d2d;"><strong>⚠️ Email à revoir</strong> — ${cc.email||"(vide)"} n'existe pas (mail revenu en erreur). Demande la bonne adresse à la cliente.</div>
+              <button onclick="corrigerEmailClient('${cc.id}')" style="background:#a32d2d;color:#fff;border:none;border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;white-space:nowrap;">✏️ Corriger l'email</button>
+            </div>`;
+          })()}
           ${(()=>{
             const manque = STATE._ficheIncomplete||[];
             if(!manque.length) return "";
@@ -9176,7 +9184,7 @@ window.saveClient = () => {
   if(!f.nom||!f.prenom) return;
   if(STATE.editClientId) {
     // Modification client existant
-    STATE.clients=STATE.clients.map(c=>c.id===STATE.editClientId?{...c,...f}:c);
+    STATE.clients=STATE.clients.map(c=>c.id===STATE.editClientId?{...c,...f,...(c.emailARevoir && String(f.email||"").trim().toLowerCase()!==String(c.email||"").trim().toLowerCase()?{emailARevoir:false,emailAncien:c.email}:{})}:c);
     // Si c'est la cliente actuellement sélectionnée en caisse, on rafraîchit aussi l'affichage immédiatement
     if(STATE.client?.id===STATE.editClientId) {
       STATE.client = STATE.clients.find(c=>c.id===STATE.editClientId);
@@ -16880,6 +16888,7 @@ function candidatsEmailsErreur() {
   (STATE.clients||[]).forEach(c => {
     const e = String(c.email||"").trim(); if(!e) return;
     const raisons = [];
+    if(c.emailARevoir) return;
     if(colles.has(e.toLowerCase())) raisons.push("revenu en erreur (message Gmail collé)");
     if(errIds.has(c.id)) raisons.push("échec lors d'un envoi depuis la caisse");
     const fmt = raisonEmailInvalide(e); if(fmt) raisons.push(fmt);
@@ -16901,26 +16910,57 @@ window.analyserEmailsErreur = () => {
 window.retirerEmailsErreur = () => {
   const ids = [...document.querySelectorAll('input[data-email-err]')].filter(x=>x.checked).map(x=>x.dataset.emailErr);
   if(!ids.length) { alert("Aucune fiche cochée."); return; }
-  if(!confirm(`Retirer l'adresse email de ${ids.length} fiche${ids.length>1?"s":""} cliente${ids.length>1?"s":""} ?\n\nLes comptes, l'historique d'achats et la fidélité sont conservés. Seule l'adresse email est effacée.`)) return;
+  if(!confirm(`Marquer « email à revoir » sur ${ids.length} fiche${ids.length>1?"s":""} ?\n\nRien n'est supprimé : l'adresse reste dans la fiche, un message rouge s'affichera en caisse pour la corriger avec la cliente, et ces adresses ne recevront plus les emails promo d'ici là.`)) return;
   const now = new Date().toISOString();
-  const clients = (STATE.clients||[]).map(c => ids.includes(c.id) ? {...c, emailRetire: c.email, emailRetireLe: now, email: ""} : c);
+  const clients = (STATE.clients||[]).map(c => ids.includes(c.id) ? {...c, emailARevoir: true, emailARevoirLe: now} : c);
   STATE.emailsEnErreur = (STATE.emailsEnErreur||ls("bj_emails_erreur", [])).filter(id=>!ids.includes(id));
   lsSet("bj_emails_erreur", STATE.emailsEnErreur);
   STATE._bounceEmails = [];
   setState({clients});
-  alert(`✅ Adresse email retirée de ${ids.length} fiche${ids.length>1?"s":""}. Les comptes sont conservés.`);
+  alert(`✅ ${ids.length} fiche${ids.length>1?"s":""} marquée${ids.length>1?"s":""} « email à revoir ».`);
 };
+window.corrigerEmailClient = (id) => {
+  const c = (STATE.clients||[]).find(x=>x.id===id); if(!c) return;
+  const v = prompt(`Nouvelle adresse email de ${c.prenom||""} ${c.nom||""} :\n(adresse actuelle, revenue en erreur : ${c.email||"vide"})`, c.email||"");
+  if(v===null) return;
+  const nv = v.trim();
+  if(nv) { const r = raisonEmailInvalide(nv); if(r && !confirm(`Attention : ${r} (${nv}).\nEnregistrer quand même ?`)) return; }
+  const maj = {...c, email: nv, emailARevoir: false, emailAncien: c.email, emailCorrigeLe: new Date().toISOString()};
+  const clients = (STATE.clients||[]).map(x=>x.id===id ? maj : x);
+  if(STATE.client?.id===id) { STATE.client = maj; STATE._ficheIncomplete = calculerFicheIncomplete(maj); }
+  setState({clients});
+};
+// Adresses revenues « introuvables » lors de l'envoi du 11/10/2026 (dépôt-vente) : marquées une seule fois
+const EMAILS_INTROUVABLES_1110 = ["tiphaniegaliet86@gmail.com","ba.emilie@yahon.fr","natachekessler@orange.fr","aldigia.toukali@gmail.com","berenicelabarrer1986@gmail.com","juinot-christelle@wanadoo.fr","paulinegandouin@laposte.net","kateprigento@gmail.com","marie.h.teckal@gmail.com","amitadiene8@yahoo.fr","pratricia.oberdieder@wanadoo.fr","petites.frimouses@orange.fr","delphine.morelo@gmail.com","emmarusseau28@orange.fr","khelidjia94@gmail.com","myriam.faccili18@gmail.com","cassy.gallais@gmail.com","carolinecerfourn@hotmail.fr","atoutain@yahoo.fr","milena.didobic@gmail.com","jirardcedric1979@gmail.com","ktymaillet@aol.com","domi.manighetti@gmail.com","camillelahoussin11@gmail.com","christinne.charitas@orange.fr","fancoise.hee@gmail.com","fibiana.carrasco@gmail.com","poquet.leatitia@orange.fr","sophie.bongibeault@gmail.com","maudebardou@orange.fr","leavendersuyft@gmail.com","corinne.guillmain@orange.fr","martinedessouly@hotmail.fr","allaire.erik@orange.fr","hbabach01@gmail.com"];
+function marquerEmailsIntrouvables1110() {
+  try {
+    if(localStorage.getItem("bj_fix_emails_1110")==="ok") return true;
+    if(!(STATE.clients||[]).length) return false;
+    const set = new Set(EMAILS_INTROUVABLES_1110);
+    const now = new Date().toISOString(); let n = 0;
+    const clients = STATE.clients.map(c => {
+      const e = String(c.email||"").trim().toLowerCase();
+      if(!e || c.emailARevoir) return c;
+      if(set.has(e) || /^vaityval/.test(e)) { n++; return {...c, emailARevoir: true, emailARevoirLe: now}; }
+      return c;
+    });
+    if(n) setState({clients});
+    localStorage.setItem("bj_fix_emails_1110", "ok");
+    return true;
+  } catch(err) { console.error(err); return true; }
+}
+setTimeout(function tenter(){ if(!marquerEmailsIntrouvables1110()) setTimeout(tenter, 5000); }, 8000);
 function renderEmailsErreur() {
   const cands = candidatsEmailsErreur();
   const ouvert = STATE._voirEmailsErreur;
   return `
     <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;margin-bottom:16px;">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
-        <div style="font-weight:500;font-size:13px;">🧹 Emails en erreur ${cands.length?`<span style="color:#a32d2d;">(${cands.length} à vérifier)</span>`:""}</div>
+        <div style="font-weight:500;font-size:13px;">🧹 Emails en erreur ${cands.length?`<span style="color:#a32d2d;">(${cands.length} à vérifier)</span>`:""} <span style="color:#888;font-weight:400;">· ${(STATE.clients||[]).filter(c=>c.emailARevoir).length} fiche(s) « email à revoir »</span></div>
         <button onclick="STATE._voirEmailsErreur=!STATE._voirEmailsErreur;render()" style="background:none;border:1px solid #993556;color:#993556;border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;">${ouvert?"▲ Fermer":"▼ Ouvrir"}</button>
       </div>
       ${ouvert?`
-      <div style="font-size:12px;color:#888;margin:8px 0;">Dans Gmail, recherche <strong>from:mailer-daemon</strong>, ouvre les messages « Adresse introuvable » et copie-colle leur contenu ici (plusieurs à la suite, c'est possible). Seule l'adresse email est retirée : la fiche cliente, ses achats et sa fidélité sont conservés.</div>
+      <div style="font-size:12px;color:#888;margin:8px 0;">Dans Gmail, recherche <strong>from:mailer-daemon</strong>, ouvre les messages « Adresse introuvable » et copie-colle leur contenu ici (plusieurs à la suite, c'est possible). Rien n'est supprimé : les fiches sont marquées « email à revoir », un message rouge s'affiche en caisse pour corriger l'adresse avec la cliente, et ces adresses sont exclues des emails promo d'ici là.</div>
       <textarea id="bounce-txt" placeholder="Colle ici les messages d'erreur de Gmail ou une liste d'adresses…" style="width:100%;min-height:80px;font-size:12px;border:1px solid #ddd;border-radius:8px;padding:8px;box-sizing:border-box;"></textarea>
       <button onclick="analyserEmailsErreur()" style="width:100%;margin-top:6px;padding:8px;background:#f5f0f2;color:#993556;border:1px solid #e8d8de;border-radius:8px;cursor:pointer;font-size:13px;">🔍 Rechercher les adresses dans le texte collé</button>
       ${cands.length?`
@@ -16929,7 +16969,7 @@ function renderEmailsErreur() {
         ${cands.map(({c,raisons})=>`<label style="display:flex;gap:8px;align-items:flex-start;padding:5px 0;border-top:0.5px solid #f0ebee;font-size:12px;cursor:pointer;">
           <input type="checkbox" data-email-err="${c.id}" checked style="width:15px;height:15px;margin-top:2px;"/>
           <span style="flex:1;"><strong>${c.prenom||""} ${c.nom||""}</strong> — ${c.email}<br/><span style="color:#a32d2d;font-size:11px;">${raisons.join(" · ")}</span></span></label>`).join("")}
-        <button onclick="retirerEmailsErreur()" style="width:100%;margin-top:8px;padding:10px;background:#993556;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">🧹 Retirer l'email des fiches cochées (comptes conservés)</button>
+        <button onclick="retirerEmailsErreur()" style="width:100%;margin-top:8px;padding:10px;background:#993556;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">⚠️ Marquer « email à revoir » sur les fiches cochées</button>
       `:`<div style="font-size:12px;color:#3b6d11;margin-top:8px;">✓ Aucune adresse en erreur repérée pour l'instant.</div>`}
       `:""}
     </div>`;
@@ -16951,10 +16991,10 @@ window.envoyerEmailsPromo = async () => {
     });
   });
   const bases = {
-    tous:    STATE.clients.filter(c=>c.email&&!c.pasDeMailPromo),
-    actifs:  STATE.clients.filter(c=>c.email&&(c.totalAchats||0)>0&&!c.pasDeMailPromo),
-    fideles: STATE.clients.filter(c=>c.email&&(c.totalAchats||0)>=7&&!c.pasDeMailPromo),
-    nvelles: STATE.clients.filter(c=>c.email&&(c.totalAchats||0)===0&&!c.pasDeMailPromo),
+    tous:    STATE.clients.filter(c=>c.email&&!c.emailARevoir&&!c.pasDeMailPromo),
+    actifs:  STATE.clients.filter(c=>c.email&&!c.emailARevoir&&(c.totalAchats||0)>0&&!c.pasDeMailPromo),
+    fideles: STATE.clients.filter(c=>c.email&&!c.emailARevoir&&(c.totalAchats||0)>=7&&!c.pasDeMailPromo),
+    nvelles: STATE.clients.filter(c=>c.email&&!c.emailARevoir&&(c.totalAchats||0)===0&&!c.pasDeMailPromo),
   };
   let seg = [...(bases[f.base]||bases.tous)];
   if(f.inactivite) {
