@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "11/10 · v75 (objectifs Maurepas −2,5 %)";
+const APP_VERSION = "11/10 · v76 (objectifs Maurepas sans plancher)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -852,11 +852,9 @@ const MAUREPAS_PREVI_AN1 = { "2026-10":5729, "2026-11":26775, "2027-0":16958, "2
   "2027-4":22050, "2027-5":21000, "2027-6":21000, "2027-7":16800, "2027-8":18900, "2027-9":21000 };
 const MAUREPAS_SAISON = [0.95,0.75,0.95,1.0,1.05,1.0,1.0,0.8,0.9,1.0,1.1,1.5];
 const MAUREPAS_MAJ_OBJ = 1.10*1.06*0.975, MAUREPAS_MAJ_BOOST = 1.17; // prévisionnel +10 %, +6 %, puis −2,5 % (11/10/2026) ; boost = objectif +17 %
-// Plancher pendant le remboursement du compte courant (déc. 2026 → juil. 2027) : CA minimum « tout payé »
-const MAUREPAS_PLANCHER = 21500, MAUREPAS_MOIS_PLANCHER = ["2026-11","2027-0","2027-1","2027-2","2027-3","2027-4","2027-5","2027-6"];
 function objectifMoisMaurepas(y, m) {
   const k = y+"-"+m;
-  if(MAUREPAS_PREVI_AN1[k] !== undefined) return Math.max(Math.round(MAUREPAS_PREVI_AN1[k]*MAUREPAS_MAJ_OBJ), MAUREPAS_MOIS_PLANCHER.includes(k) ? MAUREPAS_PLANCHER : 0);
+  if(MAUREPAS_PREVI_AN1[k] !== undefined) return Math.round(MAUREPAS_PREVI_AN1[k]*MAUREPAS_MAJ_OBJ);
   const d = new Date(y, m, 1);
   if(d < new Date(2026, 10, 1)) return Math.round(21000*MAUREPAS_SAISON[m]*MAUREPAS_MAJ_OBJ); // avant ouverture (affichage seulement)
   const ans = Math.max(1, Math.floor(((y-2026)*12 + m - 10)/12)); // années après la 1re
