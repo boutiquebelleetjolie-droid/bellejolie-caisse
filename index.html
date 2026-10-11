@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "11/10 · v66 (emails en erreur)";
+const APP_VERSION = "11/10 · v67 (suivi des emails)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Nouveau site" },
@@ -571,6 +571,7 @@ const CLES_SYNC_TEMPS_REEL = {
   bj_avoirs_suppr: "avoirsSuppr",
   bj_commission_artisan: "commissionArtisan",
   bj_releve_tpe: "releveTPE",
+  bj_journal_emails: "journalEmails",
 };
 const CLES_SYNC_PROTEGEES = new Set(["emailjsServiceId","emailjsTemplateId","emailjsPublicKey"]); // ne jamais écraser par une valeur vide venue d'un autre appareil
 window._syncBannerTimeout = null;
@@ -619,6 +620,16 @@ function demarrerSyncTempsReel() {
           journaliserVentes(fusion);
           render(); afficherBandeauSyncDiscret();
         } catch(err) { console.error("Erreur fusion ventes:", err); }
+        return;
+      }
+      // Journal des emails : fusion par envoi (jamais de remplacement)
+      if(storageKey==="bj_journal_emails") {
+        try {
+          const fusion = fusionnerJournalEmails(STATE.journalEmails||[], data.value||[]);
+          STATE.journalEmails = fusion;
+          localStorage.setItem(cleFirestore(storageKey), JSON.stringify(fusion));
+          render();
+        } catch(err) { console.error("Erreur fusion journal emails:", err); }
         return;
       }
       // Appliquer la mise à jour venue d'un autre appareil
@@ -1176,6 +1187,7 @@ let STATE = {
   showModalReservation: false,
   resaClient:null, resaArticles:[], resaSearch:"", resaProdSearch:"", resaNote:"", resaScanMode:false,
   historiquePromo:  ls("bj_historique_promo", []),
+  journalEmails:    ls("bj_journal_emails", []),
   promoSegment: "fideles",
   promoSujet:   "",
   promoMessage: "",      // transferts entre caisses
@@ -16746,23 +16758,105 @@ function renderPromo() {
     </div>
 
     ${renderEmailsErreur()}
-    <!-- Historique envois -->
-    ${(STATE.historiquePromo||[]).length>0?`
-    <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;">
-      <div style="font-weight:500;font-size:13px;margin-bottom:10px;">📅 Historique des envois</div>
-      ${[...(STATE.historiquePromo||[])].reverse().slice(0,5).map(h=>`
-        <div style="padding:8px 0;border-bottom:0.5px solid #f0ebee;font-size:12px;">
-          <div style="display:flex;justify-content:space-between;margin-bottom:2px;">
-            <span style="font-weight:500;">${h.sujet}</span>
-            <span style="color:#888;">${new Date(h.date).toLocaleDateString("fr-FR")}</span>
-          </div>
-          <div style="color:#888;">${h.nb} email${h.nb>1?"s":""} envoyés · ${h.segment}</div>
-        </div>
-      `).join("")}
-    </div>`:""}
+    ${renderSuiviEmails()}
   </div>`;
 }
 
+
+// ─── Journal de tous les emails envoyés (à qui, quoi, quand) ───────────────
+function fusionnerJournalEmails(a, b) {
+  const m = new Map();
+  [...(a||[]), ...(b||[])].forEach(x => {
+    if(!x || !x.id) return;
+    const ex = m.get(x.id);
+    if(!ex || (x.dest||[]).length > (ex.dest||[]).length) m.set(x.id, x);
+  });
+  return [...m.values()].sort((x,y)=>String(y.d).localeCompare(String(x.d)));
+}
+function typeEmail(sujet) {
+  const s = normStr(sujet||"");
+  if(/bienvenue/.test(s)) return "Bienvenue";
+  if(/anniversaire/.test(s)) return "Anniversaire";
+  if(/ticket|facture|recu/.test(s)) return "Ticket / facture";
+  if(/reservation/.test(s)) return "Réservation";
+  if(/fidelite|bon d.achat|avoir/.test(s)) return "Fidélité / bon";
+  return "Campagne";
+}
+let _journalEmailsTimer = null;
+function journaliserEmail(params, ok) {
+  try {
+    const email = String(params?.to_email||"").trim();
+    const sujet = String(params?.subject||params?.total||"(sans objet)");
+    if(!email || /boutiquebelleetjolie@gmail\.com/i.test(email) || /^(sauvegarde|relevé clôture|releve cloture)/i.test(sujet)) return; // emails internes
+    const c = (STATE.clients||[]).find(x=>String(x.email||"").trim().toLowerCase()===email.toLowerCase());
+    const jour = dateLocaleStr();
+    const id = "EM_"+jour+"_"+String(sujet).slice(0,80);
+    const liste = STATE.journalEmails || [];
+    let e = liste.find(x=>x.id===id);
+    const now = new Date().toISOString();
+    if(!e) {
+      e = {id, d: now, dn: now, sujet, type: typeEmail(sujet), apercu: String(params?.articles||"").slice(0,600), dest: []};
+      STATE.journalEmails = [e, ...liste];
+    }
+    e.dn = now;
+    e.dest = [...(e.dest||[]), {c: c?.id||null, n: c ? ((c.prenom||"")+" "+(c.nom||"")).trim() : String(params?.to_name||""), e: email, ok: !!ok}];
+    // Limite de taille : on garde les 300 derniers envois
+    if(STATE.journalEmails.length > 300) STATE.journalEmails = STATE.journalEmails.slice(0,300);
+    clearTimeout(_journalEmailsTimer);
+    _journalEmailsTimer = setTimeout(()=>{ lsSet("bj_journal_emails", STATE.journalEmails); if(STATE.tab==="promo") render(); }, 2500);
+  } catch(err) { console.error("journal emails:", err); }
+}
+(function installerJournalEmails(){
+  const essai = () => {
+    if(!window.emailjs || window.emailjs._journalInstalle) return !!(window.emailjs && window.emailjs._journalInstalle);
+    const orig = window.emailjs.send.bind(window.emailjs);
+    window.emailjs.send = async (svc, tpl, params, ...rest) => {
+      try { const r = await orig(svc, tpl, params, ...rest); journaliserEmail(params, true); return r; }
+      catch(err) { journaliserEmail(params, false); throw err; }
+    };
+    window.emailjs._journalInstalle = true;
+    return true;
+  };
+  if(!essai()) { const t = setInterval(()=>{ if(essai()) clearInterval(t); }, 1000); }
+})();
+function renderSuiviEmails() {
+  const j = STATE.journalEmails || [];
+  const filtre = STATE._filtreSuiviEmails || "tous";
+  const liste = j.filter(e => filtre==="tous" || (filtre==="campagnes" ? e.type==="Campagne" : e.type!=="Campagne"));
+  const ouvert = STATE._suiviEmailOuvert;
+  const nbMois = j.filter(e => (e.d||"").slice(0,7)===dateLocaleStr().slice(0,7)).reduce((s,e)=>s+(e.dest||[]).filter(x=>x.ok).length,0);
+  const anciens = (STATE.historiquePromo||[]).filter(h => !j.some(e => e.type==="Campagne" && e.sujet===h.sujet && (e.d||"").slice(0,10)===(h.date||"").slice(0,10)));
+  const btn = (k,l) => `<button onclick="STATE._filtreSuiviEmails='${k}';render()" style="padding:4px 10px;border-radius:7px;border:none;cursor:pointer;font-size:12px;background:${filtre===k?'#993556':'#f5f0f2'};color:${filtre===k?'#fff':'#333'};">${l}</button>`;
+  return `
+    <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;margin-bottom:16px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+        <div style="font-weight:500;font-size:13px;">📬 Suivi des emails envoyés <span style="color:#888;font-weight:400;">· ${nbMois} ce mois-ci</span></div>
+        <div style="display:flex;gap:4px;">${btn("tous","Tous")}${btn("campagnes","Campagnes")}${btn("auto","Automatiques")}</div>
+      </div>
+      ${liste.length ? `<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:460px;">
+        <thead><tr style="color:#888;border-bottom:1px solid #f0ebee;"><th style="text-align:left;padding:5px;">Date</th><th style="text-align:left;padding:5px;">Type</th><th style="text-align:left;padding:5px;">Objet</th><th style="text-align:right;padding:5px;">Envoyés</th><th style="text-align:right;padding:5px;">Erreurs</th></tr></thead><tbody>
+        ${liste.slice(0,100).map(e => {
+          const ok = (e.dest||[]).filter(x=>x.ok).length, ko = (e.dest||[]).length-ok;
+          const d = new Date(e.d);
+          return `<tr onclick="STATE._suiviEmailOuvert=STATE._suiviEmailOuvert===${jsonForAttr(e.id)}?null:${jsonForAttr(e.id)};render()" style="cursor:pointer;border-bottom:0.5px solid #f8f3f5;${ouvert===e.id?'background:#fbeaf0;':''}">
+            <td style="padding:5px;white-space:nowrap;">${d.toLocaleDateString("fr-FR")} ${d.toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</td>
+            <td style="padding:5px;">${e.type}</td>
+            <td style="padding:5px;">${e.sujet}</td>
+            <td style="padding:5px;text-align:right;font-weight:600;color:#3b6d11;">${ok}</td>
+            <td style="padding:5px;text-align:right;color:${ko?'#a32d2d':'#ccc'};">${ko||"-"}</td></tr>
+            ${ouvert===e.id ? `<tr><td colspan="5" style="padding:8px 6px;background:#fdf7f9;">
+              ${e.apercu?`<div style="font-size:11px;color:#666;white-space:pre-line;border-left:3px solid #e8d8de;padding-left:8px;margin-bottom:8px;max-height:140px;overflow:auto;">${e.apercu.replace(/</g,"&lt;")}${e.apercu.length>=600?"…":""}</div>`:""}
+              <div style="font-size:11px;font-weight:500;margin-bottom:4px;">Destinataires (${(e.dest||[]).length})</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;">${(e.dest||[]).map(x=>`<span title="${x.e}" style="font-size:11px;padding:2px 7px;border-radius:10px;background:${x.ok?'#eaf3de':'#fde8e8'};color:${x.ok?'#3b6d11':'#a32d2d'};">${x.n||x.e}${x.ok?"":" ✕"}</span>`).join("")}</div>
+            </td></tr>` : ""}`;
+        }).join("")}
+        </tbody></table></div>
+        <div style="font-size:10px;color:#aaa;margin-top:6px;">Touche une ligne pour voir le message et la liste des clientes. Les emails internes (relevés, sauvegardes) ne sont pas listés.</div>`
+      : `<div style="font-size:12px;color:#888;">Aucun envoi enregistré pour l'instant : le suivi démarre à partir de maintenant.</div>`}
+      ${anciens.length ? `<div style="font-size:12px;font-weight:500;margin:12px 0 4px;color:#888;">Envois plus anciens (sans le détail des destinataires)</div>
+        ${[...anciens].reverse().slice(0,20).map(h=>`<div style="display:flex;justify-content:space-between;gap:8px;padding:4px 0;border-bottom:0.5px solid #f0ebee;font-size:12px;"><span>${new Date(h.date).toLocaleDateString("fr-FR")} · ${h.sujet} <span style="color:#aaa;">(${h.segment||""})</span></span><span style="white-space:nowrap;"><strong>${h.nb}</strong> envoyé${h.nb>1?"s":""}${h.erreurs?` · <span style="color:#a32d2d;">${h.erreurs} erreur${h.erreurs>1?"s":""}</span>`:""}</span></div>`).join("")}` : ""}
+    </div>`;
+}
 // ─── Emails en erreur : retirer l'adresse sans supprimer la fiche cliente ───
 function noterEmailEnErreur(id) {
   STATE.emailsEnErreur = [...new Set([...(STATE.emailsEnErreur||ls("bj_emails_erreur", [])), id])];
