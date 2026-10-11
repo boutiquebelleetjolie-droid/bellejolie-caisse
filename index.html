@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "11/10 · v79 (synchro économe)";
+const APP_VERSION = "11/10 · v80 (vacances zone C Maurepas)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -961,13 +961,24 @@ function maurepasJourOuvert(d) {
   if((d.getMonth()===11 && d.getDate()===25) || (d.getMonth()===0 && d.getDate()===1) || (d.getMonth()===4 && d.getDate()===1)) return false;
   return true;
 }
+// Poids commercial d'un jour à Maurepas : jour de la semaine × calendrier (paie, soldes, ventes privées, vacances zone C)
+function poidsJourMaurepas(d) {
+  if(!maurepasJourOuvert(d)) return 0;
+  const dow = d.getDay();
+  let w = MAUREPAS_POIDS_JOUR[dow] * coeffPeriodeMois(d);
+  if(isEnSoldes(d)) { w *= 1.15; if(dow===3||dow===6) w *= 1.10; }
+  else if(isEnVentesPrivees(d)) { w *= 1.10; if(dow===6) w *= 1.05; }
+  else { const vac = isEnVacances(d); if(vac && vac.type==="noel") w *= 1.15; else if(vac) w *= 0.85; }
+  return w;
+}
+// Objectif du jour : l'objectif du mois réparti selon ces poids (le total du mois ne change pas)
 function objJourMaurepas(date) {
-  if(!maurepasJourOuvert(date)) return 0;
+  const w = poidsJourMaurepas(date); if(!w) return 0;
   const y = date.getFullYear(), m = date.getMonth();
   const caM = objectifMoisMaurepas(y, m); if(!caM) return 0;
   let somme = 0; const nb = new Date(y, m+1, 0).getDate();
-  for(let j=1; j<=nb; j++) { const d = new Date(y, m, j); if(maurepasJourOuvert(d)) somme += MAUREPAS_POIDS_JOUR[d.getDay()]; }
-  return somme>0 ? Math.round(caM * MAUREPAS_POIDS_JOUR[date.getDay()] / somme) : 0;
+  for(let j=1; j<=nb; j++) somme += poidsJourMaurepas(new Date(y, m, j));
+  return somme>0 ? Math.round(caM * w / somme) : 0;
 }
 // % du CA hebdo par jour — samedi à 28%, semaine réduite en conséquence
 // Total = 100% (dimanche fermé)
@@ -1006,25 +1017,39 @@ const VACANCES_ZONE_B_DATES = {
     {debut: new Date(2026,3,18), fin: new Date(2026,4,4),  type:"printemps"},
     // Été : 4 juil – 31 août
     {debut: new Date(2026,6,4),  fin: new Date(2026,7,31), type:"ete"},
-    // Toussaint : 24 oct – 8 nov
-    {debut: new Date(2026,9,24), fin: new Date(2026,10,8), type:"toussaint"},
-    // Noël : 19 déc – 4 janv 2027
-    {debut: new Date(2026,11,19),fin: new Date(2027,0,4),  type:"noel"},
+    // Toussaint 2026 : 17 oct – reprise 2 nov (dates officielles, arrêté du 22/10/2025)
+    {debut: new Date(2026,9,17), fin: new Date(2026,10,1), type:"toussaint"},
+    // Noël : 19 déc – reprise 4 janv 2027
+    {debut: new Date(2026,11,19),fin: new Date(2027,0,3),  type:"noel"},
   ],
   2027: [
-    {debut: new Date(2027,0,1),  fin: new Date(2027,0,4),  type:"noel"},   // suite Noël
-    {debut: new Date(2027,1,13), fin: new Date(2027,2,1),  type:"hiver"},
-    {debut: new Date(2027,3,10), fin: new Date(2027,3,26), type:"printemps"},
+    {debut: new Date(2027,0,1),  fin: new Date(2027,0,3),  type:"noel"},   // suite Noël
+    {debut: new Date(2027,1,20), fin: new Date(2027,2,7),  type:"hiver"},     // zone B : 20 fév – reprise 8 mars
+    {debut: new Date(2027,3,17), fin: new Date(2027,4,2),  type:"printemps"}, // zone B : 17 avr – reprise 3 mai
     {debut: new Date(2027,6,3),  fin: new Date(2027,7,31), type:"ete"},
     {debut: new Date(2027,9,23), fin: new Date(2027,10,7), type:"toussaint"},
     {debut: new Date(2027,11,18),fin: new Date(2028,0,3),  type:"noel"},
   ],
 };
 
+// Vacances scolaires Zone C (Maurepas, Yvelines) — dates officielles 2026-2027 (arrêté du 22/10/2025)
+const VACANCES_ZONE_C_DATES = {
+  2026: [
+    {debut: new Date(2026,9,17), fin: new Date(2026,10,1), type:"toussaint"},
+    {debut: new Date(2026,11,19),fin: new Date(2027,0,3),  type:"noel"},
+  ],
+  2027: [
+    {debut: new Date(2027,0,1),  fin: new Date(2027,0,3),  type:"noel"},
+    {debut: new Date(2027,1,6),  fin: new Date(2027,1,21), type:"hiver"},     // 6 fév – reprise 22 fév
+    {debut: new Date(2027,3,3),  fin: new Date(2027,3,18), type:"printemps"}, // 3 avr – reprise 19 avr
+    {debut: new Date(2027,6,3),  fin: new Date(2027,7,31), type:"ete"},
+  ],
+};
+function zoneVacances() { return BOUTIQUE_ID_ACTUEL==="boutique_2" ? "C" : "B"; }
 // Retourne le type de vacances si la date est en vacances, sinon null
 function isEnVacances(date) {
   const y = date.getFullYear();
-  const vacs = VACANCES_ZONE_B_DATES[y]||[];
+  const vacs = (zoneVacances()==="C" ? VACANCES_ZONE_C_DATES : VACANCES_ZONE_B_DATES)[y]||[];
   const d = new Date(date); d.setHours(12,0,0,0);
   return vacs.find(v=> d>=v.debut && d<=v.fin) || null;
 }
@@ -10161,7 +10186,7 @@ function renderStats() {
   const periodeSpeciale = isEnSoldes(now3)
     ? {label:"🏷️ Soldes", color:"#993556"}
     : isEnVacances(now3)
-    ? {label:"🏫 Vacances Zone B", color:"#5566aa"}
+    ? {label:"🏫 Vacances Zone "+zoneVacances(), color:"#5566aa"}
     : (()=>{const j=now3.getDate();return j<=5?{label:"💰 Début de mois — après paies",color:"#3b6d11"}:j<=10?{label:"📈 Activité normale",color:"#888"}:j<=20?{label:"📉 Milieu de mois — creux",color:"#aaa"}:{label:"💳 Fin de mois",color:"#854f0b"};})();
 
   // ── Navigateur de période ─────────────────────────────────────
