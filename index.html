@@ -88,14 +88,14 @@ const BOUTIQUE_CONFIG = {
   siret:    "",
   // Données "globales" partagées entre boutiques (clients, avoirs, fidélité)
   // Données "locales" propres à cette boutique (ventes, stock, Z de caisse, réservations)
-  DONNEES_GLOBALES: ["bj_clients","bj_avoirs","bj_promotions","bj_transferts","bj_clients_suppr","bj_avoirs_suppr"],
+  DONNEES_GLOBALES: ["bj_clients","bj_avoirs","bj_promotions","bj_transferts","bj_clients_suppr","bj_avoirs_suppr","bj_vendeurs","bj_ejs_service","bj_ejs_template","bj_ejs_key","bj_lien_avis_google","bj_commission_artisan","bj_journal_emails"],
   DONNEES_LOCALES:  ["bj_products","bj_ventes","bj_caisse_jour","bj_reservations","bj_annul_lignes","bj_attente","bj_depots_vente","bj_depots_banque","bj_solde_depot_reporte","bj_mouvements_defectueux","bj_ouvertures","bj_registre_personnel"],
 };
 
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "11/10 · v71 (bascule boutique)";
+const APP_VERSION = "11/10 · v72 (codes communs aux 2 boutiques)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -1592,7 +1592,9 @@ function renderLogin() {
       <div style="text-align:center;margin-bottom:28px;">
         <div style="width:64px;height:64px;border-radius:16px;background:#993556;display:inline-flex;align-items:center;justify-content:center;font-size:28px;color:#fff;font-weight:700;margin-bottom:12px;">B</div>
         <img src="${LOGO_B64}" alt="Belle&Jolie" style="width:160px;height:auto;display:block;margin:0 auto 8px;"/>
-        <div style="font-size:14px;color:#888;margin-top:4px;">Choisissez votre profil</div>
+        ${BOUTIQUES.length>1?`<div style="display:inline-block;margin-top:6px;background:${BOUTIQUE_ID_ACTUEL==="boutique_1"?"#993556":"#185fa5"};color:#fff;border-radius:20px;padding:4px 14px;font-size:13px;font-weight:600;">📍 ${boutiqueActuelle().nom.replace("Belle & Jolie — ","")}</div>`:""}
+        <div style="font-size:14px;color:#888;margin-top:6px;">Choisissez votre profil</div>
+        ${BOUTIQUES.length>1 && localStorage.getItem("bj_bascule_gerante")==="1" ? `<button onclick="basculerBoutique()" style="margin-top:8px;background:none;border:1px solid #ddd;border-radius:8px;padding:5px 12px;font-size:12px;color:#666;cursor:pointer;">⇄ Passer sur ${(BOUTIQUES.find(b=>b.id!==BOUTIQUE_ID_ACTUEL)||{nom:""}).nom.replace("Belle & Jolie — ","")}</button>` : ""}
       </div>
       <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px;">
         ${VENDEURS.map(v=>`
@@ -2014,7 +2016,8 @@ function renderApp() {
       ${STATE.vendeur.id==="V1"?`<button onclick="showVendeurSettings()" style="background:none;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px;color:#666;">⚙️ PIN</button>`:""}
       ${STATE.vendeur.id==="V1"?`<button onclick="setState({showRegistrePersonnel:true})" style="background:none;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px;color:#666;">👥 Personnel</button>`:""}
       ${STATE.vendeur.id==="V1"&&BOUTIQUES.length>1
-        ? `<button onclick="basculerBoutique()" title="Passer sur l'autre boutique" style="background:#993556;color:#fff;border:none;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:600;cursor:pointer;">🏬 ${boutiqueActuelle().nom.replace("Belle & Jolie — ","")} ⇄ ${(BOUTIQUES.find(b=>b.id!==BOUTIQUE_ID_ACTUEL)||{nom:""}).nom.replace("Belle & Jolie — ","")}</button>`
+        ? `<span style="background:${BOUTIQUE_ID_ACTUEL==="boutique_1"?"#993556":"#185fa5"};color:#fff;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;">📍 ${boutiqueActuelle().nom.replace("Belle & Jolie — ","").toUpperCase()}</span>
+           <button onclick="basculerBoutique()" title="Passer sur l'autre boutique" style="background:none;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px;color:#666;cursor:pointer;">⇄ ${(BOUTIQUES.find(b=>b.id!==BOUTIQUE_ID_ACTUEL)||{nom:""}).nom.replace("Belle & Jolie — ","")}</button>`
         : (BOUTIQUE_ID_ACTUEL!=="boutique_1"?`<span style="background:#fbeaf0;color:#993556;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:600;">🏬 ${boutiqueActuelle().nom}</span>`:"")}
       ${STATE.vendeur.id==="V1"&&BOUTIQUES.length>1?`<button onclick="ouvrirVueToutesBoutiques()" style="background:none;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px;color:#666;">🏬🏬 Toutes boutiques</button>`:""}
     </div>
@@ -2400,7 +2403,7 @@ window.showVendeurSettings = () => { STATE.vendeurForm = JSON.parse(JSON.stringi
 window.basculerBoutique = () => {
   const autre = BOUTIQUES.find(b=>b.id!==BOUTIQUE_ID_ACTUEL); if(!autre) return;
   if((STATE.panier||[]).length && !confirm("Un ticket est en cours ici. Il restera en attente dans cette boutique.\n\nPasser sur "+autre.nom+" ?")) return;
-  try { localStorage.setItem("bj_boutique_id", autre.id); } catch{}
+  try { localStorage.setItem("bj_boutique_id", autre.id); localStorage.setItem("bj_bascule_gerante", "1"); } catch{}
   const u = new URL(window.location.href);
   if(u.searchParams.has("boutique")) { u.searchParams.set("boutique", autre.id); window.location.href = u.toString(); }
   else window.location.reload();
