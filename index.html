@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "12/10 · v81 (correctif sauvegarde ticket)";
+const APP_VERSION = "13/10 · v83 (Noémie)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -834,7 +834,7 @@ function resetTimerVerrouillage() {
 
 const VENDEURS = [
   { id:"V1", nom:"Élodie",        prenom:"",     code:"1234", role:"admin",    color:"#993556" },
-  { id:"V2", nom:"Noëllyne", prenom:"", code:"2222", role:"vendeur", color:"#5566aa" },
+  { id:"V2", nom:"Noémie", prenom:"", code:"0000", role:"vendeur", color:"#5566aa" }, // anciennement Noëllyne (changé le 13/10/2026)
   { id:"V3", nom:"Sabrina",      prenom:"",     code:"2222", role:"vendeur",  color:"#2a8a5a" },
   { id:"V4", nom:"Mode Test",    prenom:"",     code:"0000", role:"apprenti", color:"#e07c00" },
 ];
@@ -17281,6 +17281,17 @@ function marquerEmailsIntrouvables1110() {
   } catch(err) { console.error(err); return true; }
 }
 setTimeout(function tenter(){ if(!marquerEmailsIntrouvables1110()) setTimeout(tenter, 5000); }, 8000);
+// 13/10/2026 : profil V2 renommé Noémie, code 0000 (appliqué une fois, partagé entre appareils)
+setTimeout(() => {
+  try {
+    if(localStorage.getItem("bj_fix_pin_noemie")==="ok") return;
+    const v2 = VENDEURS.find(v=>v.id==="V2"); if(!v2) return;
+    v2.nom = "Noémie"; v2.code = "0000";
+    lsSet("bj_vendeurs", VENDEURS.map(v=>({code:v.code})));
+    localStorage.setItem("bj_fix_pin_noemie", "ok");
+    render();
+  } catch(e) { console.error(e); }
+}, 7000);
 function renderEmailsErreur() {
   const cands = candidatsEmailsErreur();
   const ouvert = STATE._voirEmailsErreur;
