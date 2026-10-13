@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "13/10 · v83 (Noémie)";
+const APP_VERSION = "13/10 · v84 (commission Isaline 1 €/pampille)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -8022,6 +8022,8 @@ window.saveProd = () => {
     octobreRose:    f.octobreRose||false,
     artisanat:      f.artisanat||false,
     nomArtisan:     f.nomArtisan||"",
+    commissionFixe: f.artisanat && parseFloat(String(f.commissionFixe||"").replace(",","."))>0 ? parseFloat(String(f.commissionFixe).replace(",",".")) : null,
+    commissionFixeDepuis: f.artisanat && parseFloat(String(f.commissionFixe||"").replace(",","."))>0 ? (existant?.commissionFixe && existant?.commissionFixeDepuis ? existant.commissionFixeDepuis : dateLocaleStr()) : null,
     enReserve:      f.enReserve||false,
     dateReserve:    f.enReserve ? (existant?.dateReserve || new Date().toISOString()) : null,
     createdAt:      existant?.createdAt || new Date().toISOString(),
@@ -8067,7 +8069,7 @@ window.openProdModal = id => {
   }
   STATE.editProdId=id;
   STATE._newCouleur = "";
-  if(id){const p=STATE.products.find(x=>x.id===id);STATE.prodForm={name:p.name,marque:p.marque||"",category:p.category,price:p.price,prixAchat:p.prixAchat||"",_coeffSaisi:"",stock:p.stock,ref:p.ref,barcode:p.barcode,tailles:p.tailles||[],couleurs:p.couleurs||[],photo:p.photo||"",stockVariantes:{...(p.stockVariantes||{})},grandeTaille:p.grandeTaille||false,octobreRose:p.octobreRose||false,artisanat:p.artisanat||false,nomArtisan:p.nomArtisan||"",prixLibre:p.prixLibre||false,formulePrix:p.formulePrix||"",produitLieId:p.produitLieId||"",dateAjout:(p.dateAjout||new Date().toISOString()).slice(0,10)};}
+  if(id){const p=STATE.products.find(x=>x.id===id);STATE.prodForm={name:p.name,marque:p.marque||"",category:p.category,price:p.price,prixAchat:p.prixAchat||"",_coeffSaisi:"",stock:p.stock,ref:p.ref,barcode:p.barcode,tailles:p.tailles||[],couleurs:p.couleurs||[],photo:p.photo||"",stockVariantes:{...(p.stockVariantes||{})},grandeTaille:p.grandeTaille||false,octobreRose:p.octobreRose||false,artisanat:p.artisanat||false,nomArtisan:p.nomArtisan||"",commissionFixe:p.commissionFixe||"",prixLibre:p.prixLibre||false,formulePrix:p.formulePrix||"",produitLieId:p.produitLieId||"",dateAjout:(p.dateAjout||new Date().toISOString()).slice(0,10)};}
   else STATE.prodForm={name:"",marque:"",category:"",price:"",prixAchat:"",_coeffSaisi:"",stock:0,ref:uid("REF-"),barcode:genBC(),tailles:[],couleurs:[],photo:"",stockVariantes:{},grandeTaille:false,octobreRose:false,artisanat:false,nomArtisan:"",enReserve:false,dateAjout:dateLocaleStr()};
   STATE.showProdModal=true; render();
 };
@@ -8237,7 +8239,8 @@ function renderProdModal() {
           +'</div><div style="font-size:10px;color:#c2185b;opacity:0.75;margin-top:4px;">10% du CA de la/les couleur(s) cochée(s) sera reversé à l\'association.</div></div>'
         : '<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#c2185b;cursor:pointer;margin-bottom:10px;background:#fce4ec;border-radius:7px;padding:6px 10px;"><input type="checkbox" '+(f.octobreRose===true?'checked':'')+' onchange="STATE.prodForm.octobreRose=this.checked" style="width:16px;height:16px;"/> 🎀 Octobre Rose (10% reversés à l\'association)</label>')
       +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#6a3d9a;cursor:pointer;margin-bottom:6px;background:#f3e8fc;border-radius:7px;padding:6px 10px;"><input type="checkbox" '+(f.artisanat?'checked':'')+' onchange="STATE.prodForm.artisanat=this.checked;render()" style="width:16px;height:16px;"/> 🎨 Produit d\'artisan</label>'
-      +(f.artisanat?'<div style="margin-bottom:10px;"><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Nom de l\'artisan / atelier</label><input value="'+(f.nomArtisan||'')+'" oninput="STATE.prodForm.nomArtisan=this.value" placeholder="Ex: Atelier Claire M." style="width:100%;box-sizing:border-box;"/></div>':'')
+      +(f.artisanat?'<div style="margin-bottom:10px;"><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Nom de l\'artisan / atelier</label><input value="'+(f.nomArtisan||'')+'" oninput="STATE.prodForm.nomArtisan=this.value" placeholder="Ex: Atelier Claire M." style="width:100%;box-sizing:border-box;"/></div>'
+        +'<div style="margin-bottom:10px;"><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Commission fixe par pièce vendue (€) — laisse vide pour le taux en %</label><input type="text" inputmode="decimal" value="'+(f.commissionFixe||'')+'" oninput="STATE.prodForm.commissionFixe=this.value" placeholder="Ex : 1" style="width:120px;box-sizing:border-box;"/></div>':'')
       +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#185fa5;cursor:pointer;margin-bottom:6px;background:#eef4fd;border-radius:7px;padding:6px 10px;"><input type="checkbox" '+(f.prixLibre?'checked':'')+' onchange="STATE.prodForm.prixLibre=this.checked;render()" style="width:16px;height:16px;"/> 💶 Prix à indiquer en caisse</label>'
       +(f.prixLibre?'<div style="margin-bottom:10px;"><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Formule de prix (rappelée en caisse)</label><input value="'+String(f.formulePrix||'').replace(/"/g,'&quot;')+'" oninput="STATE.prodForm.formulePrix=this.value" placeholder="Ex : 1 pampille 7 € · 2 pampilles 12 € · 3 pampilles 20 €" style="width:100%;box-sizing:border-box;"/><div style="font-size:10px;color:#888;margin-top:3px;">Sépare les formules par « · » ou « ; ». En caisse, chaque formule devient un bouton à choisir. Le prix de vente peut rester vide.</div>'+(parseFormulePrix(f.formulePrix).length?'<div style="font-size:11px;color:#185fa5;margin-top:4px;">Aperçu : '+parseFormulePrix(f.formulePrix).map(o=>o.libelle+' → '+eur(o.prix)).join(' · ')+'</div>':'')
         +'<label style="font-size:11px;color:#888;display:block;margin:8px 0 3px;">Article ajouté automatiquement avec chaque formule (facultatif)</label>'
@@ -8929,6 +8932,7 @@ function calculerZMensuel(mois, annee) {
   const ventes = toutes.filter(v => !v.annulee);
   const annulees = toutes.filter(v => v.annulee);
   const prodMap = {}; (STATE.products||[]).forEach(p => prodMap[p.id] = p);
+  let artisansCom = 0;
   let brut = 0, retours = 0, nbRetours = 0, artisansCA = 0, chqCadeauxVendus = 0, retouchesCA = 0, sacsCA = 0, nbCorrections = 0;
   ventes.forEach(v => {
     if(v.correctionManuelle) nbCorrections++;
@@ -8947,7 +8951,8 @@ function calculerZMensuel(mois, annee) {
   const corrections = r2(ventes.filter(v=>v.correctionManuelle).reduce((s,v)=>s+v.total,0));
   brut += corrections; // régularisations intégrées aux ventes (aucune ligne distincte)
   { const idsV = idsVentesValides();
-    toutes.filter(venteCompteArtisan).forEach(v => { lignesArtisanVente(v, prodMap).forEach(l => artisansCA += l.montant); retoursArtisanSansTicket(v, prodMap, idsV).forEach(l => artisansCA += l.montant); }); }
+    const txA = STATE.commissionArtisan ?? 20;
+    toutes.filter(venteCompteArtisan).forEach(v => { lignesArtisanVente(v, prodMap).forEach(l => { artisansCA += l.montant; artisansCom += commissionLigneArtisan(l.p, l.qty, l.montant, txA, v.date); }); retoursArtisanSansTicket(v, prodMap, idsV).forEach(l => { artisansCA += l.montant; artisansCom += commissionLigneArtisan(l.p, l.qty, l.montant, txA, v.date); }); }); }
   const remises = Math.max(0, r2(brut - retours - caTTC));
   const caHT = r2(caTTC/(1+TVA)), tvaCol = r2(caTTC - caHT);
   const modes = {cb:0, especes:0, cheque:0, avoir:0, cadeau:0};
@@ -8987,7 +8992,7 @@ function calculerZMensuel(mois, annee) {
     annulees: {nb: annulees.length, montant: r2(annulees.reduce((s,v)=>s+v.total,0))},
     avoirsRetour: {nb: avoirsRetour.length, montant: r2(avoirsRetour.reduce((s,a)=>s+Math.abs(a.montant||0),0))},
     bons: {nb: bons.length, montant: r2(bons.reduce((s,a)=>s+Math.abs(a.montant||0),0))},
-    artisans: {ca: r2(artisansCA), commission: r2(artisansCA*taux/100), reverser: r2(artisansCA*(100-taux)/100), taux},
+    artisans: {ca: r2(artisansCA), commission: r2(artisansCom), reverser: r2(artisansCA-artisansCom), taux},
     chqCadeauxVendus: r2(chqCadeauxVendus), retouchesCA: r2(retouchesCA), sacsCA: r2(sacsCA),
     jours, cumulAnnee, nbJoursOuverts: jours.length, nbZ: zClotures.length, ecartCaisse,
   };
@@ -11009,6 +11014,12 @@ function retoursArtisanSansTicket(v, prodMap, idsVentes) {
     return {i, p, qty:-q, montant: -Math.max(0,i.price-rem)*q, artisan: nomArtisanCanon(p.nomArtisan||i.nomArtisan)};
   }).filter(Boolean);
 }
+// Commission de la boutique sur une ligne d'artisan : montant fixe par pièce si défini sur l'article (à partir de sa date), sinon le taux en %
+function commissionLigneArtisan(p, qty, montant, taux, dateVente) {
+  const f = parseFloat(p && p.commissionFixe);
+  if(f>0 && (!p.commissionFixeDepuis || dateLocaleStr(new Date(dateVente)) >= p.commissionFixeDepuis)) return f * qty;
+  return montant * taux / 100;
+}
 function venteCompteArtisan(v) { return !!v && !v.test && (!v.annulee || v.typeAnnulation==="comptable"); }
 function idsVentesValides() { return new Set((STATE.ventes||[]).filter(venteCompteArtisan).map(v=>v.id)); }
 
@@ -11190,8 +11201,9 @@ function ventesArtisans(debut, fin) {
   (STATE.ventes||[]).forEach(v => {
     if(!venteCompteArtisan(v)) return;
     const d = dateLocaleStr(new Date(v.date)); if(d<debut || d>fin) return;
-    lignesArtisanVente(v, prodMap).forEach(l => lignes.push({date:v.date, venteId:v.id, artisan:l.artisan, article:l.i.name||l.p.name, qty:l.qty, montant:Math.round(l.montant*100)/100, retour:false, annuleeCompta:!!v.annulee}));
-    retoursArtisanSansTicket(v, prodMap, ids).forEach(l => lignes.push({date:v.date, venteId:v.id, artisan:l.artisan, article:l.i.name||l.p.name, qty:l.qty, montant:Math.round(l.montant*100)/100, retour:true}));
+    const tx = STATE.commissionArtisan ?? 20;
+    lignesArtisanVente(v, prodMap).forEach(l => lignes.push({date:v.date, venteId:v.id, artisan:l.artisan, article:l.i.name||l.p.name, qty:l.qty, montant:Math.round(l.montant*100)/100, com:commissionLigneArtisan(l.p, l.qty, l.montant, tx, v.date), retour:false, annuleeCompta:!!v.annulee}));
+    retoursArtisanSansTicket(v, prodMap, ids).forEach(l => lignes.push({date:v.date, venteId:v.id, artisan:l.artisan, article:l.i.name||l.p.name, qty:l.qty, montant:Math.round(l.montant*100)/100, com:commissionLigneArtisan(l.p, l.qty, l.montant, tx, v.date), retour:true}));
   });
   return lignes.sort((a,b)=>new Date(a.date)-new Date(b.date));
 }
@@ -11205,7 +11217,8 @@ window.imprimerReleveArtisan = (artisan) => {
   const {debut, fin, libelle} = periodeArtisans();
   const taux = STATE.commissionArtisan ?? 20;
   const lignes = ventesArtisans(debut, fin).filter(l=>l.artisan===artisan);
-  const ca = lignes.reduce((s,l)=>s+l.montant,0), com = ca*taux/100;
+  const ca = lignes.reduce((s,l)=>s+l.montant,0), com = lignes.reduce((s,l)=>s+(l.com||0),0);
+  const fixes = lignes.some(l=>Math.abs((l.com||0)-l.montant*taux/100)>0.005);
   const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Relevé ${artisan}</title><style>
     body{font-family:Arial,sans-serif;padding:24px;max-width:640px;margin:auto;color:#111}h1{color:#993556;font-size:19px;margin:0}
     table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}td,th{padding:6px 8px;border-bottom:1px solid #eee;text-align:left}.r{text-align:right}
@@ -11214,7 +11227,7 @@ window.imprimerReleveArtisan = (artisan) => {
     <table><tr><th>Date</th><th>Article</th><th class="r">Qté</th><th class="r">Montant TTC</th></tr>
     ${lignes.map(l=>`<tr><td>${new Date(l.date).toLocaleDateString("fr-FR")}</td><td>${l.article}${l.retour?" (retour)":""}</td><td class="r">${l.qty}</td><td class="r">${eur(l.montant)}</td></tr>`).join("")||`<tr><td colspan="4">Aucune vente sur la période</td></tr>`}
     <tr class="tot"><td colspan="3">Total des ventes</td><td class="r">${eur(ca)}</td></tr>
-    <tr><td colspan="3">Commission Belle&amp;Jolie (${taux} %)</td><td class="r">− ${eur(com)}</td></tr>
+    <tr><td colspan="3">Commission Belle&amp;Jolie (${fixes?"selon les articles : montant fixe par pièce ou "+taux+" %":taux+" %"})</td><td class="r">− ${eur(com)}</td></tr>
     <tr class="tot"><td colspan="3">Montant à reverser</td><td class="r">${eur(ca-com)}</td></tr></table>
     <p style="margin-top:40px;font-size:12px;color:#555;">Signature de l'artisan : ______________________</p>
     <script>window.onload=()=>window.print()<\/script></body></html>`;
@@ -11228,15 +11241,15 @@ function renderBilanArtisans() {
   const taux = STATE.commissionArtisan ?? 20;
   const lignes = ventesArtisans(debut, fin);
   const parA = {};
-  lignes.forEach(l => { const a = parA[l.artisan] = parA[l.artisan] || {qty:0, ca:0}; a.qty += l.qty; a.ca += l.montant; });
-  (STATE.products||[]).filter(p=>p.artisanat).forEach(p => { const n = nomArtisanCanon(p.nomArtisan); if(!parA[n]) parA[n] = {qty:0, ca:0}; });
+  lignes.forEach(l => { const a = parA[l.artisan] = parA[l.artisan] || {qty:0, ca:0, com:0}; a.qty += l.qty; a.ca += l.montant; a.com += (l.com||0); });
+  (STATE.products||[]).filter(p=>p.artisanat).forEach(p => { const n = nomArtisanCanon(p.nomArtisan); if(!parA[n]) parA[n] = {qty:0, ca:0, com:0}; });
   // Articles de chaque artisan, avec les quantités vendues sur la période
   const vendusParArticle = {};
   lignes.forEach(l => { vendusParArticle[l.article] = (vendusParArticle[l.article]||0) + l.qty; });
   const articlesDe = n => (STATE.products||[]).filter(p=>p.artisanat && nomArtisanCanon(p.nomArtisan)===n);
   const sansNom = (STATE.products||[]).filter(p=>p.artisanat && !String(p.nomArtisan||"").trim());
   const artisans = Object.entries(parA).sort((a,b)=>b[1].ca-a[1].ca);
-  const tot = artisans.reduce((s,[,a])=>({qty:s.qty+a.qty, ca:s.ca+a.ca}), {qty:0, ca:0});
+  const tot = artisans.reduce((s,[,a])=>({qty:s.qty+a.qty, ca:s.ca+a.ca, com:s.com+(a.com||0)}), {qty:0, ca:0, com:0});
   const btn = (k,l) => `<button onclick="STATE.artPeriode='${k}';render()" style="padding:5px 12px;border-radius:7px;border:none;cursor:pointer;font-size:12px;background:${per===k?'#6a3d9a':'#f3e8fc'};color:${per===k?'#fff':'#6a3d9a'};">${l}</button>`;
   return `
   <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;margin-bottom:16px;">
@@ -11251,14 +11264,14 @@ function renderBilanArtisans() {
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;margin-bottom:10px;">
       <div style="background:#f3e8fc;border-radius:9px;padding:9px 10px;"><div style="font-size:11px;color:#6a3d9a;">Ventes artisans</div><div style="font-size:16px;font-weight:700;color:#6a3d9a;">${eur(tot.ca)}</div><div style="font-size:10px;color:#888;">${tot.qty} article${tot.qty>1?"s":""}</div></div>
-      <div style="background:#eaf3de;border-radius:9px;padding:9px 10px;"><div style="font-size:11px;color:#3b6d11;">Ta commission (${taux} %)</div><div style="font-size:16px;font-weight:700;color:#3b6d11;">${eur(tot.ca*taux/100)}</div></div>
-      <div style="background:#fbeaf0;border-radius:9px;padding:9px 10px;"><div style="font-size:11px;color:#993556;">À reverser aux artisans</div><div style="font-size:16px;font-weight:700;color:#993556;">${eur(tot.ca*(100-taux)/100)}</div></div>
+      <div style="background:#eaf3de;border-radius:9px;padding:9px 10px;"><div style="font-size:11px;color:#3b6d11;">Ta commission</div><div style="font-size:16px;font-weight:700;color:#3b6d11;">${eur(tot.com)}</div></div>
+      <div style="background:#fbeaf0;border-radius:9px;padding:9px 10px;"><div style="font-size:11px;color:#993556;">À reverser aux artisans</div><div style="font-size:16px;font-weight:700;color:#993556;">${eur(tot.ca-tot.com)}</div></div>
     </div>
     <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:460px;">
       <thead><tr style="color:#888;border-bottom:1px solid #e8e0e4;"><th style="text-align:left;padding:6px;">Artisan</th><th style="text-align:right;padding:6px;">Articles</th><th style="text-align:right;padding:6px;">Ventes TTC</th><th style="text-align:right;padding:6px;">Commission</th><th style="text-align:right;padding:6px;">À reverser</th><th></th></tr></thead>
       <tbody>${artisans.map(([n,a])=>`<tr style="border-bottom:0.5px solid #f0ebee;">
         <td style="padding:6px;font-weight:500;cursor:pointer;" onclick="STATE._artOuvert=STATE._artOuvert===this.dataset.a?null:this.dataset.a;render()" data-a="${n.replace(/"/g,"&quot;")}">${STATE._artOuvert===n?"▼":"▶"} ${n}</td><td style="padding:6px;text-align:right;">${a.qty}</td><td style="padding:6px;text-align:right;">${eur(a.ca)}</td>
-        <td style="padding:6px;text-align:right;color:#3b6d11;">${eur(a.ca*taux/100)}</td><td style="padding:6px;text-align:right;color:#993556;font-weight:600;">${eur(a.ca*(100-taux)/100)}</td>
+        <td style="padding:6px;text-align:right;color:#3b6d11;">${eur(a.com||0)}</td><td style="padding:6px;text-align:right;color:#993556;font-weight:600;">${eur(a.ca-(a.com||0))}</td>
         <td style="padding:6px;text-align:right;"><button onclick="imprimerReleveArtisan(this.dataset.a)" data-a="${n.replace(/"/g,"&quot;")}" style="background:none;border:1px solid #d9c2ee;color:#6a3d9a;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">🖨️ Relevé</button></td></tr>
         ${STATE._artOuvert===n?`<tr><td colspan="6" style="padding:4px 6px 10px 22px;background:#faf6fd;">
           ${articlesDe(n).length?articlesDe(n).map(p=>`<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;border-bottom:0.5px dashed #e6d8f2;">
@@ -17281,6 +17294,21 @@ function marquerEmailsIntrouvables1110() {
   } catch(err) { console.error(err); return true; }
 }
 setTimeout(function tenter(){ if(!marquerEmailsIntrouvables1110()) setTimeout(tenter, 5000); }, 8000);
+// 13/10/2026 : commission fixe de 1 € par pampille sur les articles d'Isaline (à partir du 13/10/2026)
+setTimeout(() => {
+  try {
+    if(BOUTIQUE_ID_ACTUEL!=="boutique_1" || localStorage.getItem("bj_fix_com_isaline")==="ok") return;
+    if(!(STATE.products||[]).length) return;
+    let n = 0;
+    STATE.products = STATE.products.map(p => {
+      if(!p.artisanat || !/isaline/i.test(normStr(p.nomArtisan||"")) || !/pampille|boucle/.test(normStr(p.name||""))) return p;
+      if(p.commissionFixe===1) return p;
+      n++; return {...p, commissionFixe: 1, commissionFixeDepuis: "2026-10-13"};
+    });
+    localStorage.setItem("bj_fix_com_isaline", "ok");
+    if(n) { setState({products: STATE.products}); console.log("Commission Isaline 1 €/pampille :", n, "article(s)"); }
+  } catch(e) { console.error(e); }
+}, 9000);
 // 13/10/2026 : profil V2 renommé Noémie, code 0000 (appliqué une fois, partagé entre appareils)
 setTimeout(() => {
   try {
