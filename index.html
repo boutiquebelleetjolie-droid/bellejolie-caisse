@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "13/10 · v84 (commission Isaline 1 €/pampille)";
+const APP_VERSION = "13/10 · v85 (Isaline 1 €/pampille rétroactif)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -17294,18 +17294,18 @@ function marquerEmailsIntrouvables1110() {
   } catch(err) { console.error(err); return true; }
 }
 setTimeout(function tenter(){ if(!marquerEmailsIntrouvables1110()) setTimeout(tenter, 5000); }, 8000);
-// 13/10/2026 : commission fixe de 1 € par pampille sur les articles d'Isaline (à partir du 13/10/2026)
+// 13/10/2026 : commission fixe de 1 € par pampille sur les articles d'Isaline, sur toutes les ventes (rétroactif)
 setTimeout(() => {
   try {
-    if(BOUTIQUE_ID_ACTUEL!=="boutique_1" || localStorage.getItem("bj_fix_com_isaline")==="ok") return;
+    if(BOUTIQUE_ID_ACTUEL!=="boutique_1" || localStorage.getItem("bj_fix_com_isaline")==="ok2") return;
     if(!(STATE.products||[]).length) return;
     let n = 0;
     STATE.products = STATE.products.map(p => {
       if(!p.artisanat || !/isaline/i.test(normStr(p.nomArtisan||"")) || !/pampille|boucle/.test(normStr(p.name||""))) return p;
-      if(p.commissionFixe===1) return p;
-      n++; return {...p, commissionFixe: 1, commissionFixeDepuis: "2026-10-13"};
+      if(p.commissionFixe===1 && !p.commissionFixeDepuis) return p;
+      n++; return {...p, commissionFixe: 1, commissionFixeDepuis: null}; // rétroactif : toutes les ventes, même avant le 13/10
     });
-    localStorage.setItem("bj_fix_com_isaline", "ok");
+    localStorage.setItem("bj_fix_com_isaline", "ok2");
     if(n) { setState({products: STATE.products}); console.log("Commission Isaline 1 €/pampille :", n, "article(s)"); }
   } catch(e) { console.error(e); }
 }, 9000);
