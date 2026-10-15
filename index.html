@@ -88,14 +88,14 @@ const BOUTIQUE_CONFIG = {
   siret:    "",
   // Données "globales" partagées entre boutiques (clients, avoirs, fidélité)
   // Données "locales" propres à cette boutique (ventes, stock, Z de caisse, réservations)
-  DONNEES_GLOBALES: ["bj_clients","bj_avoirs","bj_promotions","bj_transferts","bj_clients_suppr","bj_avoirs_suppr","bj_vendeurs","bj_ejs_service","bj_ejs_template","bj_ejs_key","bj_lien_avis_google","bj_commission_artisan","bj_journal_emails","bj_quota_emails"],
+  DONNEES_GLOBALES: ["bj_clients","bj_avoirs","bj_promotions","bj_transferts","bj_clients_suppr","bj_avoirs_suppr","bj_vendeurs","bj_ejs_service","bj_ejs_template","bj_ejs_key","bj_lien_avis_google","bj_commission_artisan","bj_journal_emails","bj_quota_emails","bj_couturiere"],
   DONNEES_LOCALES:  ["bj_products","bj_ventes","bj_caisse_jour","bj_reservations","bj_annul_lignes","bj_attente","bj_depots_vente","bj_depots_banque","bj_solde_depot_reporte","bj_mouvements_defectueux","bj_ouvertures","bj_registre_personnel"],
 };
 
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "15/10 · v87 (derniers achats en caisse)";
+const APP_VERSION = "15/10 · v88 (facture retouches)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -700,6 +700,7 @@ const CLES_SYNC_TEMPS_REEL = {
   bj_commission_artisan: "commissionArtisan",
   bj_releve_tpe: "releveTPE",
   bj_journal_emails: "journalEmails",
+  bj_couturiere: "couturiere",
 };
 const CLES_SYNC_PROTEGEES = new Set(["emailjsServiceId","emailjsTemplateId","emailjsPublicKey"]); // ne jamais écraser par une valeur vide venue d'un autre appareil
 window._syncBannerTimeout = null;
@@ -1353,6 +1354,7 @@ let STATE = {
   clientsSuppr: ls("bj_clients_suppr", []),
   avoirsSuppr: ls("bj_avoirs_suppr", []),
   commissionArtisan: ls("bj_commission_artisan", 20),
+  couturiere: ls("bj_couturiere", {nom:"", email:"", mode:"pct", valeur:100, payes:{}}),
   releveTPE: ls("bj_releve_tpe", {}),
   showRetoucheForm: false, retoucheForm: null, showSuiviRetouches: false, filtreRetouches: "encours",
   avoirs:      ls("bj_avoirs",      []),
@@ -2407,6 +2409,99 @@ window.supprimerRetouche = (id) => {
   if(!confirm("Supprimer cette retouche du suivi ? (la vente n'est pas modifiée)")) return;
   setState({retouches: (STATE.retouches||[]).filter(r=>r.id!==id)});
 };
+
+// ── Facture / relevé mensuel des retouches pour la couturière ──
+function moisFactureRetouches() {
+  const d = STATE._moisRetouches ? new Date(STATE._moisRetouches+"-15T12:00:00") : new Date();
+  return {annee:d.getFullYear(), mois:d.getMonth(), cle:d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"),
+    libelle:d.toLocaleDateString("fr-FR",{month:"long",year:"numeric"})};
+}
+window.decalerMoisRetouches = (sens) => { const m = moisFactureRetouches(); const d = new Date(m.annee, m.mois+sens, 15);
+  STATE._moisRetouches = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); render(); };
+function partCouturiere(r) {
+  const c = STATE.couturiere||{}; const v = parseFloat(c.valeur); const val = isNaN(v) ? 100 : v;
+  return Math.round((c.mode==="fixe" ? val : (r.prix||0)*val/100)*100)/100;
+}
+function retouchesDuMois(m) {
+  const ventes = new Map((STATE.ventes||[]).map(v=>[v.id, v]));
+  return (STATE.retouches||[]).filter(r => {
+    const d = new Date(r.dateDepot||0); if(d.getFullYear()!==m.annee || d.getMonth()!==m.mois) return false;
+    const v = r.venteId && ventes.get(r.venteId);
+    return !(v && v.annulee && v.typeAnnulation!=="comptable");
+  }).sort((a,b)=>new Date(a.dateDepot)-new Date(b.dateDepot));
+}
+window.majCouturiere = (champ, val) => {
+  const c = {...(STATE.couturiere||{}), [champ]: champ==="valeur" ? parseFloat(String(val).replace(",","."))||0 : val};
+  STATE.couturiere = c; lsSet("bj_couturiere", c); render();
+};
+window.marquerRetouchesPayees = (cle, montant) => {
+  const c = {...(STATE.couturiere||{})}; c.payes = {...(c.payes||{})};
+  if(c.payes[cle]) { if(!confirm("Annuler le paiement noté pour ce mois ?")) return; delete c.payes[cle]; }
+  else { const mode = prompt("Payé le "+new Date().toLocaleDateString("fr-FR")+" pour "+eur(montant)+".\nMode de paiement (virement, chèque, espèces) :", "virement"); if(mode===null) return;
+    c.payes[cle] = {date:new Date().toISOString(), montant, mode:mode.trim()||"virement", par:STATE.vendeur?.nom||""}; }
+  STATE.couturiere = c; lsSet("bj_couturiere", c); render();
+};
+function renderFactureRetouches() {
+  const m = moisFactureRetouches(), c = STATE.couturiere||{};
+  const liste = retouchesDuMois(m);
+  const totalClient = liste.reduce((s,r)=>s+(r.prix||0),0), totalDu = liste.reduce((s,r)=>s+partCouturiere(r),0);
+  const paye = (c.payes||{})[m.cle];
+  const champ = "font-size:12px;padding:5px 7px;border:1px solid #d9c2ee;border-radius:6px;box-sizing:border-box;";
+  return `
+  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;">
+    <button onclick="decalerMoisRetouches(-1)" style="background:#f3e8fc;border:none;border-radius:6px;padding:5px 11px;cursor:pointer;color:#6a3d9a;">◀</button>
+    <div style="font-weight:600;color:#6a3d9a;text-transform:capitalize;">${m.libelle}</div>
+    <button onclick="decalerMoisRetouches(1)" style="background:#f3e8fc;border:none;border-radius:6px;padding:5px 11px;cursor:pointer;color:#6a3d9a;">▶</button>
+  </div>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;background:#faf6fd;border:1px solid #eadcf6;border-radius:9px;padding:10px;margin-bottom:10px;">
+    <div><label style="font-size:11px;color:#888;display:block;margin-bottom:2px;">Couturière</label><input value="${(c.nom||"").replace(/"/g,"&quot;")}" onchange="majCouturiere('nom',this.value)" placeholder="Nom de la couturière" style="${champ}width:100%;"/></div>
+    <div><label style="font-size:11px;color:#888;display:block;margin-bottom:2px;">Email</label><input value="${(c.email||"").replace(/"/g,"&quot;")}" onchange="majCouturiere('email',this.value)" placeholder="email@..." style="${champ}width:100%;"/></div>
+    <div><label style="font-size:11px;color:#888;display:block;margin-bottom:2px;">Ce que je lui reverse</label>
+      <div style="display:flex;gap:4px;"><input type="number" step="0.5" min="0" value="${c.valeur??100}" onchange="majCouturiere('valeur',this.value)" style="${champ}width:70px;"/>
+      <select onchange="majCouturiere('mode',this.value)" style="${champ}flex:1;"><option value="pct" ${c.mode!=="fixe"?"selected":""}>% du prix client</option><option value="fixe" ${c.mode==="fixe"?"selected":""}>€ par retouche</option></select></div></div>
+  </div>
+  ${liste.length?`<div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">
+    <thead><tr style="border-bottom:0.5px solid #e8e0e4;color:#888;"><th style="text-align:left;padding:6px;">Date</th><th style="text-align:left;padding:6px;">Cliente</th><th style="text-align:left;padding:6px;">Retouche</th><th style="text-align:right;padding:6px;">Prix client</th><th style="text-align:right;padding:6px;">À reverser</th></tr></thead>
+    <tbody>${liste.map(r=>`<tr style="border-bottom:0.5px solid #f0ebee;"><td style="padding:6px;white-space:nowrap;">${new Date(r.dateDepot).toLocaleDateString("fr-FR")}</td><td style="padding:6px;">${r.clientNom||"—"}</td><td style="padding:6px;">${r.description||""}</td><td style="padding:6px;text-align:right;">${eur(r.prix)}</td><td style="padding:6px;text-align:right;font-weight:600;">${eur(partCouturiere(r))}</td></tr>`).join("")}
+    <tr style="background:#f3e8fc;font-weight:700;"><td colspan="3" style="padding:7px 6px;">${liste.length} retouche${liste.length>1?"s":""}</td><td style="padding:7px 6px;text-align:right;">${eur(totalClient)}</td><td style="padding:7px 6px;text-align:right;color:#6a3d9a;">${eur(totalDu)}</td></tr></tbody></table></div>`
+    :`<div style="text-align:center;color:#aaa;padding:20px 0;">Aucune retouche encaissée ce mois-ci.</div>`}
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px;align-items:center;">
+    <button onclick="imprimerFactureRetouches()" ${liste.length?"":"disabled"} style="background:#6a3d9a;color:#fff;border:none;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;font-weight:500;">🖨️ Imprimer / PDF</button>
+    <button onclick="envoyerFactureRetouches()" ${liste.length?"":"disabled"} style="background:#fff;color:#6a3d9a;border:1px solid #d9c2ee;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;">✉️ Envoyer par mail</button>
+    <button onclick="marquerRetouchesPayees('${m.cle}',${Math.round(totalDu*100)/100})" ${liste.length||paye?"":"disabled"} style="background:${paye?"#eaf3de":"#fff"};color:#3b6d11;border:1px solid #aed882;border-radius:8px;padding:8px 14px;cursor:pointer;font-size:13px;">${paye?"✅ Payée le "+new Date(paye.date).toLocaleDateString("fr-FR")+" ("+paye.mode+", "+eur(paye.montant)+")":"💶 Marquer comme payée"}</button>
+  </div>
+  <div style="font-size:10px;color:#aaa;margin-top:8px;">Retouches encaissées en caisse sur le mois (date d'encaissement). Les ventes annulées sont retirées.</div>`;
+}
+function htmlFactureRetouches() {
+  const m = moisFactureRetouches(), c = STATE.couturiere||{}, liste = retouchesDuMois(m);
+  const totalDu = liste.reduce((s,r)=>s+partCouturiere(r),0), paye = (c.payes||{})[m.cle];
+  const bt = BOUTIQUES.find(b=>b.id===BOUTIQUE_ID_ACTUEL)||{nom:"Belle & Jolie"};
+  const num = "RET-"+m.cle+(BOUTIQUE_ID_ACTUEL==="boutique_2"?"-M":"");
+  return `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Retouches ${m.libelle}</title><style>
+    body{font-family:Arial,sans-serif;max-width:720px;margin:24px auto;color:#111;font-size:12px}h1{color:#6a3d9a;font-size:20px;margin:0 0 4px}
+    .hd{display:flex;justify-content:space-between;gap:20px;margin:18px 0}.box{border:1px solid #ddd;border-radius:6px;padding:10px 12px;flex:1}
+    table{width:100%;border-collapse:collapse;margin-top:8px}td,th{padding:6px 8px;border-bottom:1px solid #eee;text-align:left}.r{text-align:right}
+    th{background:#f6f0fb;color:#555}.tot td{font-weight:700;background:#f3e8fc;font-size:14px}.pied{margin-top:28px;font-size:11px;color:#555}</style></head><body>
+    <h1>Relevé des retouches — ${m.libelle}</h1><div>N° ${num} · édité le ${new Date().toLocaleDateString("fr-FR")}</div>
+    <div class="hd"><div class="box"><strong>Donneur d'ordre</strong><br>${bt.nom.replace("&","&amp;")}${BOUTIQUE_CONFIG.adresse?"<br>"+BOUTIQUE_CONFIG.adresse:""}${BOUTIQUE_CONFIG.siret?"<br>SIRET : "+BOUTIQUE_CONFIG.siret:""}<br>${BOUTIQUE_CONFIG.email}</div>
+    <div class="box"><strong>Prestataire (couturière)</strong><br>${c.nom||"………………………………"}${c.email?"<br>"+c.email:""}</div></div>
+    <table><tr><th>Date</th><th>Cliente</th><th>Retouche</th><th class="r">Montant</th></tr>
+    ${liste.map(r=>`<tr><td>${new Date(r.dateDepot).toLocaleDateString("fr-FR")}</td><td>${r.clientNom||"—"}</td><td>${r.description||""}</td><td class="r">${eur(partCouturiere(r))}</td></tr>`).join("")}
+    <tr class="tot"><td colspan="3">Total à régler à la couturière (${liste.length} retouche${liste.length>1?"s":""})</td><td class="r">${eur(totalDu)}</td></tr></table>
+    <p>${paye?"<strong>Réglé le "+new Date(paye.date).toLocaleDateString("fr-FR")+" par "+paye.mode+".</strong>":"Règlement : ……………………… le ………………………"}</p>
+    <div class="pied">Récapitulatif des retouches confiées sur le mois, servant de base à la facture de la prestataire.<br><br>
+    Bon pour accord, la couturière : ______________________ &nbsp;&nbsp;&nbsp; Pour ${bt.nom.replace("&","&amp;")} : ______________________</div>
+    <script>window.onload=()=>window.print()<\/script></body></html>`;
+}
+window.imprimerFactureRetouches = () => { const w = window.open("","_blank","width=780,height=900"); if(w) { w.document.write(htmlFactureRetouches()); w.document.close(); } };
+window.envoyerFactureRetouches = () => {
+  const m = moisFactureRetouches(), c = STATE.couturiere||{}, liste = retouchesDuMois(m);
+  const total = liste.reduce((s,r)=>s+partCouturiere(r),0);
+  const corps = "Bonjour"+(c.nom?" "+c.nom.split(" ")[0]:"")+",\n\nVoici le relevé des retouches de "+m.libelle+" :\n\n"
+    + liste.map(r=>"- "+new Date(r.dateDepot).toLocaleDateString("fr-FR")+" · "+(r.clientNom||"")+" · "+(r.description||"")+" : "+eur(partCouturiere(r))).join("\n")
+    + "\n\nTotal : "+liste.length+" retouche"+(liste.length>1?"s":"")+" pour "+eur(total)+".\n\nPeux-tu m'envoyer ta facture de ce montant ? Je te règle dès réception.\n\nMerci beaucoup,\nÉlodie — Belle&Jolie";
+  window.location.href = "mailto:"+encodeURIComponent(c.email||"")+"?subject="+encodeURIComponent("Retouches "+m.libelle+" — Belle&Jolie")+"&body="+encodeURIComponent(corps);
+};
 function renderSuiviRetouchesModal() {
   const auj = dateLocaleStr();
   const filtre = STATE.filtreRetouches||"encours";
@@ -2427,9 +2522,9 @@ function renderSuiviRetouchesModal() {
         <button onclick="setState({showSuiviRetouches:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button></div>
       <div class="modal-body" style="overflow-y:auto;flex:1;">
         <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
-          ${onglet("encours","En cours ("+toutes.filter(r=>r.statut!=="recuperee").length+")")}${onglet("recuperees","Récupérées")}${onglet("toutes","Toutes")}
+          ${onglet("encours","En cours ("+toutes.filter(r=>r.statut!=="recuperee").length+")")}${onglet("recuperees","Récupérées")}${onglet("toutes","Toutes")}${peutGererArtisans()?onglet("facture","🧾 Facture du mois"):""}
         </div>
-        ${liste.length===0?`<div style="text-align:center;color:#aaa;padding:24px 0;">Aucune retouche.</div>`:`
+        ${filtre==="facture"&&peutGererArtisans()?renderFactureRetouches():liste.length===0?`<div style="text-align:center;color:#aaa;padding:24px 0;">Aucune retouche.</div>`:`
         <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">
           <thead><tr style="border-bottom:0.5px solid #e8e0e4;color:#888;">
             <th style="text-align:left;padding:6px;">Déposée</th><th style="text-align:left;padding:6px;">Cliente</th><th style="text-align:left;padding:6px;">Retouche</th>
