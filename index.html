@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "15/10 · v86 (tickets fiche cliente)";
+const APP_VERSION = "15/10 · v87 (derniers achats en caisse)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -3973,14 +3973,14 @@ function renderCaisse() {
           })()}
           ${(()=>{
             const now30 = new Date();
-            const ventes30 = (STATE.ventes||[]).filter(v=>
+            const ventes30 = toutesVentesClientes().filter(v=>
               (v.clientId||v.client?.id)===STATE.client.id && !v.test && (!v.annulee||v.typeAnnulation==="comptable") &&
-              (now30 - new Date(v.date)) < 30*24*60*60*1000
-            ).slice(-10).reverse();
+              ((v.panier||[]).length || v.total)
+            ).sort((a,b)=>new Date(a.date)-new Date(b.date)).slice(-8).reverse();
             if(!ventes30.length) return "";
             const mLc={cb:"CB",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Cadeau",mixte:"Mixte"};
             return "<div style='margin-top:10px;border-top:1px solid #f0ebee;padding-top:8px;'>"
-              +"<div style='font-size:11px;color:#888;font-weight:600;margin-bottom:6px;'>🕐 Achats récents (30j)</div>"
+              +"<div style='font-size:11px;color:#888;font-weight:600;margin-bottom:6px;'>🕐 Derniers achats</div>"
               +ventes30.map(v=>{
                 const arts = (v.panier||[]).filter(x=>!x.retour&&!x.avoirId);
                 // Source de vérité : v.articlesRetournes stocké sur la vente originale
@@ -4012,11 +4012,11 @@ function renderCaisse() {
                 const retournables = artsAvecStatut.filter(x=>x.retournable);
                 return "<div style='background:#faf8f9;border:1px solid #f0ebee;border-radius:8px;padding:8px;margin-bottom:6px;'>"
                   +"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:4px;'>"
-                  +"<span style='font-size:11px;color:#888;white-space:nowrap;'>"+new Date(v.date).toLocaleDateString("fr-FR")+"</span>"
+                  +"<span style='font-size:11px;color:#888;white-space:nowrap;'>"+new Date(v.date).toLocaleDateString("fr-FR")+((now30-new Date(v.date))>30*864e5?" <span style='font-size:10px;color:#b07a00;'>+30 j</span>":"")+(v._boutique?" · <b style='color:#185fa5;'>"+nomBoutiqueCourt(v._boutique)+"</b>":"")+"</span>"
                   +"<span style='font-size:11px;background:#e6f1fb;color:#185fa5;padding:1px 6px;border-radius:8px;'>"+( mLc[v.payMode]||v.payMode)+"</span>"
                   +"<span style='font-size:12px;font-weight:600;color:#993556;flex:1;text-align:right;'>"+eur(v.total)+"</span>"
                   +"<button data-vid='"+v.id+"' onclick='voirTicketHistorique(this.dataset.vid)' style='background:none;border:1px solid #ddd;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:12px;color:#993556;'>🧾</button>"
-                  +(retournables.length?"<button data-vid='"+v.id+"' onclick='ouvrirRetourDepuisHistorique(this.dataset.vid)' style='background:#fff3e8;border:1px solid #e07c00;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:11px;color:#e07c00;font-weight:500;'>↩</button>":"")
+                  +(retournables.length&&!v._boutique?"<button data-vid='"+v.id+"' onclick='ouvrirRetourDepuisHistorique(this.dataset.vid)' style='background:#fff3e8;border:1px solid #e07c00;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:11px;color:#e07c00;font-weight:500;'>↩</button>":"")
                   +"</div>"
                   +(artsAvecStatut.length?"<div style='font-size:11px;color:#555;line-height:1.5;'>"
                     +artsAvecStatut.map(i=>
@@ -9761,7 +9761,7 @@ function renderClientDetail() {
               <span class="tag" style="background:#e6f1fb;color:#185fa5;font-size:10px;">${mL[v.payMode]||v.payMode}</span>
               ${v._boutique?`<span style="font-size:10px;color:#185fa5;" title="Ticket de l'autre boutique : retour possible via « Retour produit »">autre boutique</span>`:`<button onclick="event.stopPropagation();const vv=STATE.ventes.find(x=>x.id==='${v.id}');STATE.showClientDetail=null;STATE.showCarteCadeau=null;STATE.showTicket=vv.payMode==='avoir_cree'?{...vv,type:'avoir',avoir:(STATE.avoirs||[]).find(a=>a.id===vv.id)}:vv.payMode==='remboursement_especes'?{...vv,type:'remboursement_especes',montant:vv.montantRembourse}:{...vv,type:'vente'};render()"
                 style="background:none;border:1px solid #ddd;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:12px;color:#993556;" title="Voir ticket">🧾</button>`}
-              ${!v._boutique&&!v.annulee&&((new Date()-new Date(v.date))/(1000*60*60*24))<30?`<button onclick="event.stopPropagation();ouvrirRetourDepuisHistorique('${v.id}')"
+              ${!v._boutique&&!v.annulee?`<button onclick="event.stopPropagation();ouvrirRetourDepuisHistorique('${v.id}')"
                 style="background:none;border:1px solid #e07c00;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:12px;color:#e07c00;" title="Faire un retour">↩</button>`:""}
             </div>
             ${v.panier&&v.panier.filter(x=>!x.retour&&!x.avoirId).length>0?`<div style="font-size:11px;color:#666;margin-top:3px;line-height:1.5;">${v.panier.filter(x=>!x.retour&&!x.avoirId).map(i=>i.qty+"× "+i.name.slice(0,22)).join(", ")}</div>`:""}
@@ -12553,7 +12553,7 @@ window.imprimerTicketReservation = (resaId) => {
 };
 
 window.voirTicketHistorique = (venteId) => {
-  const v = (STATE.ventes||[]).find(x=>x.id===venteId);
+  const v = toutesVentesClientes().find(x=>x.id===venteId);
   if(v) { STATE.showTicket={...v,type:"vente"}; render(); }
 };
 
