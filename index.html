@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "13/10 · v85 (Isaline 1 €/pampille rétroactif)";
+const APP_VERSION = "15/10 · v86 (tickets fiche cliente)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -405,7 +405,7 @@ function repereSyncIncrementale() {
     const o = JSON.parse(localStorage.getItem(cleRepereSync())||"null");
     if(!o || o.v!==2 || !o.wm || !o.complete) return null;
     if(Date.now() - new Date(o.complete).getTime() > SYNC_COMPLETE_JOURS*864e5) return null;
-    if(!(STATE.ventes||[]).length && !(STATE.clients||[]).length) return null;
+    if(!(STATE.ventes||[]).length || !(STATE.clients||[]).length) return null; // appareil vide ou incomplet : synchro complète
     if(!localStorage.getItem("bj_journal_sig__"+BOUTIQUE_ID_ACTUEL) || !localStorage.getItem("bj_jl_sig__bj_clients") || !localStorage.getItem("bj_jl_sig__bj_avoirs")) return null;
     return o;
   } catch { return null; }
@@ -461,6 +461,47 @@ function demarrerSyncIncrementale(o) {
   // Envoyer ce qui aurait été fait ici hors connexion
   setTimeout(() => { journaliserVentes(STATE.ventes||[]); journaliserListe("bj_clients", STATE.clients||[]); journaliserListe("bj_avoirs", STATE.avoirs||[]); }, 4000);
   console.log("Synchro économe depuis "+depuis);
+}
+// ── Tickets de l'autre boutique, en lecture seule (historique client, fidélité commune) ──
+let VENTES_AUTRES = (()=>{ try { return JSON.parse(localStorage.getItem("bj_ventes_autres__"+BOUTIQUE_ID_ACTUEL)||"[]"); } catch { return []; } })();
+function toutesVentesClientes() { return VENTES_AUTRES.length ? (STATE.ventes||[]).concat(VENTES_AUTRES) : (STATE.ventes||[]); }
+function nomBoutiqueCourt(id) { return (BOUTIQUES.find(b=>b.id===id)||{nom:""}).nom.replace("Belle & Jolie — ",""); }
+let _ventesAutresT = null;
+function integrerVentesAutres(recues, bId) {
+  if(!recues.length) return;
+  const m = new Map(VENTES_AUTRES.map(v=>[v.id, v]));
+  recues.forEach(v => { if(!v || !v.id) return; const c = {...v, _boutique: bId}; delete c.photo; const ex = m.get(v.id);
+    if(!ex || (c.modifLe||"") >= (ex.modifLe||"")) m.set(v.id, c); });
+  VENTES_AUTRES = [...m.values()].sort((a,b)=>new Date(a.date)-new Date(b.date));
+  allegerVentes(VENTES_AUTRES);
+  clearTimeout(_ventesAutresT);
+  _ventesAutresT = setTimeout(() => { try { localStorage.setItem("bj_ventes_autres__"+BOUTIQUE_ID_ACTUEL, JSON.stringify(VENTES_AUTRES)); } catch(e) { console.error("Tickets autre boutique non mémorisés :", e); } render(); }, 1500);
+}
+async function synchroniserVentesAutres() {
+  if(!_fbDb || BOUTIQUES.length<2) return;
+  for(const b of BOUTIQUES.filter(x=>x.id!==BOUTIQUE_ID_ACTUEL)) {
+    const cle = "bj_sync_autre__"+BOUTIQUE_ID_ACTUEL+"__"+b.id;
+    let o = null; try { o = JSON.parse(localStorage.getItem(cle)||"null"); } catch{}
+    const complet = !o || !o.complete || (Date.now()-new Date(o.complete).getTime() > SYNC_COMPLETE_JOURS*864e5) || !VENTES_AUTRES.some(v=>v._boutique===b.id);
+    const debut = new Date().toISOString();
+    try {
+      if(complet) {
+        const journal = await lireJournalVentes(b.id);
+        VENTES_AUTRES = VENTES_AUTRES.filter(v=>v._boutique!==b.id);
+        integrerVentesAutres(journal, b.id);
+        o = {complete: debut, wm: debut};
+        localStorage.setItem(cle, JSON.stringify(o));
+      }
+      const depuis = new Date(new Date(o.wm).getTime() - SYNC_MARGE_MS).toISOString();
+      _fbDb.collection("bellejolie").where("jv_"+b.id, ">", depuis).onSnapshot(snap => {
+        const recues = []; let maxMaj = null;
+        snap.docChanges().forEach(ch => { if(ch.type==="removed") return; const x = ch.doc.data(); if(!x) return;
+          if(x["jv_"+b.id] && (!maxMaj || x["jv_"+b.id] > maxMaj)) maxMaj = x["jv_"+b.id]; if(x.value) recues.push(x.value); });
+        integrerVentesAutres(recues, b.id);
+        if(maxMaj) { try { const oo = JSON.parse(localStorage.getItem(cle)||"{}"); if(!oo.wm || maxMaj > oo.wm) { oo.wm = maxMaj; localStorage.setItem(cle, JSON.stringify(oo)); } } catch{} }
+      }, err => console.error("Tickets de "+b.nom+" :", err));
+    } catch(err) { console.error("Synchro des tickets de "+b.nom+" impossible :", err); }
+  }
 }
 function prefixeJournal() { return "journal__"+BOUTIQUE_ID_ACTUEL+"__"; }
 function signatureJournal(v) { return versionVente(v)+":"+JSON.stringify(v).length; }
@@ -3075,7 +3116,7 @@ window.saveVendeurs = () => {
 // (après remises, bons et retours). Une cliente n'avance que dans UN programme : celui qui correspond
 // à son profil sur ses 8 derniers passages (plus de passages ≥ 40 € → -20 % ; sinon → -15 %).
 function passagesClient(clientId) {
-  return (STATE.ventes||[]).filter(v => (!v.annulee||v.typeAnnulation==="comptable") && !v.test && !v.correctionManuelle
+  return toutesVentesClientes().filter(v => (!v.annulee||v.typeAnnulation==="comptable") && !v.test && !v.correctionManuelle
       && (v.clientId||v.client?.id)===clientId && (parseFloat(v.total)||0)>0)
     .sort((a,b)=>new Date(b.date)-new Date(a.date));
 }
@@ -3933,7 +3974,7 @@ function renderCaisse() {
           ${(()=>{
             const now30 = new Date();
             const ventes30 = (STATE.ventes||[]).filter(v=>
-              v.client?.id===STATE.client.id && !v.test && (!v.annulee||v.typeAnnulation==="comptable") &&
+              (v.clientId||v.client?.id)===STATE.client.id && !v.test && (!v.annulee||v.typeAnnulation==="comptable") &&
               (now30 - new Date(v.date)) < 30*24*60*60*1000
             ).slice(-10).reverse();
             if(!ventes30.length) return "";
@@ -4190,7 +4231,7 @@ window.addRetour = (pid, taille, couleur) => {
   let ligneOrigine = null, venteOrigineId = null, venteOrigine = null;
   if(STATE.client) {
     const ventesClient = (STATE.ventes||[])
-      .filter(v=>!v.annulee && v.client?.id===STATE.client.id)
+      .filter(v=>!v.annulee && (v.clientId||v.client?.id)===STATE.client.id)
       .sort((a,b)=>new Date(b.date)-new Date(a.date)); // la plus récente d'abord
     for(const v of ventesClient) {
       const art = (v.panier||[]).find(x=>!x.retour && !x.avoirId && (x.prodIdOriginal||x.id)===pid && (x.taille||"")===(taille||"") && (x.couleur||"")===(couleur||""));
@@ -4416,7 +4457,7 @@ function calculerFicheIncomplete(c) {
   if(!c.anniversaire) manque.push("🎂 date de naissance");
   // Vérifier si la remise réseaux a déjà été accordée dans une vente
   const venteReseaux = (STATE.ventes||[]).find(v=>
-    !v.annulee && v.client?.id===c.id && v.remiseReseaux
+    !v.annulee && (v.clientId||v.client?.id)===c.id && v.remiseReseaux
   );
   const dejaEuRemiseReseaux = !!(c.remiseReseauxAccordee || venteReseaux);
   if(!c.suitReseaux && !dejaEuRemiseReseaux) manque.push("📱 réseaux sociaux");
@@ -4426,8 +4467,8 @@ function calculerFicheIncomplete(c) {
 function getNbPassagesSous40Recents(c) {
   if(!c) return 0;
   const il60j = new Date(); il60j.setDate(il60j.getDate()-60);
-  return (STATE.ventes||[]).filter(v=>{
-    if((v.annulee&&v.typeAnnulation!=="comptable")||v.test||v.client?.id!==c.id) return false;
+  return toutesVentesClientes().filter(v=>{
+    if((v.annulee&&v.typeAnnulation!=="comptable")||v.test||(v.clientId||v.client?.id)!==c.id) return false;
     const d=new Date(v.date);
     if(d<il60j) return false;
     const achatsBruts=(v.panier||[]).filter(x=>!x.retour&&!x.avoirId).reduce((s,x)=>s+x.price*x.qty,0);
@@ -4471,8 +4512,8 @@ function clientADejaEuBon400Recent(c) {
     .sort((a,b)=>new Date(b.date)-new Date(a.date))[0];
   if(!dernierBon) return false;
   const dateRef = new Date(dernierBon.date);
-  const totalDepuis = (STATE.ventes||[])
-    .filter(v=>(!v.annulee||v.typeAnnulation==="comptable")&&!v.test&&v.client?.id===c.id&&new Date(v.date)>dateRef)
+  const totalDepuis = toutesVentesClientes()
+    .filter(v=>(!v.annulee||v.typeAnnulation==="comptable")&&!v.test&&(v.clientId||v.client?.id)===c.id&&new Date(v.date)>dateRef)
     .reduce((s,v)=>{
       const net=(v.panier||[]).filter(x=>!x.retour).reduce((s2,x)=>s2+x.price*(x.qty||1),0)
                 -(v.panier||[]).filter(x=>x.retour&&!x.avoirId).reduce((s2,x)=>s2+x.price*(x.qty||1),0);
@@ -4484,13 +4525,13 @@ function clientADejaEuBon400Recent(c) {
 function clientADejaEuRemiseReseaux(c) {
   if(!c) return false;
   if(c.remiseReseauxAccordee) return true;
-  return (STATE.ventes||[]).some(v=>(!v.annulee||v.typeAnnulation==="comptable") && v.client?.id===c.id && v.remiseReseaux);
+  return toutesVentesClientes().some(v=>(!v.annulee||v.typeAnnulation==="comptable") && (v.clientId||v.client?.id)===c.id && v.remiseReseaux);
 }
 
 function getDateRemiseReseaux(c) {
   if(!c) return null;
   // Chercher dans les ventes avec tag remiseReseaux
-  const vr = (STATE.ventes||[]).find(v=>(!v.annulee||v.typeAnnulation==="comptable") && v.client?.id===c.id && v.remiseReseaux);
+  const vr = toutesVentesClientes().find(v=>(!v.annulee||v.typeAnnulation==="comptable") && (v.clientId||v.client?.id)===c.id && v.remiseReseaux);
   if(vr) return new Date(vr.date);
   // Fallback : date stockée sur le client
   if(c.dateRemiseReseaux) return new Date(c.dateRemiseReseaux);
@@ -9145,7 +9186,7 @@ window.openClientModal = id => {
 window.supprimerCliente = (id) => {
   const c = STATE.clients.find(x=>x.id===id);
   if(!c) return;
-  const nbVentes = (STATE.ventes||[]).filter(v=>v.client?.id===id).length;
+  const nbVentes = (STATE.ventes||[]).filter(v=>(v.clientId||v.client?.id)===id).length;
   const msg = nbVentes>0
     ? "⚠️ Supprimer la cliente " + c.prenom + " " + c.nom + " ?\n\nAttention : elle a " + nbVentes + " vente(s) enregistrée(s).\nSes ventes seront conservées mais déliées de son compte.\n\nCette action est irréversible."
     : "Supprimer la cliente " + c.prenom + " " + c.nom + " ?\n\nCette action est irréversible.";
@@ -9582,7 +9623,7 @@ function renderNewClientModal(){ return renderClientModal(); }
 
 function renderClientDetail() {
   const c=STATE.showClientDetail;
-  const cv=STATE.ventes.filter(v=>v.client?.id===c.id&&!v.test&&(!v.annulee||v.typeAnnulation==="comptable"));
+  const cv=toutesVentesClientes().filter(v=>(v.clientId||v.client?.id)===c.id&&!v.test&&(!v.annulee||v.typeAnnulation==="comptable")).sort((a,b)=>new Date(a.date)-new Date(b.date));
   const mL={cb:"CB",especes:"Espèces",cheque:"Chèque",avoir:"Avoir",cadeau:"Cadeau",mixte:"Mixte"};
 
   // Calculs enrichis
@@ -9715,12 +9756,12 @@ function renderClientDetail() {
           <div style="padding:8px 0;border-bottom:0.5px solid #e8e0e4;${v.annulee?"opacity:0.6;background:#fff8f8;":""}">
             <div style="display:flex;justify-content:space-between;align-items:center;gap:4px;font-size:12px;">
               <span style="color:#888;white-space:nowrap;">${new Date(v.date).toLocaleDateString("fr-FR")}</span>
-              <span style="color:#888;font-size:11px;">${v.vendeur?.nom||"—"}</span>
+              <span style="color:#888;font-size:11px;">${v.vendeur?.nom||"—"}${v._boutique?` · <span style="color:#185fa5;font-weight:600;">${nomBoutiqueCourt(v._boutique)}</span>`:""}</span>
               <span style="font-weight:500;flex:1;text-align:right;${v.annulee?"text-decoration:line-through;color:#aaa":""}">${eur(v.total)}</span>
               <span class="tag" style="background:#e6f1fb;color:#185fa5;font-size:10px;">${mL[v.payMode]||v.payMode}</span>
-              <button onclick="event.stopPropagation();const vv=STATE.ventes.find(x=>x.id==='${v.id}');STATE.showClientDetail=null;STATE.showCarteCadeau=null;STATE.showTicket=vv.payMode==='avoir_cree'?{...vv,type:'avoir',avoir:(STATE.avoirs||[]).find(a=>a.id===vv.id)}:vv.payMode==='remboursement_especes'?{...vv,type:'remboursement_especes',montant:vv.montantRembourse}:{...vv,type:'vente'};render()"
-                style="background:none;border:1px solid #ddd;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:12px;color:#993556;" title="Voir ticket">🧾</button>
-              ${!v.annulee&&((new Date()-new Date(v.date))/(1000*60*60*24))<30?`<button onclick="event.stopPropagation();ouvrirRetourDepuisHistorique('${v.id}')"
+              ${v._boutique?`<span style="font-size:10px;color:#185fa5;" title="Ticket de l'autre boutique : retour possible via « Retour produit »">autre boutique</span>`:`<button onclick="event.stopPropagation();const vv=STATE.ventes.find(x=>x.id==='${v.id}');STATE.showClientDetail=null;STATE.showCarteCadeau=null;STATE.showTicket=vv.payMode==='avoir_cree'?{...vv,type:'avoir',avoir:(STATE.avoirs||[]).find(a=>a.id===vv.id)}:vv.payMode==='remboursement_especes'?{...vv,type:'remboursement_especes',montant:vv.montantRembourse}:{...vv,type:'vente'};render()"
+                style="background:none;border:1px solid #ddd;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:12px;color:#993556;" title="Voir ticket">🧾</button>`}
+              ${!v._boutique&&!v.annulee&&((new Date()-new Date(v.date))/(1000*60*60*24))<30?`<button onclick="event.stopPropagation();ouvrirRetourDepuisHistorique('${v.id}')"
                 style="background:none;border:1px solid #e07c00;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:12px;color:#e07c00;" title="Faire un retour">↩</button>`:""}
             </div>
             ${v.panier&&v.panier.filter(x=>!x.retour&&!x.avoirId).length>0?`<div style="font-size:11px;color:#666;margin-top:3px;line-height:1.5;">${v.panier.filter(x=>!x.retour&&!x.avoirId).map(i=>i.qty+"× "+i.name.slice(0,22)).join(", ")}</div>`:""}
@@ -19953,6 +19994,7 @@ setTimeout(() => {
   render();
 }, 8000);
 if(!_repereSync) ecouterJournalVentes();
+setTimeout(()=>{try{synchroniserVentesAutres();}catch(e){console.warn("sync autre boutique",e);}},5000);
 // Relevés du terminal de septembre 2026 transmis par la gérante (une seule fois, sans écraser une saisie)
 setTimeout(() => {
   if(BOUTIQUE_ID_ACTUEL!=="boutique_1" || localStorage.getItem("bj_seed_tpe_2026_09")) return;
