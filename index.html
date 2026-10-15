@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "15/10 · v88 (facture retouches)";
+const APP_VERSION = "15/10 · v89 (fusion fiches clientes)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -9278,6 +9278,66 @@ window.openClientModal = id => {
   else STATE.clientForm={nom:"",prenom:"",tel:"",email:"",cp:"",anniversaire:"",suitReseaux:false,remiseReseauxAccordee:false,pasDeMailPromo:false};
   STATE.showClientModal=true; render();
 };
+
+// ── Fusion de deux fiches clientes (doublons) : tout est reporté sur la fiche gardée ──
+function fusionnerClientes(idGarde, idSuppr) {
+  const g0 = (STATE.clients||[]).find(c=>c.id===idGarde), x = (STATE.clients||[]).find(c=>c.id===idSuppr);
+  if(!g0 || !x || idGarde===idSuppr) return false;
+  const g = {...g0};
+  ["email","tel","cp","adresse","ville","anniversaire","notes"].forEach(k => { if(!g[k] && x[k]) { g[k] = x[k];
+    if(k==="email") ["emailARevoir","emailCorrigeAuto","emailErreurLe"].forEach(f=>{ if(x[f]!==undefined) g[f]=x[f]; else delete g[f]; }); } });
+  ["suitReseaux","remiseReseauxAccordee"].forEach(k => { if(x[k]) g[k] = true; });
+  if(x.pasDeMailPromo && !g0.email) g.pasDeMailPromo = true;
+  g.montantCumule = Math.round(((g0.montantCumule||0)+(x.montantCumule||0))*100)/100;
+  g.totalAchats = (g0.totalAchats||0)+(x.totalAchats||0);
+  g.passagesSous40 = [...(g0.passagesSous40||[]), ...(x.passagesSous40||[])].sort((a,b)=>new Date(a.date)-new Date(b.date));
+  if(g0.avoirs || x.avoirs) g.avoirs = [...new Set([...(g0.avoirs||[]), ...(x.avoirs||[])])];
+  if(x.createdAt && (!g.createdAt || x.createdAt < g.createdAt)) g.createdAt = x.createdAt;
+  g.fusionAvec = [...(g0.fusionAvec||[]), idSuppr]; g.fusionLe = new Date().toISOString();
+  const copie = {id:g.id, prenom:g.prenom, nom:g.nom, email:g.email||"", tel:g.tel||""};
+  let nV = 0;
+  STATE.ventes = (STATE.ventes||[]).map(v => { if((v.clientId||v.client?.id)!==idSuppr) return v; nV++; return {...v, clientId:idGarde, client:{...(v.client||{}), ...copie}}; });
+  STATE.avoirs = (STATE.avoirs||[]).map(a => a.clientId===idSuppr || a.client?.id===idSuppr ? {...a, clientId:idGarde, client:{...(a.client||{}), ...copie}} : a);
+  STATE.reservations = (STATE.reservations||[]).map(rr => rr.clientId===idSuppr ? {...rr, clientId:idGarde} : rr);
+  STATE.retouches = (STATE.retouches||[]).map(rr => rr.clientId===idSuppr ? {...rr, clientId:idGarde} : rr);
+  STATE.depotsVente = (STATE.depotsVente||[]).map(d => d.clientId===idSuppr ? {...d, clientId:idGarde} : d);
+  STATE.clients = (STATE.clients||[]).filter(c=>c.id!==idSuppr).map(c => c.id===idGarde ? g : c);
+  if(STATE.client && STATE.client.id===idSuppr) STATE.client = g; else if(STATE.client && STATE.client.id===idGarde) STATE.client = g;
+  if(STATE.showClientDetail && (STATE.showClientDetail.id===idSuppr || STATE.showClientDetail.id===idGarde)) STATE.showClientDetail = g;
+  lsSet("bj_clients", STATE.clients); lsSet("bj_avoirs", STATE.avoirs); if(nV) lsSet("bj_ventes", STATE.ventes);
+  lsSet("bj_reservations", STATE.reservations); lsSet("bj_retouches", STATE.retouches); lsSet("bj_depots_vente", STATE.depotsVente);
+  console.log("Fiches fusionnées :", idSuppr, "→", idGarde, "("+nV+" ticket(s))");
+  return true;
+}
+window.ouvrirFusionCliente = (id) => {
+  if(!peutGererArtisans()) { alert("Réservé à la gérante et à Sabrina."); return; }
+  const c = STATE.clients.find(x=>x.id===id); if(!c) return;
+  const memeNom = STATE.clients.filter(x=>x.id!==id && normStr(x.nom||"").trim()===normStr(c.nom||"").trim() && normStr(x.prenom||"").trim()===normStr(c.prenom||"").trim());
+  const q = prompt("Fusionner "+c.prenom+" "+c.nom+" avec quelle autre fiche ?\nTapez le nom, le téléphone ou l'email de l'autre fiche"+(memeNom.length?" (ou laissez tel quel)":"")+" :", memeNom.length?c.prenom+" "+c.nom:"");
+  if(q===null || !q.trim()) return;
+  const nq = normStr(q.trim()), tq = q.replace(/\D/g,"");
+  const res = STATE.clients.filter(x => x.id!==id && (normStr((x.prenom||"")+" "+(x.nom||"")).includes(nq) || normStr((x.nom||"")+" "+(x.prenom||"")).includes(nq)
+    || (x.email && normStr(x.email).includes(nq)) || (tq.length>=6 && (x.tel||"").replace(/\D/g,"").includes(tq)))).slice(0,9);
+  if(!res.length) { alert("Aucune autre fiche trouvée pour « "+q+" »."); return; }
+  const desc = x => x.prenom+" "+x.nom+(x.tel?" · "+x.tel:"")+(x.email?" · "+x.email:"")+" · "+passagesClient(x.id).length+" passage(s), "+eur(x.montantCumule||0);
+  let autre = res[0];
+  if(res.length>1) { const n = parseInt(prompt("Plusieurs fiches trouvées :\n"+res.map((x,i)=>(i+1)+". "+desc(x)).join("\n")+"\n\nNuméro de la fiche à fusionner :","1")); if(!n || !res[n-1]) return; autre = res[n-1]; }
+  if(!confirm("Fusionner ces deux fiches ?\n\n① "+desc(c)+"\n② "+desc(autre)+"\n\nTout (tickets, bons, fidélité, réservations, retouches) sera regroupé sur une seule fiche (la plus ancienne). Irréversible.")) return;
+  const [garde, suppr] = (c.createdAt||"9") <= (autre.createdAt||"9") ? [c, autre] : [autre, c];
+  if(fusionnerClientes(garde.id, suppr.id)) { alert("✅ Fiches fusionnées : "+garde.prenom+" "+garde.nom); render(); }
+};
+// 15/10/2026 : Colette Leret avait deux fiches -> fusion automatique (une seule fois)
+setTimeout(() => {
+  try {
+    if(localStorage.getItem("bj_fix_fusion_leret")==="ok") return;
+    const l = (STATE.clients||[]).filter(c=>normStr(c.prenom||"").trim()==="colette" && normStr(c.nom||"").trim()==="leret")
+      .sort((a,b)=>String(a.createdAt||"9").localeCompare(String(b.createdAt||"9")));
+    if(l.length<2) return;
+    for(let i=1;i<l.length;i++) fusionnerClientes(l[0].id, l[i].id);
+    localStorage.setItem("bj_fix_fusion_leret", "ok");
+    render();
+  } catch(e) { console.error(e); }
+}, 15000);
 window.supprimerCliente = (id) => {
   const c = STATE.clients.find(x=>x.id===id);
   if(!c) return;
@@ -9779,6 +9839,7 @@ function renderClientDetail() {
       <div class="modal-header">
         <span style="font-weight:500;">${c.prenom} ${c.nom}</span>
         <div style="display:flex;align-items:center;gap:8px;">
+          ${peutGererArtisans()?`<button onclick="ouvrirFusionCliente('${c.id}')" style="background:none;border:1px solid #b3d0f0;border-radius:7px;padding:4px 10px;cursor:pointer;font-size:12px;color:#185fa5;" title="Regrouper avec une autre fiche (doublon)">🔗 Fusionner</button>`:""}
           <button onclick="supprimerCliente('${c.id}')" style="background:none;border:1px solid #f09595;border-radius:7px;padding:4px 10px;cursor:pointer;font-size:12px;color:#a32d2d;">🗑️ Supprimer</button>
           <button onclick="setState({showClientDetail:null})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
         </div>
