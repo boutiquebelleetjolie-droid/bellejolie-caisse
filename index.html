@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "16/10 · v90 (annuler remise sur retour)";
+const APP_VERSION = "16/10 · v91 (cartes cadeau centrées)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -4853,86 +4853,101 @@ window.imprimerViaUSB = async () => {
 
 
 // ─── Carte cadeau imprimable (document présentable, pas un simple ticket) ──
+// Mise en page en millimètres (indépendante de l'écran) : une carte de 180 × 130 mm centrée par page A4.
+const CSS_CARTE_CADEAU = `
+  .cc{position:relative;width:180mm;height:130mm;box-sizing:border-box;background:#fffdfb;border:0.7mm solid #d63875;border-radius:3mm;
+    font-family:'Poppins',Arial,sans-serif;color:#222;overflow:hidden;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+  .cc-in{position:absolute;inset:3mm;border:0.3mm solid #c99a54;border-radius:2mm;display:flex;flex-direction:column;align-items:center;text-align:center;padding:5mm 9mm 4mm;box-sizing:border-box;}
+  .cc-coin{position:absolute;width:16mm;height:16mm;border-color:#c99a54;border-style:solid;border-width:0}
+  .cc-logo{height:19mm;width:auto;display:block;margin:0 auto 1.5mm}
+  .cc-tag{font-size:2.5mm;letter-spacing:0.7mm;color:#555;margin-bottom:2mm}
+  .cc-orn{display:flex;align-items:center;justify-content:center;gap:2.5mm;color:#d63875;font-size:3.2mm}
+  .cc-orn i{display:block;width:22mm;height:0.25mm;background:#c99a54}
+  .cc-titre{font-family:Georgia,'Times New Roman',serif;font-size:8.5mm;letter-spacing:1.6mm;margin:2mm 0 0;color:#1a1a1a}
+  .cc-montant{font-family:Georgia,'Times New Roman',serif;font-size:17mm;font-weight:700;color:#d63875;line-height:1.05;margin:0.5mm 0 1mm}
+  .cc-phrase{font-family:Georgia,serif;font-style:italic;font-size:4mm;color:#444}
+  .cc-perso{display:flex;gap:8mm;width:100%;margin:4mm 0 3mm;font-size:2.8mm;color:#777;text-align:left}
+  .cc-perso div{flex:1;border-bottom:0.25mm dotted #b9a27a;padding-bottom:1mm}
+  .cc-bas{display:flex;width:100%;align-items:flex-end;justify-content:space-between;margin-top:auto;gap:6mm}
+  .cc-infos{text-align:left}
+  .cc-lab{font-size:2.3mm;letter-spacing:0.4mm;color:#999}
+  .cc-val{font-size:3.6mm;font-weight:600;color:#333;margin-bottom:1.5mm}
+  .cc-code{font-family:'Courier New',monospace;font-size:4.2mm;font-weight:700;color:#854f0b;letter-spacing:0.4mm}
+  .cc-bc svg{width:42mm;height:8mm;display:block;margin-top:1mm}
+  .cc-rs{text-align:center}
+  .cc-rs-t{font-size:2.4mm;letter-spacing:0.5mm;font-weight:600;color:#1a1a1a;margin-bottom:1mm}
+  .cc-qr{display:flex;gap:2.5mm}
+  .cc-qr div{font-size:2mm;color:#999}
+  .cc-qr img{width:13mm;height:13mm;display:block;border:0.2mm solid #eee;border-radius:1mm;margin-bottom:0.5mm}
+  .cc-adr{font-size:2.4mm;color:#999;margin-top:2mm}
+`;
+function adresseCarteCadeau() { return BOUTIQUE_ID_ACTUEL==="boutique_2" ? "Centre Aushopping Maurepas-Pariwest, 78310 Maurepas" : BOUTIQUE_ADRESSE; }
+function carteCadeauHTML(chq) {
+  const qr = (url, nom) => `<div><img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(url)}&margin=1" alt="${nom}"/>${nom}</div>`;
+  return `<div class="cc"><div class="cc-in">
+    <span class="cc-coin" style="top:2mm;left:2mm;border-top-width:0.3mm;border-left-width:0.3mm;border-top-left-radius:6mm;"></span>
+    <span class="cc-coin" style="bottom:2mm;right:2mm;border-bottom-width:0.3mm;border-right-width:0.3mm;border-bottom-right-radius:6mm;"></span>
+    <img class="cc-logo" src="${LOGO_B64}" alt="Belle&amp;Jolie"/>
+    <div class="cc-tag">MODE FEMME &nbsp;·&nbsp; BIJOUX &nbsp;·&nbsp; ACCESSOIRES &nbsp;·&nbsp; MAROQUINERIE</div>
+    <div class="cc-orn"><i></i>❤<i></i></div>
+    <div class="cc-titre">BON CADEAU</div>
+    <div class="cc-montant">${eur(chq.montant)}</div>
+    <div class="cc-phrase">Faites-vous plaisir avec Belle&amp;Jolie !</div>
+    <div class="cc-perso"><div>Offert à :</div><div>De la part de :</div></div>
+    <div class="cc-bas">
+      <div class="cc-infos">
+        <div class="cc-lab">VALABLE JUSQU'AU</div><div class="cc-val">${new Date(chq.expiration).toLocaleDateString("fr-FR")}</div>
+        <div class="cc-lab">CODE</div><div class="cc-code">${chq.code}</div>
+        <div class="cc-bc">${genererSVGBarcode(chq.code)}</div>
+      </div>
+      <div class="cc-rs"><div class="cc-rs-t">SUIVEZ-NOUS</div>
+        <div class="cc-qr">${qr(BOUTIQUE_FB,"Facebook")}${qr(BOUTIQUE_IG,"Instagram")}${qr(BOUTIQUE_TT,"TikTok")}</div></div>
+    </div>
+    <div class="cc-adr">${adresseCarteCadeau()} · Valable sur l'ensemble des articles de la boutique, non remboursable</div>
+  </div></div>`;
+}
+window.imprimerCartesCadeau = () => {
+  const chqs = STATE.showCarteCadeau || []; if(!chqs.length) return;
+  const iframe = document.createElement("iframe");
+  iframe.style.cssText = "position:fixed;right:0;bottom:0;width:0;height:0;border:0;visibility:hidden;";
+  document.body.appendChild(iframe);
+  const doc = iframe.contentWindow.document;
+  doc.open();
+  doc.write(`<!DOCTYPE html><html><head><meta charset="utf-8"><title>Bon cadeau Belle&amp;Jolie</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>@page{size:A4 portrait;margin:0}html,body{margin:0;padding:0;background:#fff}
+    .page{width:210mm;height:296mm;display:flex;align-items:center;justify-content:center;page-break-after:always;break-after:page}
+    .page:last-child{page-break-after:auto;break-after:auto}${CSS_CARTE_CADEAU}</style></head>
+    <body>${chqs.map(c=>`<div class="page">${carteCadeauHTML(c)}</div>`).join("")}</body></html>`);
+  doc.close();
+  let fait = false;
+  const lancer = () => { if(fait) return; fait = true;
+    try { iframe.contentWindow.focus(); iframe.contentWindow.print(); } catch(e) { console.error(e); }
+    setTimeout(() => iframe.remove(), 3000); };
+  const imgs = [...doc.images]; let n = 0;
+  const fin = () => { if(++n>=imgs.length) setTimeout(lancer, 300); };
+  imgs.forEach(im => im.complete ? fin() : (im.onload = im.onerror = fin));
+  setTimeout(lancer, 2500);
+};
 function renderCarteCadeauModal() {
   const chqs = STATE.showCarteCadeau || [];
   if(chqs.length===0) return "";
-
   return `
+  <style>${CSS_CARTE_CADEAU} .cc-apercu{display:flex;justify-content:center;margin-bottom:14px;} .cc-apercu .cc{zoom:0.95;} @media (max-width:760px){ .cc-apercu .cc{zoom:0.5;} }</style>
   <div class="modal-bg" onclick="if(event.target===this)setState({showCarteCadeau:null})">
-    <div class="modal" style="max-width:720px;">
+    <div class="modal" style="max-width:760px;">
       <div class="modal-header">
-        <span style="font-weight:500;">🎁 Carte(s) cadeau à imprimer</span>
+        <span style="font-weight:500;">🎁 Carte${chqs.length>1?"s":""} cadeau à imprimer</span>
         <button onclick="setState({showCarteCadeau:null})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
       </div>
       <div class="modal-body">
-        <div id="carte-cadeau-print-area">
-          ${chqs.map(chq=>`
-            <div class="carte-cadeau" style="position:relative;width:100%;aspect-ratio:1.35;box-sizing:border-box;padding:24px 34px;text-align:center;background:#fffdfc;border:2.5px solid #d63875;border-radius:6px;margin-bottom:24px;overflow:hidden;font-family:'Poppins',sans-serif;">
-              <!-- Filets décoratifs coins -->
-              <svg style="position:absolute;top:8px;left:8px;width:90px;height:90px;" viewBox="0 0 90 90"><path d="M2,55 A70,70 0 0,1 55,2" fill="none" stroke="#c99a54" stroke-width="1.4"/></svg>
-              <svg style="position:absolute;bottom:8px;right:8px;width:90px;height:90px;transform:rotate(180deg);" viewBox="0 0 90 90"><path d="M2,55 A70,70 0 0,1 55,2" fill="none" stroke="#c99a54" stroke-width="1.4"/></svg>
-
-              <img src="${LOGO_B64}" alt="Belle&Jolie" style="width:118px;height:auto;display:block;margin:0 auto 4px;"/>
-              <div style="font-size:11px;letter-spacing:2.5px;color:#333;font-weight:500;margin-bottom:10px;">MODE FEMME &nbsp;|&nbsp; BIJOUX &nbsp;|&nbsp; ACCESSOIRES &nbsp;|&nbsp; MAROQUINERIE</div>
-              <div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:2px;">
-                <div style="flex:1;max-width:80px;height:1px;background:#c99a54;"></div>
-                <span style="color:#d63875;font-size:14px;">❤</span>
-                <div style="flex:1;max-width:80px;height:1px;background:#c99a54;"></div>
-              </div>
-              <div style="font-family:Georgia,'Times New Roman',serif;font-size:34px;letter-spacing:5px;color:#1a1a1a;margin:8px 0 4px;">BON CADEAU</div>
-              <div style="font-family:Georgia,serif;font-size:56px;font-weight:700;color:#d63875;line-height:1.1;">${eur(chq.montant)}</div>
-              <div style="width:60px;height:2px;background:#c99a54;margin:10px auto;position:relative;">
-                <span style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:6px;height:6px;border-radius:50%;background:#c99a54;"></span>
-              </div>
-              <div style="font-family:Georgia,serif;font-style:italic;font-size:16px;color:#333;margin-bottom:6px;">Faites-vous plaisir avec Belle&Jolie !</div>
-              <div style="font-size:10px;color:#999;letter-spacing:0.5px;margin-bottom:14px;">Valable sur l'ensemble des articles de la boutique</div>
-
-              <div style="display:flex;justify-content:center;align-items:center;gap:26px;margin-bottom:10px;flex-wrap:wrap;">
-                <div style="text-align:left;">
-                  <div style="font-size:10px;color:#999;letter-spacing:1px;">VALABLE JUSQU'AU</div>
-                  <div style="font-size:13px;font-weight:600;color:#333;">${new Date(chq.expiration).toLocaleDateString("fr-FR")}</div>
-                </div>
-                <div style="width:1px;height:28px;background:#e8d8de;"></div>
-                <div style="text-align:left;">
-                  <div style="font-size:10px;color:#999;letter-spacing:1px;">CODE</div>
-                  <div style="font-size:15px;font-weight:700;color:#854f0b;font-family:monospace;letter-spacing:1px;">${chq.code}</div>
-                </div>
-              </div>
-              <div style="display:flex;justify-content:center;margin-bottom:8px;">${genererSVGBarcode(chq.code)}</div>
-
-              <div style="font-size:11px;font-weight:600;letter-spacing:1px;color:#1a1a1a;margin-top:6px;">SUIVEZ-NOUS</div>
-              <div style="font-size:9px;letter-spacing:1px;color:#d63875;margin-bottom:8px;">SUR NOS RÉSEAUX SOCIAUX</div>
-              <div style="display:flex;justify-content:center;gap:16px;margin-bottom:8px;">
-                <div style="text-align:center;">
-                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(BOUTIQUE_FB)}&margin=1" width="52" height="52" style="border-radius:6px;border:1px solid #eee;display:block;"/>
-                  <div style="font-size:8px;color:#999;margin-top:2px;">Facebook</div>
-                </div>
-                <div style="text-align:center;">
-                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(BOUTIQUE_IG)}&margin=1" width="52" height="52" style="border-radius:6px;border:1px solid #eee;display:block;"/>
-                  <div style="font-size:8px;color:#999;margin-top:2px;">Instagram</div>
-                </div>
-                <div style="text-align:center;">
-                  <img src="https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(BOUTIQUE_TT)}&margin=1" width="52" height="52" style="border-radius:6px;border:1px solid #eee;display:block;"/>
-                  <div style="font-size:8px;color:#999;margin-top:2px;">TikTok</div>
-                </div>
-              </div>
-              <div style="font-size:9px;color:#aaa;margin-top:4px;">${BOUTIQUE_ADRESSE}</div>
-            </div>
-          `).join("")}
-        </div>
-        <button onclick="imprimerZone('carte-cadeau-print-area')" class="btn-primary" style="margin-top:6px;">🖨️ Imprimer la/les carte(s) cadeau</button>
+        ${chqs.map(chq=>`<div class="cc-apercu">${carteCadeauHTML(chq)}</div>`).join("")}
+        <div style="font-size:11px;color:#888;text-align:center;margin-bottom:8px;">Une carte centrée par feuille A4 — à découper le long du cadre rose. Pensez à cocher « Graphiques d'arrière-plan » si les couleurs ne sortent pas.</div>
+        <button onclick="imprimerCartesCadeau()" class="btn-primary" style="margin-top:6px;width:100%;">🖨️ Imprimer la/les carte(s) cadeau</button>
         <button onclick="setState({showCarteCadeau:null})" style="width:100%;padding:10px;background:#f5f0f2;color:#555;border:none;border-radius:8px;cursor:pointer;font-size:13px;margin-top:8px;">Fermer</button>
       </div>
     </div>
-  </div>
-  <style>
-    @media print {
-      body * { visibility: hidden; }
-      #carte-cadeau-print-area, #carte-cadeau-print-area * { visibility: visible; }
-      #carte-cadeau-print-area { position: fixed; top: 15mm; left: 50%; transform: translateX(-50%); width: 180mm; }
-      .carte-cadeau { break-inside: avoid; page-break-inside: avoid; }
-    }
-  </style>`;
+  </div>`;
 }
 
 // ─── Ticket cadeau (sans prix) ──────────────────────────────────
