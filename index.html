@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "15/10 · v89 (fusion fiches clientes)";
+const APP_VERSION = "16/10 · v90 (annuler remise sur retour)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -3825,7 +3825,13 @@ function renderCaisse() {
                     : eur(it.price)}
                 </td>
                 <td style="text-align:center;padding:8px 4px;">
-                  ${it.retour?"-":`
+                  ${it.retour&&it.avoirId?"-":it.retour&&parseFloat(it.remise||0)>0?`
+                  <div style="font-size:11px;color:#e07c00;white-space:nowrap;">−${it.remiseType==="pct"?it.remise+" %":eur(parseFloat(it.remise)||0)}</div>
+                  <button onclick="annulerRemiseRetour('${it.id}')" title="Rembourser au prix plein, sans la remise d'origine" style="margin-top:2px;background:#fff;border:1px solid #e07c00;color:#e07c00;border-radius:5px;padding:1px 6px;font-size:10px;cursor:pointer;white-space:nowrap;">✕ Annuler remise</button>`
+                  :it.retour&&it.remiseAnnulee?`
+                  <div style="font-size:10px;color:#a32d2d;white-space:nowrap;">Remise annulée</div>
+                  <button onclick="retablirRemiseRetour('${it.id}')" style="margin-top:2px;background:#fff;border:1px solid #ccc;color:#555;border-radius:5px;padding:1px 6px;font-size:10px;cursor:pointer;white-space:nowrap;">↺ Rétablir</button>`
+                  :`
                   <div style="display:flex;gap:3px;align-items:center;justify-content:center;">
                     <select onchange="setRemiseArtType('${it.id}',this.value)" style="width:50px;font-size:11px;padding:2px 4px;">
                       <option value="" ${!it.remiseType?"selected":""}>—</option>
@@ -4293,6 +4299,20 @@ window.setRemiseArtType = (id, type) => {
   } else {
     STATE.panier = STATE.panier.map(x => x.id===id ? {...x, remiseType:type, remise:"", remiseMotif:""} : x);
   }
+  render();
+};
+// Retour produit : annuler (ou rétablir) la remise reprise du ticket d'origine
+window.annulerRemiseRetour = (id) => {
+  const it = STATE.panier.find(x=>x.id===id); if(!it || !it.retour) return;
+  if(!confirm("Annuler la remise sur ce retour ?\n\n"+it.name+"\nRemboursement au prix plein : "+eur(it.price*(it.qty||1))+" au lieu de "+eur(Math.max(0, it.price*(it.qty||1) - (it.remiseType==="pct" ? it.price*(it.qty||1)*(parseFloat(it.remise)||0)/100 : parseFloat(it.remise)||0))))) return;
+  STATE.panier = STATE.panier.map(x => x.id!==id ? x : {...x, remiseAvantAnnulation:{remise:x.remise, remiseType:x.remiseType}, remise:"", remiseType:"",
+    remiseAnnulee:true, remiseAnnuleePar: STATE.vendeur?.nom||""});
+  render();
+};
+window.retablirRemiseRetour = (id) => {
+  STATE.panier = STATE.panier.map(x => { if(x.id!==id || !x.remiseAvantAnnulation) return x;
+    const {remiseAvantAnnulation, remiseAnnulee, remiseAnnuleePar, ...reste} = x;
+    return {...reste, remise:remiseAvantAnnulation.remise, remiseType:remiseAvantAnnulation.remiseType}; });
   render();
 };
 window.setRemiseArtVal = (id, val) => {
