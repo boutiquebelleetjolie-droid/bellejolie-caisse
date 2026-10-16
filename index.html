@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "16/10 · v94 (recherche dépôt par cliente)";
+const APP_VERSION = "16/10 · v95 (mail récap dépôt-vente)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -1884,7 +1884,7 @@ const DEPOT_DUREE_JOURS = 30;
 
 window.ouvrirAjoutDepot = (lotId) => {
   const lot = (STATE.depotsVente||[]).find(l=>l.id===lotId); if(!lot) return;
-  STATE._newDepot = { lotExistantId: lot.id, clientId: lot.clientId||null, clientNom: lot.clientNom||"", clientPrenom: lot.clientPrenom||"", clientTel: lot.clientTel||"",
+  STATE._newDepot = { lotExistantId: lot.id, clientId: lot.clientId||null, clientNom: lot.clientNom||"", clientPrenom: lot.clientPrenom||"", clientTel: lot.clientTel||"", clientEmail: lot.clientEmail||"",
     dateDepot: lot.dateDepot, articles: [{nom:"",marque:"",prix:"",categorie:"",taille:""}], rechercheTel: "" };
   STATE.showNouveauDepot = true; render();
 };
@@ -1912,6 +1912,7 @@ window.selectionnerClientDepot = (clientId) => {
   STATE._newDepot.clientNom = c.nom;
   STATE._newDepot.clientPrenom = c.prenom;
   STATE._newDepot.clientTel = c.tel;
+  STATE._newDepot.clientEmail = c.email||"";
   STATE._newDepot.rechercheTel = "";
   render();
 };
@@ -1960,13 +1961,14 @@ window.enregistrerDepot = () => {
   lsSet("bj_products", STATE.products);
 
   if(lotExistant) {
-    STATE.depotsVente = STATE.depotsVente.map(l => l.id!==lotId ? l : {...l,
+    STATE.depotsVente = STATE.depotsVente.map(l => l.id!==lotId ? l : {...l, clientEmail: (d.clientEmail||"").trim() || l.clientEmail || "",
       articleIds: [...new Set([...(l.articleIds||[]), ...nouveauxProduits.map(p=>p.id)])],
       articlesPerdus: Math.max(0, (l.articlesPerdus||0) - nouveauxProduits.length)});
   } else {
   const lot = {
     id: lotId,
     clientId: d.clientId, clientNom: d.clientNom.trim(), clientPrenom: d.clientPrenom.trim(), clientTel: d.clientTel.trim(),
+    clientEmail: (d.clientEmail||"").trim(),
     dateDepot: d.dateDepot, articleIds: nouveauxProduits.map(p=>p.id),
     statut: "actif",
   };
@@ -1976,7 +1978,10 @@ window.enregistrerDepot = () => {
 
   STATE.showNouveauDepot = false;
   render();
-  alert("✅ Dépôt enregistré ! "+nouveauxProduits.length+" article(s) ajouté(s) au stock — tu peux maintenant imprimer leurs étiquettes depuis le Stock.");
+  const lotFinal = STATE.depotsVente.find(l=>l.id===lotId);
+  const emailRecap = emailLotDepot(lotFinal);
+  if(emailRecap && confirm("✅ Dépôt enregistré ! "+nouveauxProduits.length+" article(s) ajouté(s) au stock.\n\nEnvoyer maintenant le récapitulatif du dépôt par mail à "+emailRecap+" ?")) envoyerRecapDepot(lotId);
+  else alert("✅ Dépôt enregistré ! "+nouveauxProduits.length+" article(s) ajouté(s) au stock — tu peux maintenant imprimer leurs étiquettes depuis le Stock."+(emailRecap?"":"\n\n(Pas d'email : le récapitulatif pourra être envoyé plus tard depuis la fiche du dépôt.)"));
 };
 
 
@@ -2001,6 +2006,74 @@ setTimeout(() => {
     if(n||m) { console.log("Dépôt-vente corrigé :", n, "article(s),", m, "dépôt(s)"); render(); }
   } catch(e) { console.error(e); }
 }, 10000);
+
+// ── Mail récapitulatif d'un dépôt-vente (articles déposés + prix) ──
+function emailLotDepot(lot) {
+  if(!lot) return "";
+  const c = lot.clientId ? (STATE.clients||[]).find(x=>x.id===lot.clientId) : null;
+  return String(lot.clientEmail || c?.email || "").trim();
+}
+window.envoyerRecapDepot = async (lotId) => {
+  const lot = (STATE.depotsVente||[]).find(l=>l.id===lotId); if(!lot) return;
+  let email = emailLotDepot(lot);
+  if(!email) { email = (prompt("Email de "+lot.clientPrenom+" "+lot.clientNom+" :", "")||"").trim(); if(!email) return; }
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { alert("Email invalide : "+email); return; }
+  if(!STATE.emailjsServiceId || !STATE.emailjsTemplateId || !STATE.emailjsPublicKey) { alert("⚠️ L'envoi d'emails n'est pas configuré (EmailJS)."); return; }
+  const articles = [...new Set(lot.articleIds||[])].map(id=>STATE.products.find(p=>p.id===id)).filter(Boolean);
+  if(!articles.length) { alert("Aucun article dans ce dépôt."); return; }
+  const total = articles.reduce((s,p)=>s+(p.price||0),0);
+  const fin = new Date(lot.dateDepot+"T12:00:00"); fin.setDate(fin.getDate()+DEPOT_DUREE_JOURS);
+  const fmt = d => new Date(d).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"});
+  const esc = t => String(t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;");
+  const lignes = articles.map(p => `<tr><td style="padding:9px 8px;border-bottom:1px solid #f0e6ea;font-size:14px;color:#333;">${esc(p.name)}${marqueDepot(p)?`<div style="font-size:12px;color:#999;">${esc(marqueDepot(p))}</div>`:""}</td>
+    <td style="padding:9px 8px;border-bottom:1px solid #f0e6ea;font-size:13px;color:#777;text-align:center;">${esc(p.depotTaille||(p.tailles||[])[0]||"—")}</td>
+    <td style="padding:9px 8px;border-bottom:1px solid #f0e6ea;font-size:14px;color:#993556;font-weight:700;text-align:right;white-space:nowrap;">${eur(p.price)}</td></tr>`).join("");
+  const texte = "Bonjour "+lot.clientPrenom+",\n\nMerci pour votre confiance ! Voici le récapitulatif des "+articles.length+" article(s) déposé(s) le "+fmt(lot.dateDepot+"T12:00:00")+" :\n\n"
+    + articles.map(p=>"- "+p.name+(marqueDepot(p)?" ("+marqueDepot(p)+")":"")+(p.depotTaille?" · T."+p.depotTaille:"")+" : "+eur(p.price)).join("\n")
+    + "\n\nTotal affiché : "+eur(total);
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:0;background:#f5f0f2;font-family:Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0f2;padding:20px 10px;"><tr><td align="center">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+  <tr><td style="background:#fff;border-radius:16px 16px 0 0;padding:20px;text-align:center;border-bottom:3px solid #993556;">
+    <img src="${LOGO_TICKET_B64}" width="90" height="90" alt="Belle&Jolie" style="border-radius:50%;"/>
+    <div style="font-size:21px;font-weight:700;color:#993556;font-family:Georgia,serif;margin-top:6px;">Votre dépôt-vente</div>
+  </td></tr>
+  <tr><td style="background:#fff;padding:22px;">
+    <div style="font-size:15px;color:#444;line-height:1.6;">Bonjour ${esc(lot.clientPrenom)},<br/><br/>Merci pour votre confiance ! Voici le récapitulatif des <strong>${articles.length} article${articles.length>1?"s":""}</strong> déposé${articles.length>1?"s":""} le <strong>${fmt(lot.dateDepot+"T12:00:00")}</strong> :</div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="margin:16px 0;border-collapse:collapse;">
+      <tr><th style="text-align:left;padding:6px 8px;font-size:11px;color:#999;border-bottom:2px solid #993556;">ARTICLE</th><th style="padding:6px 8px;font-size:11px;color:#999;border-bottom:2px solid #993556;">TAILLE</th><th style="text-align:right;padding:6px 8px;font-size:11px;color:#999;border-bottom:2px solid #993556;">PRIX DE VENTE</th></tr>
+      ${lignes}
+      <tr><td colspan="2" style="padding:10px 8px;font-size:14px;font-weight:700;color:#333;">Total</td><td style="padding:10px 8px;font-size:15px;font-weight:700;color:#993556;text-align:right;">${eur(total)}</td></tr>
+    </table>
+    <div style="background:#fbf3f6;border-radius:10px;padding:14px 16px;font-size:13px;color:#555;line-height:1.7;">
+      📅 Vos articles sont mis en vente jusqu'au <strong>${fmt(fin)}</strong>.<br/>
+      💝 Pour chaque article vendu, vous recevez <strong>${100-DEPOT_COMMISSION_PCT} % du prix</strong> en bon d'achat sur votre compte fidélité (valable 3 mois).<br/>
+      👗 Les articles non vendus sont à récupérer en boutique à la fin du dépôt.
+    </div>
+    <div style="font-size:14px;color:#555;margin-top:18px;">À très vite en boutique !<br/>Élodie et l'équipe Belle&amp;Jolie 🌸</div>
+  </td></tr>
+  <tr><td style="background:#f9f6f8;padding:14px 22px;text-align:center;border-radius:0 0 16px 16px;border-top:0.5px solid #e8e0e4;">
+    <div style="font-size:12px;color:#aaa;">Belle&amp;Jolie · ${adresseCarteCadeau()}</div>
+    <div style="font-size:11px;color:#bbb;margin-top:2px;">🕐 ${BOUTIQUE_HORAIRES}</div>
+    <div style="font-size:11px;color:#ccc;margin-top:4px;">⚠️ Merci de ne pas répondre à cet email. Contact : boutiquebelleetjolie@gmail.com</div>
+  </td></tr>
+</table></td></tr></table></body></html>`;
+  try {
+    await emailjs.init(STATE.emailjsPublicKey);
+    await emailjs.send(STATE.emailjsServiceId, STATE.emailjsTemplateId, {
+      to_email: email, to_name: lot.clientPrenom, subject: "Votre dépôt-vente Belle&Jolie — "+articles.length+" article"+(articles.length>1?"s":""),
+      message: html, articles: texte, total: eur(total), paiement: "", vendeur: "Belle&Jolie",
+    });
+    try { incrementerEnvoisJour(1); } catch{}
+    STATE.depotsVente = STATE.depotsVente.map(l => l.id!==lotId ? l : {...l, clientEmail: email, recapEnvoyeLe: new Date().toISOString(), recapNbArticles: articles.length});
+    lsSet("bj_depots_vente", STATE.depotsVente);
+    render();
+    alert("✅ Récapitulatif envoyé à "+email);
+  } catch(err) {
+    console.error("Envoi récap dépôt :", err);
+    alert("❌ L'email n'a pas pu être envoyé. Vérifiez l'adresse et la connexion.");
+  }
+};
 function marqueDepot(p) { const m = (p.marque||"").trim(); return m && !/^Dépôt ·/.test(m) ? m : (p.depotMarque||""); }
 function getVenteInfoArticleDepot(prodId) {
   for(const v of (STATE.ventes||[])) {
@@ -2131,6 +2204,7 @@ function renderDepotVente() {
         }).join("")}
       </div>
 
+      <button onclick="envoyerRecapDepot('${lot.id}')" style="width:100%;margin-top:10px;padding:8px;background:#fff;color:#993556;border:1px solid #e8c4d3;border-radius:8px;cursor:pointer;font-size:12px;">✉️ ${lot.recapEnvoyeLe?"Renvoyer le récapitulatif (envoyé le "+new Date(lot.recapEnvoyeLe).toLocaleDateString("fr-FR")+(lot.recapNbArticles?", "+lot.recapNbArticles+" art.":"")+")":"Envoyer le récapitulatif par mail"}${emailLotDepot(lot)?" · "+emailLotDepot(lot):""}</button>
       ${!lot.bonGenereId ? `<button onclick="ouvrirAjoutDepot('${lot.id}')" style="width:100%;margin-top:10px;padding:8px;background:#f5f0f2;color:#555;border:1px dashed #d8c8d0;border-radius:8px;cursor:pointer;font-size:12px;">➕ Ajouter des articles à ce dépôt</button>`:""}
       ${vendus.length>0 && !lot.bonGenereId ? `
         <button onclick="genererBonAchatDepot('${lot.id}')" style="width:100%;margin-top:12px;padding:10px;background:#993556;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;">
@@ -2180,8 +2254,9 @@ function renderNouveauDepotModal() {
             <input value="${d.clientNom}" oninput="STATE._newDepot.clientNom=this.value" placeholder="Nom *" style="width:100%;box-sizing:border-box;"/>
             <input value="${d.clientPrenom}" oninput="STATE._newDepot.clientPrenom=this.value" placeholder="Prénom" style="width:100%;box-sizing:border-box;"/>
           </div>
-          <input value="${d.clientTel}" oninput="STATE._newDepot.clientTel=this.value" placeholder="Téléphone *" style="width:100%;box-sizing:border-box;margin-bottom:14px;"/>
+          <input value="${d.clientTel}" oninput="STATE._newDepot.clientTel=this.value" placeholder="Téléphone *" style="width:100%;box-sizing:border-box;margin-bottom:8px;"/>
         `}
+        <input type="email" value="${(d.clientEmail||"").replace(/"/g,"&quot;")}" oninput="STATE._newDepot.clientEmail=this.value" placeholder="✉️ Email (pour lui envoyer le récapitulatif du dépôt)" style="width:100%;box-sizing:border-box;margin-bottom:14px;"/>
 
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
           <label style="font-size:12px;color:#888;">Date de dépôt</label>
