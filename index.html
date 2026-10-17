@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "17/10 · v99 (recherche par déposante en caisse)";
+const APP_VERSION = "17/10 · v100 (réimpression chèque cadeau)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -2516,7 +2516,7 @@ function renderApp() {
   ${STATE.showNouveauDepot ? renderNouveauDepotModal() : ""}
   ${STATE.showTicketsDuJour ? renderTicketsDuJourModal() : ""}
   ${STATE.showVenteChequeCadeau ? renderVenteChequeCadeauModal() : ""}
-  ${STATE.showCarteCadeau ? renderCarteCadeauModal() : ""}
+  ${STATE.showCarteCadeau ? renderCarteCadeauModal() : ""}${STATE.showReimpCheques && !STATE.showCarteCadeau ? renderReimpChequesModal() : ""}
   ${STATE.showCorrectionPaiement ? renderCorrectionPaiementModal() : ""}
   ${STATE.showVendeurSettings ? renderVendeurSettings() : ""}
   ${STATE.showAnnulLigne ? renderAnnulLigneModal() : ""}
@@ -4435,7 +4435,10 @@ function renderCaisse() {
           <button onclick="setState({showSuiviRetouches:true})" style="padding:9px 10px;background:#fff;color:#6a3d9a;border:1px solid #d9c2ee;border-radius:8px;cursor:pointer;font-size:12px;white-space:nowrap;">📋 Suivi${(STATE.retouches||[]).filter(r=>r.statut!=="recuperee").length?" ("+(STATE.retouches||[]).filter(r=>r.statut!=="recuperee").length+")":""}</button>
         </div>
         ${peutGererArtisans()?`<button onclick="ajouterArticleSansRef()" style="width:100%;padding:9px;background:#eef4fd;color:#185fa5;border:1px solid #b3d0f0;border-radius:8px;cursor:pointer;font-size:13px;margin-bottom:8px;font-weight:500;">🏷️ + Référence inexistante — prix à saisir</button>`:""}
-        <button onclick="ouvrirVenteChequeCadeau()" style="width:100%;padding:9px;background:#fbf3e6;color:#854f0b;border:1px solid #f0dcb0;border-radius:8px;cursor:pointer;font-size:13px;margin-bottom:8px;font-weight:500;">🎁 Vendre un chèque cadeau</button>
+        <div style="display:flex;gap:6px;margin-bottom:8px;">
+          <button onclick="ouvrirVenteChequeCadeau()" style="flex:1;padding:9px;background:#fbf3e6;color:#854f0b;border:1px solid #f0dcb0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">🎁 Vendre un chèque cadeau</button>
+          <button onclick="setState({showReimpCheques:true, _rechReimpChq:''})" title="Réimprimer un chèque cadeau déjà vendu" style="padding:9px 10px;background:#fff;color:#854f0b;border:1px solid #f0dcb0;border-radius:8px;cursor:pointer;font-size:12px;white-space:nowrap;">🖨️ Réimprimer</button>
+        </div>
         <div style="font-weight:500;font-size:13px;margin-bottom:8px;">🏷️ Remise globale panier</div>
         <!-- Bouton rapide réseaux sociaux -->
         <button onclick="appliquerRemiseReseaux()"
@@ -5177,6 +5180,38 @@ window.imprimerCartesCadeau = () => {
   imgs.forEach(im => im.complete ? fin() : (im.onload = im.onerror = fin));
   setTimeout(lancer, 2500);
 };
+
+// ── Réimpression d'un chèque cadeau déjà vendu (imprimante en panne, carte abîmée…) ──
+window.reimprimerChequeCadeau = (id) => {
+  let chq = (STATE.avoirs||[]).find(a=>a.id===id);
+  if(!chq) for(const v of (STATE.ventes||[])) { const c = (v.chequesCadeauxVendus||[]).find(x=>x.id===id); if(c) { chq = c; break; } }
+  if(!chq) { alert("Chèque cadeau introuvable."); return; }
+  if(chq.utilise || (chq.solde!=null && chq.solde<=0)) { if(!confirm("⚠️ Ce chèque cadeau a déjà été utilisé"+(chq.solde>0?"":" en totalité")+".\nLe réimprimer quand même ?")) return; }
+  STATE.showTicket = null; STATE.showReimpCheques = false;
+  STATE.showCarteCadeau = [chq]; render();
+};
+function renderReimpChequesModal() {
+  const q = normStr(STATE._rechReimpChq||"");
+  const tous = (STATE.avoirs||[]).filter(a=>a.typeAvoir==="cheque_cadeau_vendu").sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const liste = tous.filter(a => !q || normStr(a.code+" "+eur(a.montant)+" "+(a.client?((a.client.prenom||"")+" "+(a.client.nom||"")):"")).includes(q)).slice(0,30);
+  return `
+  <div class="modal-bg" onclick="if(event.target===this)setState({showReimpCheques:false})">
+    <div class="modal" style="max-width:520px;">
+      <div class="modal-header"><span style="font-weight:500;">🖨️ Réimprimer un chèque cadeau</span>
+        <button onclick="setState({showReimpCheques:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button></div>
+      <div class="modal-body">
+        <input id="rech-reimp-chq" value="${(STATE._rechReimpChq||"").replace(/"/g,"&quot;")}" oninput="STATE._rechReimpChq=this.value;clearTimeout(window._rrc);window._rrc=setTimeout(()=>{render();const e=document.getElementById('rech-reimp-chq');if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},250)" placeholder="🔍 Code, montant ou nom de la cliente…" style="width:100%;box-sizing:border-box;margin-bottom:10px;"/>
+        ${liste.length?liste.map(a=>{ const fini = a.utilise || (a.solde!=null && a.solde<=0);
+          return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:9px 4px;border-bottom:0.5px solid #f0ebee;${fini?"opacity:.55;":""}">
+            <div><div style="font-weight:600;color:#854f0b;">🎁 ${eur(a.montant)} <span style="font-family:monospace;font-size:12px;">${a.code}</span></div>
+              <div style="font-size:11px;color:#888;">Vendu le ${new Date(a.date).toLocaleDateString("fr-FR")} · valable jusqu'au ${new Date(a.expiration).toLocaleDateString("fr-FR")}${a.client?" · "+((a.client.prenom||"")+" "+(a.client.nom||"")).trim():""}${fini?" · <b>utilisé</b>":(a.solde!=null&&a.solde<a.montant?" · reste "+eur(a.solde):"")}</div></div>
+            <button onclick="reimprimerChequeCadeau('${a.id}')" style="background:#854f0b;color:#fff;border:none;border-radius:7px;padding:6px 12px;cursor:pointer;font-size:12px;white-space:nowrap;">🖨️ Imprimer</button>
+          </div>`; }).join(""):`<div style="text-align:center;color:#aaa;padding:20px 0;">${tous.length?"Aucun chèque cadeau ne correspond.":"Aucun chèque cadeau vendu pour l'instant."}</div>`}
+        <div style="font-size:10px;color:#aaa;margin-top:8px;">Le chèque réimprimé garde le même code : l'ancien exemplaire (s'il existe) reste valable, un seul des deux pourra être utilisé.</div>
+      </div>
+    </div>
+  </div>`;
+}
 function renderCarteCadeauModal() {
   const chqs = STATE.showCarteCadeau || [];
   if(chqs.length===0) return "";
@@ -5519,6 +5554,7 @@ function renderTicketModal() {
               <div style="display:flex;justify-content:center;margin:4px 0;">${genererSVGBarcode(chq.code)}</div>
               <div style="font-size:12px;font-family:monospace;color:#854f0b;font-weight:700;letter-spacing:1px;">${chq.code}</div>
               <div style="font-size:10px;color:#aaa;margin-top:2px;">Valable jusqu'au ${new Date(chq.expiration).toLocaleDateString("fr-FR")} · à conserver, à scanner en caisse</div>
+              <button class="no-print" onclick="reimprimerChequeCadeau('${chq.id}')" style="margin-top:6px;background:#854f0b;color:#fff;border:none;border-radius:6px;padding:4px 12px;font-size:11px;cursor:pointer;">🖨️ Réimprimer la carte cadeau</button>
             </div>
           `).join("")}
           ${(()=>{
@@ -9558,7 +9594,7 @@ function renderCRM() {
   ${STATE.showNouveauDepot ? renderNouveauDepotModal() : ""}
   ${STATE.showTicketsDuJour ? renderTicketsDuJourModal() : ""}
   ${STATE.showVenteChequeCadeau ? renderVenteChequeCadeauModal() : ""}
-  ${STATE.showCarteCadeau ? renderCarteCadeauModal() : ""}
+  ${STATE.showCarteCadeau ? renderCarteCadeauModal() : ""}${STATE.showReimpCheques && !STATE.showCarteCadeau ? renderReimpChequesModal() : ""}
   ${STATE.showCorrectionPaiement ? renderCorrectionPaiementModal() : ""}`;
 }
 
