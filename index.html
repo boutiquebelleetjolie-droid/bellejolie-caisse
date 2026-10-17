@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "17/10 · v100 (réimpression chèque cadeau)";
+const APP_VERSION = "18/10 · v101 (dépôts-vente synchronisés)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -638,6 +638,18 @@ function firestorePush(key, val) {
     .catch(err => console.error("Firestore push (fusion "+key+") error:", err));
     return;
   }
+  if(key==="bj_depots_vente" && Array.isArray(val)) {
+    const refD = _fbDb.collection("bellejolie").doc(cle);
+    refD.get().then(doc => {
+      const fusion = fusionnerDepotsVente(doc.exists ? (doc.data().value||[]) : [], val);
+      if(JSON.stringify(fusion)!==JSON.stringify(val)) {
+        STATE.depotsVente = fusion; try { localStorage.setItem(cle, JSON.stringify(fusion)); } catch{}
+        setTimeout(render, 0);
+      }
+      return refD.set({ value: fusion, maj: maintenant, device: DEVICE_ID });
+    }).catch(err => console.error("Firestore push (dépôts-vente) error:", err));
+    return;
+  }
   if(key==="bj_products" && Array.isArray(val)) {
     envoyerPhotosProduits(val);
     const refP = _fbDb.collection("bellejolie").doc(cle);
@@ -701,7 +713,21 @@ const CLES_SYNC_TEMPS_REEL = {
   bj_releve_tpe: "releveTPE",
   bj_journal_emails: "journalEmails",
   bj_couturiere: "couturiere",
+  bj_depots_vente: "depotsVente",
 };
+// Dépôts-vente : fusion lot par lot (jamais de remplacement en bloc), articles réunis
+function fusionnerDepotsVente(locaux, recus) {
+  const m = new Map((locaux||[]).filter(l=>l&&l.id).map(l=>[l.id, l]));
+  (recus||[]).forEach(r => { if(!r||!r.id) return; const l = m.get(r.id);
+    if(!l) { m.set(r.id, r); return; }
+    const f = {...l, ...r};
+    f.articleIds = [...new Set([...(l.articleIds||[]), ...(r.articleIds||[])])];
+    ["bonGenereId","montantBonGenere","clientEmail","recapEnvoyeLe","recapNbArticles","clientId"].forEach(k => { if(f[k]==null || f[k]==="") f[k] = l[k] ?? r[k]; });
+    if(l.recapEnvoyeLe && r.recapEnvoyeLe) f.recapEnvoyeLe = l.recapEnvoyeLe > r.recapEnvoyeLe ? l.recapEnvoyeLe : r.recapEnvoyeLe;
+    f.articlesPerdus = Math.min(l.articlesPerdus||0, r.articlesPerdus||0);
+    m.set(r.id, f); });
+  return [...m.values()];
+}
 const CLES_SYNC_PROTEGEES = new Set(["emailjsServiceId","emailjsTemplateId","emailjsPublicKey"]); // ne jamais écraser par une valeur vide venue d'un autre appareil
 window._syncBannerTimeout = null;
 function demarrerSyncTempsReel() {
@@ -749,6 +775,17 @@ function demarrerSyncTempsReel() {
           journaliserVentes(fusion);
           render(); afficherBandeauSyncDiscret();
         } catch(err) { console.error("Erreur fusion ventes:", err); }
+        return;
+      }
+      if(storageKey==="bj_depots_vente") {
+        try {
+          const recus = data.value||[];
+          const fusion = fusionnerDepotsVente(STATE.depotsVente||[], recus);
+          STATE.depotsVente = fusion;
+          localStorage.setItem(cleFirestore(storageKey), JSON.stringify(fusion));
+          if(JSON.stringify(fusion)!==JSON.stringify(recus)) firestorePush(storageKey, fusion);
+          render(); afficherBandeauSyncDiscret();
+        } catch(err) { console.error("Erreur fusion dépôts-vente:", err); }
         return;
       }
       // Journal des emails : fusion par envoi (jamais de remplacement)
