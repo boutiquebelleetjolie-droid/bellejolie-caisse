@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "17/10 · v98 (bilan dépôt-vente)";
+const APP_VERSION = "17/10 · v99 (recherche par déposante en caisse)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -2124,6 +2124,11 @@ function getVenteInfoArticleDepot(prodId) {
   return { vendu:false };
 }
 
+window.encaisserArticleDepot = (prodId) => {
+  const p = STATE.products.find(x=>x.id===prodId); if(!p) return;
+  if(!(p.stock>0)) { STATE.products = STATE.products.map(x=>x.id===prodId?{...x, stock:1}:x); lsSet("bj_products", STATE.products); }
+  STATE.tab = "caisse"; addToCart(prodId);
+};
 window.retirerArticleDepot = (prodId) => {
   if(!confirm("Retirer définitivement cet article du stock ? La cliente devra venir le récupérer.")) return;
   STATE.products = STATE.products.filter(p=>p.id!==prodId);
@@ -2316,6 +2321,7 @@ function renderDepotVente() {
           return `<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:4px 0;">
             <span>🕐 ${a.p.name}${marqueDepot(a.p)?" <i style='color:#888;'>("+marqueDepot(a.p)+")</i>":""} — ${eur(a.p.price)}</span>
             <span style="display:flex;gap:4px;">
+              <button onclick="encaisserArticleDepot('${a.pid}')" title="Mettre cet article dans le panier (si le code-barres ne passe pas)" style="background:#993556;color:#fff;border:none;border-radius:6px;padding:3px 8px;cursor:pointer;font-size:11px;">🛒 Encaisser</button>
               <button onclick="renouvelerArticleDepot('${a.pid}')" style="background:#eef4fd;color:#185fa5;border:none;border-radius:6px;padding:3px 8px;cursor:pointer;font-size:11px;">🔄 Renouveler</button>
               <button onclick="retirerArticleDepot('${a.pid}')" style="background:#fcebeb;color:#a32d2d;border:none;border-radius:6px;padding:3px 8px;cursor:pointer;font-size:11px;">🗑️ Retirer</button>
             </span>
@@ -5694,15 +5700,16 @@ window.searchProdInput = v => {
     // peu importe l'ordre) plutôt qu'une seule phrase exacte — et la marque est maintenant prise en compte.
     const mots = normStr(v).split(/\s+/).filter(Boolean);
     const matches = STATE.products.filter(p=>{
-      const texte = normStr(p.name+" "+p.ref+" "+(p.marque||""));
+      const texte = normStr(p.name+" "+p.ref+" "+(p.marque||"")+" "+(p.barcode||"")+(p.depotVente?" depot "+(p.depotClientPrenom||"")+" "+(p.depotClientNom||""):""));
       return mots.every(m=>texte.includes(m));
-    }).slice(0,12);
+    }).sort((a,b)=>(b.stock>0)-(a.stock>0)).slice(0,12);
     container.innerHTML = matches.length===0
       ? `<div style="font-size:13px;color:#aaa;padding:8px;">Aucun article trouvé</div>`
       : matches.map(p=>`
         <div onclick="addToCart('${p.id}')" style="padding:9px;border-radius:8px;border:0.5px solid #e8e0e4;background:#fff;cursor:${p.stock>0?"pointer":"not-allowed"};opacity:${p.stock===0?0.5:1};">
           <div style="font-size:12px;font-weight:500;">${p.name}</div>
-          <div style="font-size:11px;color:#888;">${p.marque?p.marque+" · ":""}${p.ref}</div>
+          <div style="font-size:11px;color:#888;">${[p.marque&&!/^Dépôt ·/.test(p.marque)?p.marque:"", p.depotVente?"":p.ref].filter(Boolean).join(" · ")}</div>
+          ${p.depotVente?`<div style="font-size:11px;color:#993556;">🔄 Dépôt · ${((p.depotClientPrenom||"")+" "+(p.depotClientNom||"")).trim()}${p.depotTaille?" · T."+p.depotTaille:""}</div>`:""}
           <div style="font-size:13px;font-weight:500;color:#993556;margin-top:3px;">${eur(p.price)}</div>
           <div style="font-size:11px;color:${p.stock<3?"#a32d2d":"#888"};">Stock: ${p.stock}</div>
         </div>
