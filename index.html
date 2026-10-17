@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "17/10 · v97 (dépôt au-delà de 10 articles)";
+const APP_VERSION = "17/10 · v98 (bilan dépôt-vente)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -2118,7 +2118,8 @@ function getVenteInfoArticleDepot(prodId) {
   for(const v of (STATE.ventes||[])) {
     if(v.annulee || v.test) continue;
     const item = (v.panier||[]).find(x=>!x.retour && (x.prodIdOriginal===prodId || x.id===prodId));
-    if(item) return { vendu:true, date:v.date, montant: item.price*(item.qty||1) };
+    if(item && ((v.articlesRetournes||{})[prodId]||0) >= (item.qty||1)) continue; // rapporté : de nouveau en vente
+    if(item) return { vendu:true, date:v.date, montant: item.price*(item.qty||1), vendeur: v.vendeur?.nom||"—", venteId: v.id };
   }
   return { vendu:false };
 }
@@ -2178,6 +2179,85 @@ window.genererBonAchatDepot = (lotId) => {
   alert("✅ Bon d'achat de "+eur(montantBon)+" généré (code "+bon.code+", valable 3 mois).");
 };
 
+
+// ── Bilan détaillé du dépôt-vente (par mois ou depuis le début) ──
+window.decalerMoisBilanDepot = (sens) => {
+  if(sens===0) { STATE._bilanDepotMois = STATE._bilanDepotMois==="tout" ? null : "tout"; render(); return; }
+  const base = (!STATE._bilanDepotMois || STATE._bilanDepotMois==="tout") ? new Date() : new Date(STATE._bilanDepotMois+"-15T12:00:00");
+  const d = new Date(base.getFullYear(), base.getMonth()+sens, 15);
+  STATE._bilanDepotMois = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); render();
+};
+function renderBilanDepotVente() {
+  if(!peutGererArtisans()) return "";
+  const lots = STATE.depotsVente||[];
+  if(!lots.length) return "";
+  const ouvert = STATE._bilanDepotOuvert!==false;
+  const tout = STATE._bilanDepotMois==="tout";
+  const ref = tout ? null : (STATE._bilanDepotMois ? new Date(STATE._bilanDepotMois+"-15T12:00:00") : new Date());
+  const dansPeriode = d => tout || (d && new Date(d).getFullYear()===ref.getFullYear() && new Date(d).getMonth()===ref.getMonth());
+  const libelle = tout ? "Depuis le début" : ref.toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
+  const pct = 100-DEPOT_COMMISSION_PCT;
+  // Tous les articles connus (y compris retirés : on garde leur identifiant dans le lot)
+  const parDeposante = {}, parVendeuse = {}, ventes = [];
+  let deposes = 0, enVente = 0, retires = 0;
+  lots.forEach(lot => {
+    const nom = ((lot.clientPrenom||"")+" "+(lot.clientNom||"")).trim()||"—";
+    const k = lot.clientId || nom;
+    const dp = parDeposante[k] = parDeposante[k] || {nom, deposes:0, vendus:0, ca:0, enVente:0, retires:0, bons:0, lots:0};
+    const ids = [...new Set(lot.articleIds||[])];
+    const lotDansPeriode = dansPeriode(lot.dateDepot+"T12:00:00");
+    if(lotDansPeriode) { dp.lots++; dp.deposes += ids.length; deposes += ids.length; }
+    if(lot.bonGenereId && dansPeriode((STATE.avoirs||[]).find(a=>a.id===lot.bonGenereId)?.date)) dp.bons += lot.montantBonGenere||0;
+    ids.forEach(pid => {
+      const p = STATE.products.find(x=>x.id===pid);
+      const info = getVenteInfoArticleDepot(pid);
+      if(info.vendu) {
+        if(!dansPeriode(info.date)) return;
+        dp.vendus++; dp.ca += info.montant;
+        const vd = parVendeuse[info.vendeur] = parVendeuse[info.vendeur] || {nb:0, ca:0}; vd.nb++; vd.ca += info.montant;
+        ventes.push({date:info.date, article:p?.name||"(article)", marque:p?marqueDepot(p):"", deposante:nom, vendeuse:info.vendeur, montant:info.montant, venteId:info.venteId});
+      } else if(!p) { if(lotDansPeriode) { dp.retires++; retires++; } }
+      else { dp.enVente++; enVente++; }
+    });
+  });
+  const nbVendus = ventes.length, ca = ventes.reduce((s,v)=>s+v.montant,0);
+  const bonsTotal = Object.values(parDeposante).reduce((s,d)=>s+d.bons,0);
+  const lignesDep = Object.values(parDeposante).filter(d=>d.deposes||d.vendus||d.enVente).sort((a,b)=>b.ca-a.ca||b.deposes-a.deposes);
+  const lignesVd = Object.entries(parVendeuse).sort((a,b)=>b[1].nb-a[1].nb);
+  ventes.sort((a,b)=>new Date(b.date)-new Date(a.date));
+  const th = "text-align:left;padding:6px;color:#888;font-weight:500;", td = "padding:6px;border-top:0.5px solid #f0ebee;", tdr = td+"text-align:right;white-space:nowrap;";
+  const tuile = (l, v, c) => `<div style="background:${c||"#faf6f8"};border-radius:9px;padding:9px 10px;"><div style="font-size:11px;color:#888;">${l}</div><div style="font-size:17px;font-weight:700;color:#993556;">${v}</div></div>`;
+  return `<div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px 16px;margin-bottom:14px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+      <button onclick="STATE._bilanDepotOuvert=${!ouvert};render()" style="background:none;border:none;font-weight:600;font-size:15px;cursor:pointer;padding:0;color:#222;">📊 Bilan du dépôt-vente ${ouvert?"▲":"▼"}</button>
+      ${ouvert?`<div style="display:flex;align-items:center;gap:6px;">
+        <button onclick="decalerMoisBilanDepot(-1)" style="background:#f5f0f2;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;">◀</button>
+        <span style="font-size:13px;font-weight:600;color:#993556;min-width:120px;text-align:center;text-transform:capitalize;">${libelle}</span>
+        <button onclick="decalerMoisBilanDepot(1)" style="background:#f5f0f2;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;">▶</button>
+        <button onclick="decalerMoisBilanDepot(0)" style="background:${tout?"#993556":"#fff"};color:${tout?"#fff":"#993556"};border:1px solid #e8c4d3;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;">${tout?"Par mois":"Tout"}</button>
+      </div>`:""}
+    </div>
+    ${ouvert?`
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:8px;margin:12px 0;">
+      ${tuile("Articles déposés", deposes)}${tuile("Articles vendus", nbVendus)}${tuile("Encore en vente", enVente)}${tuile("Taux de vente", (deposes?Math.round(nbVendus/deposes*100):0)+" %")}
+      ${tuile("CA dépôt-vente", eur(ca))}${tuile("Commission boutique ("+DEPOT_COMMISSION_PCT+" %)", eur(ca*DEPOT_COMMISSION_PCT/100), "#eaf3de")}${tuile("À reverser en bons ("+pct+" %)", eur(ca*pct/100))}${tuile("Bons déjà générés", eur(bonsTotal))}
+    </div>
+    ${retires?`<div style="font-size:11px;color:#888;margin-bottom:8px;">${retires} article(s) retiré(s) (rendus à la cliente).</div>`:""}
+    <div style="font-weight:600;font-size:13px;margin:6px 0;">👗 Par déposante</div>
+    <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:520px;">
+      <tr><th style="${th}">Cliente</th><th style="${th}text-align:right;">Déposés</th><th style="${th}text-align:right;">Vendus</th><th style="${th}text-align:right;">En vente</th><th style="${th}text-align:right;">CA</th><th style="${th}text-align:right;">À reverser</th><th style="${th}text-align:right;">Bon généré</th></tr>
+      ${lignesDep.map(d=>`<tr><td style="${td}"><strong>${d.nom}</strong></td><td style="${tdr}">${d.deposes}</td><td style="${tdr}">${d.vendus}</td><td style="${tdr}">${d.enVente}</td><td style="${tdr}font-weight:600;">${eur(d.ca)}</td><td style="${tdr}color:#993556;">${eur(d.ca*pct/100)}</td><td style="${tdr}">${d.bons?eur(d.bons):"—"}</td></tr>`).join("")||`<tr><td colspan="7" style="${td}color:#aaa;">Aucune activité sur la période.</td></tr>`}
+    </table></div>
+    <div style="font-weight:600;font-size:13px;margin:14px 0 6px;">🧑‍💼 Vendus par</div>
+    ${lignesVd.length?`<div style="display:flex;gap:8px;flex-wrap:wrap;">${lignesVd.map(([n,v])=>`<div style="background:#f5f0f2;border-radius:8px;padding:7px 12px;font-size:12px;"><strong>${n}</strong> · ${v.nb} article${v.nb>1?"s":""} · ${eur(v.ca)}</div>`).join("")}</div>`:`<div style="font-size:12px;color:#aaa;">Aucune vente sur la période.</div>`}
+    ${ventes.length?`<div style="font-weight:600;font-size:13px;margin:14px 0 6px;">🧾 Détail des ventes</div>
+    <div style="overflow-x:auto;max-height:320px;overflow-y:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:520px;">
+      <tr><th style="${th}">Date</th><th style="${th}">Article</th><th style="${th}">Déposante</th><th style="${th}">Vendu par</th><th style="${th}text-align:right;">Prix</th></tr>
+      ${ventes.map(v=>`<tr style="cursor:pointer;" onclick="voirTicketVenteId('${v.venteId}')"><td style="${td}white-space:nowrap;">${new Date(v.date).toLocaleDateString("fr-FR")}</td><td style="${td}">${v.article}${v.marque?` <span style="color:#999;">(${v.marque})</span>`:""}</td><td style="${td}">${v.deposante}</td><td style="${td}">${v.vendeuse}</td><td style="${tdr}font-weight:600;">${eur(v.montant)}</td></tr>`).join("")}
+    </table></div>`:""}
+    <div style="font-size:10px;color:#aaa;margin-top:8px;">Dépôts comptés à leur date de dépôt, ventes à leur date de vente. Un article rapporté redevient « en vente ». Cliquez une vente pour voir le ticket.</div>`:""}
+  </div>`;
+}
 function renderDepotVente() {
   const lots = [...(STATE.depotsVente||[])].sort((a,b)=>new Date(b.dateDepot)-new Date(a.dateDepot));
   const now = new Date();
@@ -2188,7 +2268,7 @@ function renderDepotVente() {
       <div style="font-size:12px;color:#888;">Portant seconde main — commission boutique ${DEPOT_COMMISSION_PCT}%, cycle de ${DEPOT_DUREE_JOURS} jours</div>
     </div>
     <button onclick="ouvrirNouveauDepot()" class="btn-primary" style="width:auto;padding:10px 18px;">➕ Nouveau dépôt</button>
-  </div>${bandeauDepotsPause()}`;
+  </div>${bandeauDepotsPause()}${renderBilanDepotVente()}`;
 
   if(lots.length===0) {
     html += `<div style="text-align:center;color:#aaa;padding:50px 20px;">Aucun dépôt enregistré pour le moment.</div>`;
