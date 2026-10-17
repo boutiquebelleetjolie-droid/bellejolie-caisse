@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "18/10 · v101 (dépôts-vente synchronisés)";
+const APP_VERSION = "18/10 · v102 (dépôts reconstitués)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -720,7 +720,7 @@ function fusionnerDepotsVente(locaux, recus) {
   const m = new Map((locaux||[]).filter(l=>l&&l.id).map(l=>[l.id, l]));
   (recus||[]).forEach(r => { if(!r||!r.id) return; const l = m.get(r.id);
     if(!l) { m.set(r.id, r); return; }
-    const f = {...l, ...r};
+    const f = r.reconstruit && !l.reconstruit ? {...r, ...l} : l.reconstruit && !r.reconstruit ? {...l, ...r, reconstruit:false} : {...l, ...r};
     f.articleIds = [...new Set([...(l.articleIds||[]), ...(r.articleIds||[])])];
     ["bonGenereId","montantBonGenere","clientEmail","recapEnvoyeLe","recapNbArticles","clientId"].forEach(k => { if(f[k]==null || f[k]==="") f[k] = l[k] ?? r[k]; });
     if(l.recapEnvoyeLe && r.recapEnvoyeLe) f.recapEnvoyeLe = l.recapEnvoyeLe > r.recapEnvoyeLe ? l.recapEnvoyeLe : r.recapEnvoyeLe;
@@ -2150,6 +2150,26 @@ window.envoyerRecapDepot = async (lotId) => {
     alert("❌ L'email n'a pas pu être envoyé. Vérifiez l'adresse et la connexion.");
   }
 };
+
+// Dépôts dont les articles sont arrivés sur cet appareil mais pas la fiche : on la reconstitue à partir des articles
+setTimeout(() => {
+  try {
+    const connus = new Set((STATE.depotsVente||[]).map(l=>l.id));
+    const parLot = {};
+    (STATE.products||[]).forEach(p => { if(!p.depotVente || !p.depotLotId || connus.has(p.depotLotId)) return;
+      const l = parLot[p.depotLotId] = parLot[p.depotLotId] || {id:p.depotLotId, clientId:null, clientNom:p.depotClientNom||"", clientPrenom:p.depotClientPrenom||"", clientTel:"",
+        dateDepot:p.dateDepot||dateLocaleStr(new Date(p.dateAjout||Date.now())), articleIds:[], statut:"actif", reconstruit:true};
+      l.articleIds.push(p.id); });
+    const nouveaux = Object.values(parLot);
+    if(!nouveaux.length) return;
+    nouveaux.forEach(l => { const c = (STATE.clients||[]).find(c => normStr(c.nom||"").trim()===normStr(l.clientNom).trim() && normStr(c.prenom||"").trim()===normStr(l.clientPrenom).trim());
+      if(c) { l.clientId = c.id; l.clientTel = c.tel||""; l.clientEmail = c.email||""; } });
+    STATE.depotsVente = [...(STATE.depotsVente||[]), ...nouveaux];
+    lsSet("bj_depots_vente", STATE.depotsVente);
+    console.log("Dépôts reconstitués à partir des articles :", nouveaux.length);
+    render();
+  } catch(e) { console.error(e); }
+}, 12000);
 function marqueDepot(p) { const m = (p.marque||"").trim(); return m && !/^Dépôt ·/.test(m) ? m : (p.depotMarque||""); }
 function getVenteInfoArticleDepot(prodId) {
   for(const v of (STATE.ventes||[])) {
