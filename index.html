@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "18/10 · v102 (dépôts reconstitués)";
+const APP_VERSION = "18/10 · v103 (calculs dépôt-vente clarifiés)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -2176,7 +2176,8 @@ function getVenteInfoArticleDepot(prodId) {
     if(v.annulee || v.test) continue;
     const item = (v.panier||[]).find(x=>!x.retour && (x.prodIdOriginal===prodId || x.id===prodId));
     if(item && ((v.articlesRetournes||{})[prodId]||0) >= (item.qty||1)) continue; // rapporté : de nouveau en vente
-    if(item) return { vendu:true, date:v.date, montant: item.price*(item.qty||1), vendeur: v.vendeur?.nom||"—", venteId: v.id };
+    if(item) { let paye = item.price*(item.qty||1); try { paye = calculerPrixPayeReel(v, item)*(item.qty||1); } catch{}
+      return { vendu:true, date:v.date, montant: item.price*(item.qty||1), paye: Math.round(paye*100)/100, vendeur: v.vendeur?.nom||"—", venteId: v.id }; }
   }
   return { vendu:false };
 }
@@ -2275,14 +2276,14 @@ function renderBilanDepotVente() {
       const info = getVenteInfoArticleDepot(pid);
       if(info.vendu) {
         if(!dansPeriode(info.date)) return;
-        dp.vendus++; dp.ca += info.montant;
+        dp.vendus++; dp.ca += info.montant; dp.paye = (dp.paye||0) + (info.paye??info.montant);
         const vd = parVendeuse[info.vendeur] = parVendeuse[info.vendeur] || {nb:0, ca:0}; vd.nb++; vd.ca += info.montant;
-        ventes.push({date:info.date, article:p?.name||"(article)", marque:p?marqueDepot(p):"", deposante:nom, vendeuse:info.vendeur, montant:info.montant, venteId:info.venteId});
+        ventes.push({date:info.date, article:p?.name||"(article)", marque:p?marqueDepot(p):"", deposante:nom, vendeuse:info.vendeur, montant:info.montant, paye:info.paye??info.montant, venteId:info.venteId});
       } else if(!p) { if(lotDansPeriode) { dp.retires++; retires++; } }
       else { dp.enVente++; enVente++; }
     });
   });
-  const nbVendus = ventes.length, ca = ventes.reduce((s,v)=>s+v.montant,0);
+  const nbVendus = ventes.length, ca = ventes.reduce((s,v)=>s+v.montant,0), caPaye = ventes.reduce((s,v)=>s+v.paye,0);
   const bonsTotal = Object.values(parDeposante).reduce((s,d)=>s+d.bons,0);
   const lignesDep = Object.values(parDeposante).filter(d=>d.deposes||d.vendus||d.enVente).sort((a,b)=>b.ca-a.ca||b.deposes-a.deposes);
   const lignesVd = Object.entries(parVendeuse).sort((a,b)=>b[1].nb-a[1].nb);
@@ -2302,7 +2303,7 @@ function renderBilanDepotVente() {
     ${ouvert?`
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:8px;margin:12px 0;">
       ${tuile("Articles déposés", deposes)}${tuile("Articles vendus", nbVendus)}${tuile("Encore en vente", enVente)}${tuile("Taux de vente", (deposes?Math.round(nbVendus/deposes*100):0)+" %")}
-      ${tuile("CA dépôt-vente", eur(ca))}${tuile("Commission boutique ("+DEPOT_COMMISSION_PCT+" %)", eur(ca*DEPOT_COMMISSION_PCT/100), "#eaf3de")}${tuile("À reverser en bons ("+pct+" %)", eur(ca*pct/100))}${tuile("Bons déjà générés", eur(bonsTotal))}
+      ${tuile("Prix de vente des articles", eur(ca))}${tuile("CA encaissé (remises déduites)", eur(caPaye))}${tuile("Part boutique (encaissé − à reverser)", eur(caPaye-ca*pct/100), "#eaf3de")}${tuile("À reverser en bons ("+pct+" %)", eur(ca*pct/100))}${tuile("Bons déjà générés", eur(bonsTotal))}
     </div>
     ${retires?`<div style="font-size:11px;color:#888;margin-bottom:8px;">${retires} article(s) retiré(s) (rendus à la cliente).</div>`:""}
     <div style="font-weight:600;font-size:13px;margin:6px 0;">👗 Par déposante</div>
@@ -2315,9 +2316,9 @@ function renderBilanDepotVente() {
     ${ventes.length?`<div style="font-weight:600;font-size:13px;margin:14px 0 6px;">🧾 Détail des ventes</div>
     <div style="overflow-x:auto;max-height:320px;overflow-y:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:520px;">
       <tr><th style="${th}">Date</th><th style="${th}">Article</th><th style="${th}">Déposante</th><th style="${th}">Vendu par</th><th style="${th}text-align:right;">Prix</th></tr>
-      ${ventes.map(v=>`<tr style="cursor:pointer;" onclick="voirTicketVenteId('${v.venteId}')"><td style="${td}white-space:nowrap;">${new Date(v.date).toLocaleDateString("fr-FR")}</td><td style="${td}">${v.article}${v.marque?` <span style="color:#999;">(${v.marque})</span>`:""}</td><td style="${td}">${v.deposante}</td><td style="${td}">${v.vendeuse}</td><td style="${tdr}font-weight:600;">${eur(v.montant)}</td></tr>`).join("")}
+      ${ventes.map(v=>`<tr style="cursor:pointer;" onclick="voirTicketVenteId('${v.venteId}')"><td style="${td}white-space:nowrap;">${new Date(v.date).toLocaleDateString("fr-FR")}</td><td style="${td}">${v.article}${v.marque?` <span style="color:#999;">(${v.marque})</span>`:""}</td><td style="${td}">${v.deposante}</td><td style="${td}">${v.vendeuse}</td><td style="${tdr}font-weight:600;">${eur(v.montant)}${v.paye<v.montant-0.009?`<div style="font-size:10px;font-weight:400;color:#888;">encaissé ${eur(v.paye)}</div>`:""}</td></tr>`).join("")}
     </table></div>`:""}
-    <div style="font-size:10px;color:#aaa;margin-top:8px;">Dépôts comptés à leur date de dépôt, ventes à leur date de vente. Un article rapporté redevient « en vente ». Cliquez une vente pour voir le ticket.</div>`:""}
+    <div style="font-size:10px;color:#aaa;margin-top:8px;">Le bon de la déposante est calculé sur le prix de vente affiché (${pct} %) ; les remises accordées en caisse (fidélité, réseaux…) sont à la charge de la boutique. Dépôts comptés à leur date de dépôt, ventes à leur date de vente. Un article rapporté redevient « en vente ». Cliquez une vente pour voir le ticket.</div>`:""}
   </div>`;
 }
 function renderDepotVente() {
@@ -2363,7 +2364,7 @@ function renderDepotVente() {
 
       ${lot.articlesPerdus>0?`<div style="background:#fcebeb;color:#a32d2d;border-radius:8px;padding:8px 10px;font-size:12px;margin-bottom:8px;">⚠️ ${lot.articlesPerdus} article(s) de ce dépôt n'ont pas été enregistrés (bug corrigé). Ressaisissez-les avec « ➕ Ajouter des articles ».</div>`:""}
       <div style="font-size:12px;color:#555;margin-bottom:8px;">
-        📦 ${presents.length} article(s) en stock · ✅ ${vendus.length} vendu(s) pour ${eur(totalVentesLot)} · 🕐 ${enVente.length} encore en vente
+        📦 ${presents.length} article(s) déposé(s) · ✅ ${vendus.length} vendu(s) pour ${eur(totalVentesLot)}${(()=>{const p=vendus.reduce((s,a)=>s+(a.venteInfo.paye??a.venteInfo.montant),0);return p<totalVentesLot-0.009?` <span style="color:#888;">(encaissé ${eur(p)} après remises)</span>`:"";})()} · 🕐 ${enVente.length} encore en vente
       </div>
 
       <div style="border-top:0.5px solid #f0ebee;padding-top:8px;">
@@ -2371,8 +2372,8 @@ function renderDepotVente() {
           if(!a.p) return `<div style="font-size:12px;color:#bbb;padding:4px 0;text-decoration:line-through;">Article retiré</div>`;
           if(a.venteInfo?.vendu) {
             return `<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;color:#3b6d11;">
-              <span>✅ ${a.p.name}${marqueDepot(a.p)?" <i style='color:#888;'>("+marqueDepot(a.p)+")</i>":""} — vendu le ${new Date(a.venteInfo.date).toLocaleDateString("fr-FR")}</span>
-              <strong>${eur(a.venteInfo.montant)}</strong>
+              <span>✅ ${a.p.name}${marqueDepot(a.p)?" <i style='color:#888;'>("+marqueDepot(a.p)+")</i>":""} — vendu le ${new Date(a.venteInfo.date).toLocaleDateString("fr-FR")} par ${a.venteInfo.vendeur}</span>
+              <strong style="text-align:right;">${eur(a.venteInfo.montant)}${a.venteInfo.paye!=null&&a.venteInfo.paye<a.venteInfo.montant-0.009?`<div style="font-size:10px;font-weight:400;color:#888;">encaissé ${eur(a.venteInfo.paye)}</div>`:""}</strong>
             </div>`;
           }
           return `<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:4px 0;">
@@ -10933,7 +10934,7 @@ function renderStats() {
       <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;">
         <div style="font-weight:500;font-size:13px;margin-bottom:4px;">🔄 Dépôt-vente</div>
         <div style="font-size:22px;font-weight:700;color:#185fa5;margin-bottom:2px;">${eur(caDepotVente)}</div>
-        <div style="font-size:11px;color:#888;margin-bottom:12px;">${ca>0?((caDepotVente/ca*100).toFixed(1)+"% du CA total"):"—"} · déjà inclus dans le CA ci-dessus</div>
+        <div style="font-size:11px;color:#888;margin-bottom:12px;">${ca>0?((caDepotVente/ca*100).toFixed(1)+"% du CA total"):"—"} · montant encaissé, remises déduites · déjà inclus dans le CA ci-dessus</div>
         <div style="font-weight:500;font-size:12px;margin-bottom:8px;border-top:0.5px solid #f0ebee;padding-top:10px;">Top clientes déposantes</div>
         ${topClientsDepot.length===0?`<div style="color:#aaa;font-size:12px;">Aucune vente en dépôt-vente</div>`:topClientsDepot.map(([nom,montant],i)=>`
           <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;border-bottom:0.5px solid #e8e0e4;font-size:12px;">
