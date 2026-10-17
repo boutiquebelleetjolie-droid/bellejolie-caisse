@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "16/10 · v95 (mail récap dépôt-vente)";
+const APP_VERSION = "17/10 · v96 (dépôt-vente en pause)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -1882,6 +1882,40 @@ window.pinKey = (k) => {
 const DEPOT_COMMISSION_PCT = 20; // La boutique garde 20%, la cliente récupère 80% en bon d'achat
 const DEPOT_DUREE_JOURS = 30;
 
+// ── Dépôts en cours de saisie mis en pause (pour encaisser entre-temps) ──
+function cleDepotsPause() { return "bj_depots_pause__"+BOUTIQUE_ID_ACTUEL; }
+function depotsEnPause() { try { return JSON.parse(localStorage.getItem(cleDepotsPause())||"[]"); } catch { return []; } }
+function sauverDepotsPause(l) { try { localStorage.setItem(cleDepotsPause(), JSON.stringify(l)); } catch{} }
+function depotADuContenu(d) { return !!d && (!!(d.clientNom||"").trim() || !!(d.clientPrenom||"").trim() || (d.articles||[]).some(a=>(a.nom||"").trim()||a.prix)); }
+window.mettreDepotEnPause = (silencieux) => {
+  const d = STATE._newDepot;
+  if(depotADuContenu(d)) {
+    const brouillon = {...d, pauseId: d.pauseId || uid("PAUSE"), pauseLe: new Date().toISOString(), pausePar: STATE.vendeur?.nom||""};
+    sauverDepotsPause([...depotsEnPause().filter(x=>x.pauseId!==brouillon.pauseId), brouillon]);
+  }
+  STATE.showNouveauDepot = false; STATE._newDepot = null;
+  if(!silencieux && depotADuContenu(d)) STATE.tab = "caisse";
+  render();
+};
+window.reprendreDepot = (pauseId) => {
+  const b = depotsEnPause().find(x=>x.pauseId===pauseId); if(!b) return;
+  if(STATE.showNouveauDepot && STATE._newDepot && STATE._newDepot.pauseId!==pauseId) mettreDepotEnPause(true);
+  STATE._newDepot = {...b, articles: (b.articles&&b.articles.length) ? b.articles : [{nom:"",marque:"",prix:"",categorie:"",taille:""}]};
+  STATE.tab = "depotvente"; STATE.showNouveauDepot = true; render();
+};
+window.supprimerDepotPause = (pauseId) => {
+  if(!confirm("Abandonner ce dépôt en pause ? Les articles saisis seront perdus.")) return;
+  sauverDepotsPause(depotsEnPause().filter(x=>x.pauseId!==pauseId)); render();
+};
+function bandeauDepotsPause() {
+  const l = depotsEnPause(); if(!l.length) return "";
+  return l.map(b => { const n = (b.articles||[]).filter(a=>(a.nom||"").trim()).length;
+    return '<div style="background:#fdf3f7;border:1px solid #e8c4d3;border-radius:9px;padding:9px 14px;margin-bottom:6px;font-size:13px;color:#993556;display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">'
+      +'<span>⏸️ Dépôt-vente en pause : <strong>'+((b.clientPrenom||"")+" "+(b.clientNom||"")).trim().replace(/</g,"&lt;")+'</strong>'+(b.lotExistantId?' (ajout)':'')+' — '+n+' article'+(n>1?'s':'')+' saisi'+(n>1?'s':'')+' <span style="color:#b98aa0;font-size:11px;">· '+new Date(b.pauseLe).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})+'</span></span>'
+      +'<span style="display:flex;gap:6px;"><button onclick="reprendreDepot(\''+b.pauseId+'\')" style="padding:4px 12px;background:#993556;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;">▶ Reprendre</button>'
+      +'<button onclick="supprimerDepotPause(\''+b.pauseId+'\')" title="Abandonner" style="padding:4px 8px;background:none;border:1px solid #e8c4d3;color:#a32d2d;border-radius:6px;cursor:pointer;font-size:12px;">🗑️</button></span></div>';
+  }).join("");
+}
 window.ouvrirAjoutDepot = (lotId) => {
   const lot = (STATE.depotsVente||[]).find(l=>l.id===lotId); if(!lot) return;
   STATE._newDepot = { lotExistantId: lot.id, clientId: lot.clientId||null, clientNom: lot.clientNom||"", clientPrenom: lot.clientPrenom||"", clientTel: lot.clientTel||"", clientEmail: lot.clientEmail||"",
@@ -1976,6 +2010,7 @@ window.enregistrerDepot = () => {
   }
   lsSet("bj_depots_vente", STATE.depotsVente);
 
+  if(d.pauseId) sauverDepotsPause(depotsEnPause().filter(x=>x.pauseId!==d.pauseId));
   STATE.showNouveauDepot = false;
   render();
   const lotFinal = STATE.depotsVente.find(l=>l.id===lotId);
@@ -2149,7 +2184,7 @@ function renderDepotVente() {
       <div style="font-size:12px;color:#888;">Portant seconde main — commission boutique ${DEPOT_COMMISSION_PCT}%, cycle de ${DEPOT_DUREE_JOURS} jours</div>
     </div>
     <button onclick="ouvrirNouveauDepot()" class="btn-primary" style="width:auto;padding:10px 18px;">➕ Nouveau dépôt</button>
-  </div>`;
+  </div>${bandeauDepotsPause()}`;
 
   if(lots.length===0) {
     html += `<div style="text-align:center;color:#aaa;padding:50px 20px;">Aucun dépôt enregistré pour le moment.</div>`;
@@ -2223,11 +2258,14 @@ function renderNouveauDepotModal() {
     : [];
 
   return `
-  <div class="modal-bg" onclick="if(event.target===this)setState({showNouveauDepot:false})">
+  <div class="modal-bg" onclick="if(event.target===this)mettreDepotEnPause(true)">
     <div class="modal" style="max-width:640px;">
       <div class="modal-header">
         <span style="font-weight:500;">${d.lotExistantId?"➕ Ajouter des articles — "+d.clientPrenom+" "+d.clientNom:"🔄 Nouveau dépôt-vente"}</span>
-        <button onclick="setState({showNouveauDepot:false})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <button onclick="mettreDepotEnPause()" title="Garder la saisie de côté pour encaisser, puis reprendre" style="background:#fdf3f7;border:1px solid #e8c4d3;color:#993556;border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;font-weight:500;">⏸️ Mettre en pause</button>
+          <button onclick="mettreDepotEnPause(true)" style="background:none;border:none;font-size:24px;color:#aaa;">×</button>
+        </div>
       </div>
       <div class="modal-body">
 
@@ -3845,6 +3883,7 @@ function renderCaisse() {
   }
   const auj0 = dateLocaleStr();
   const retAttendues = (STATE.retouches||[]).filter(r=>r.statut==="encours" && r.dateRetour && r.dateRetour<=auj0);
+  alerteHtml += bandeauDepotsPause();
   if(retAttendues.length) alerteHtml += '<div style="background:#f3e8fc;border:1px solid #d9c2ee;border-radius:9px;padding:10px 14px;margin-bottom:6px;font-size:13px;color:#6a3d9a;display:flex;align-items:center;justify-content:space-between;"><span>✂️ '+retAttendues.length+' retouche(s) attendue(s) aujourd\'hui ou en retard</span><button onclick="setState({showSuiviRetouches:true})" style="padding:4px 10px;background:#6a3d9a;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:500;">→ Suivi</button></div>';
   // Ticket en cours : restauré après un rechargement, ou resté non encaissé depuis plus de 10 min
   if(STATE.panier && STATE.panier.length) {
