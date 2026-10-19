@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "18/10 · v104 (remise article dépôt-vente)";
+const APP_VERSION = "19/10 · v105 (scanner fiabilisé)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -5753,39 +5753,44 @@ window.fermerScannerCamera = () => {
   render();
 };
 
-window.bcKeyDown = e => {
-  if(e.key!=="Enter") return;
-  const q=STATE.searchBC.trim();
-  if(!q) return;
-  // Essayer d'abord comme avoir
-  if(scanAvoir(q)) { STATE.searchBC=""; render(); return; }
-  // Sinon article
-  // Chercher d'abord dans les codes-barres de variantes
-  let found = false;
-  for(const prod of STATE.products) {
-    const bv = prod.barcodeVariantes||{};
-    for(const [varKey, bc] of Object.entries(bv)) {
-      if(bc === q) {
-        // Décoder la variante depuis la clé "taille_couleur"
-        const parts = varKey.split('_');
-        const taille = parts[0]==='_'?'':parts[0];
-        const couleur = parts.slice(1).join('_').replace(/^_/,'');
-        addToCart(prod.id, taille||null, couleur||null);
-        STATE.searchBC=""; render();
-        found = true;
-        break;
+// ── Lecture des codes-barres : tolère un scanner réglé en clavier QWERTY sur un ordinateur AZERTY
+// (Verr. Maj désactivé → « &é"'(-è_çà » au lieu de « 1234567890 »), les espaces et majuscules/minuscules.
+const AZERTY_CHIFFRES = {"&":"1","é":"2","\"":"3","'":"4","(":"5","-":"6","è":"7","_":"8","ç":"9","à":"0","§":"6","!":"8"};
+function variantesCodeScan(code) {
+  const c = String(code||"").trim();
+  const out = [c];
+  const sansEsp = c.replace(/\s+/g,""); if(sansEsp!==c) out.push(sansEsp);
+  if(/[&é"'(\-è_çà§!]/.test(sansEsp)) { const conv = sansEsp.split("").map(ch=>AZERTY_CHIFFRES[ch]??ch).join(""); if(conv!==sansEsp) out.push(conv); }
+  return [...new Set(out)].filter(Boolean);
+}
+function trouverParCodeBarre(code) {
+  for(const q of variantesCodeScan(code)) {
+    const ql = q.toLowerCase();
+    for(const prod of (STATE.products||[])) {
+      for(const [varKey, bc] of Object.entries(prod.barcodeVariantes||{})) {
+        if(String(bc||"").trim()===q) { const parts = varKey.split('_'); return {p:prod, taille:parts[0]||null, couleur:parts.slice(1).join('_').replace(/^_/,'')||null, code:q}; }
       }
     }
-    if(found) break;
+    const p = (STATE.products||[]).find(x => String(x.barcode||"").trim()===q || String(x.ref||"")===q || String(x.ref||"").toLowerCase()===ql || String(x.ref||"").toLowerCase()===("ref-"+ql));
+    if(p) return {p, taille:null, couleur:null, code:q};
   }
-  if(found) return;
-  
-  // Chercher par code-barre principal ou référence
-  const p=STATE.products.find(x=>x.barcode===q||x.ref===q||x.ref.toLowerCase()===("ref-"+q).toLowerCase());
-  if(p&&p.stock>0){addToCart(p.id);STATE.searchBC="";}
-  else if(p){alert("Stock insuffisant pour : "+p.name);STATE.searchBC="";}
-  else {alert("Produit introuvable : "+q);STATE.searchBC="";}
+  return null;
+}
+function scanAvoirTolerant(code) { for(const q of variantesCodeScan(code)) { if(scanAvoir(q)) return true; } return false; }
+window.bcKeyDown = e => {
+  if(e.key!=="Enter") return;
+  const q=String(STATE.searchBC||e.target?.value||"").trim();
+  if(!q) return;
+  e.preventDefault();
+  try {
+    if(scanAvoirTolerant(q)) { STATE.searchBC=""; render(); return; }
+    const t = trouverParCodeBarre(q);
+    if(t && (t.p.stock||0)>0) { if(t.taille||t.couleur) addToCart(t.p.id, t.taille, t.couleur); else addToCart(t.p.id); STATE.searchBC=""; }
+    else if(t) { alert("Stock insuffisant pour : "+t.p.name); STATE.searchBC=""; }
+    else { alert("Produit introuvable : "+q); STATE.searchBC=""; }
+  } catch(err) { console.error("Scan :", err); alert("Erreur pendant la lecture du code : "+err.message); STATE.searchBC=""; }
   render();
+  setTimeout(()=>{ const i=document.getElementById("bc-input"); if(i) i.focus(); }, 50);
 };
 
 window.searchProdInput = v => {
@@ -20671,16 +20676,9 @@ document.addEventListener("click", e => {
       // Fermer clavier virtuel si ouvert
       document.activeElement?.blur();
       // Chercher l'article
-      if(scanAvoir(code)) { STATE.searchBC=""; render(); return; }
-      let varTaille = null, varCouleur = null;
-      let p = null;
-      for(const prod of STATE.products) {
-        for(const [varKey, bc] of Object.entries(prod.barcodeVariantes||{})) {
-          if(bc===code) { const parts = varKey.split('_'); varTaille = parts[0]||null; varCouleur = parts.slice(1).join('_').replace(/^_/,'')||null; p = prod; break; }
-        }
-        if(p) break;
-      }
-      if(!p) p = STATE.products.find(x=>x.barcode===code||x.ref===code);
+      if(scanAvoirTolerant(code)) { STATE.searchBC=""; render(); return; }
+      const t = trouverParCodeBarre(code);
+      const p = t ? t.p : null, varTaille = t ? t.taille : null, varCouleur = t ? t.couleur : null;
       if(p && (p.stock||0)>0) {
         if(varTaille||varCouleur) addToCart(p.id, varTaille, varCouleur); else addToCart(p.id);
         STATE.searchBC = "";
