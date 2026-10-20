@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "20/10 · v107 (diagnostic synchro)";
+const APP_VERSION = "20/10 · v108 (stats dépôt-vente)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -10789,11 +10789,13 @@ function renderStats() {
   const clientsDepotVenteM = {};
   vf.forEach(v=>v.panier.filter(x=>!x.retour).forEach(i=>{
     const pid = i.prodIdOriginal || i.id;
-    const p = prodMapAll[pid];
-    if(p?.depotVente) {
+    const p = prodMapAll[pid] || ((STATE.depotsVente||[]).some(l=>(l.articleIds||[]).includes(pid)) ? {depotVente:true} : null);
+    const src = (p?.depotVente ? p : null) || (i.depotVente ? i : null);
+    if(src) {
       const montant = calculerPrixPayeReel(v, i) * (i.qty||1);
       caDepotVente += montant;
-      const nomCli = ((p.depotClientPrenom||"")+" "+(p.depotClientNom||"")).trim() || "Cliente inconnue";
+      const lot = (STATE.depotsVente||[]).find(l=>(l.articleIds||[]).includes(pid));
+      const nomCli = ((src.depotClientPrenom||i.depotClientPrenom||lot?.clientPrenom||"")+" "+(src.depotClientNom||i.depotClientNom||lot?.clientNom||"")).trim() || "Cliente inconnue";
       clientsDepotVenteM[nomCli] = (clientsDepotVenteM[nomCli]||0) + montant;
     }
   }));
