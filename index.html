@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "20/10 · v111 (détection mauvaise boutique)";
+const APP_VERSION = "20/10 · v112 (diagnostic détaillé)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -3453,7 +3453,20 @@ window.verifierMAJCloud = async () => {
     await rattraperSync("large");
     syncRecu();
     const nouvelles = (STATE.ventes||[]).filter(v=>!avant.has(v.id));
-    envoyerEtatAppareil();
+    // Écriture directe de l'état de cet appareil (pour vérifier qu'il arrive aussi à ÉCRIRE dans le cloud)
+    let ecritureKO = "";
+    try { await _fbDb.collection("bellejolie").doc("etat_appareil__"+DEVICE_ID).set({ eaBoutique: BOUTIQUE_ID_ACTUEL, type: typeAppareil(), vendeur: STATE.vendeur?.nom||"", version: APP_VERSION,
+      vu: new Date().toISOString(), enAttente: nbVentesEnAttenteEnvoi(), journalPret: !!window._journalPret, enLigne: navigator.onLine, device: DEVICE_ID,
+      derniereVente: (STATE.ventes||[]).reduce((m,v)=>(v && v.date && (!m || v.date>m)) ? v.date : m, null) }); }
+    catch(e) { ecritureKO = "\n\n⚠️ Cet appareil n'arrive pas à ÉCRIRE dans le cloud : "+explicationErreurSync(e?.code||"", String(e?.message||e)); }
+    const auj = dateLocaleStr();
+    const fmtT = v => new Date(v.date).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})+" "+eur(v.total)+(v.vendeur?.nom?" ("+v.vendeur.nom+")":"");
+    const cloudAuj = journal.filter(v=>v && v.date && dateLocaleStr(new Date(v.date))===auj && !v.test);
+    const localAuj = (STATE.ventes||[]).filter(v=>v && v.date && dateLocaleStr(new Date(v.date))===auj && !v.test);
+    const derniersLocaux = [...(STATE.ventes||[])].filter(v=>v&&v.date&&!v.test).sort((a,b)=>String(b.date).localeCompare(String(a.date))).slice(0,3);
+    const resume = "\n\n📊 Aujourd'hui : "+cloudAuj.length+" ticket(s) dans le cloud ("+eur(cloudAuj.reduce((s,v)=>s+(v.total||0),0))+"), "+localAuj.length+" sur cet appareil ("+eur(localAuj.reduce((s,v)=>s+(v.total||0),0))+")."
+      +"\nDerniers tickets sur cet appareil :\n"+derniersLocaux.map(v=>"  · "+fmtT(v)).join("\n")
+      +"\nBoutique de cet appareil : "+nomBoutiqueCourt(BOUTIQUE_ID_ACTUEL)+" · version "+APP_VERSION;
     let etats = ""; try { etats = texteEtatsAppareils(await lireEtatsAppareils()); } catch(e) { console.error(e); }
     // Ventes du jour enregistrées sur l'AUTRE boutique (appareil réglé sur la mauvaise boutique ?)
     let autres = "";
@@ -3466,7 +3479,7 @@ window.verifierMAJCloud = async () => {
     alert((nouvelles.length
       ? "✅ "+nouvelles.length+" ticket(s) récupéré(s) depuis les autres appareils :\n\n"+nouvelles.slice(-12).map(v=>"• "+new Date(v.date).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})+" — "+eur(v.total)+(v.vendeur?.nom?" ("+v.vendeur.nom+")":"")).join("\n")
       : "✅ Cet appareil est à jour : "+journal.length+" tickets dans le cloud, tous présents ici.\n\nSi des ventes manquent encore, l'appareil de la boutique ne les a pas envoyées.")
-      + autres + (etats ? "\n\n📡 État des appareils :\n"+etats : "\n\n📡 Les autres appareils n'ont pas encore donné de nouvelles (ils le feront après leur mise à jour)."));
+      + resume + ecritureKO + autres + (etats ? "\n\n📡 État des appareils :\n"+etats : "\n\n📡 Les autres appareils n'ont pas encore donné de nouvelles (ils le feront après leur mise à jour)."));
   } catch(err) {
     console.error("Erreur vérification cloud:", err);
     alert("❌ Synchronisation impossible : "+explicationErreurSync(err?.code||"", String(err?.message||err)));
