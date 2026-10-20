@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "20/10 · v110 (état des appareils)";
+const APP_VERSION = "20/10 · v111 (détection mauvaise boutique)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -518,7 +518,7 @@ setInterval(envoyerEtatAppareil, 5*60*1000);
 window.addEventListener("online", envoyerEtatAppareil);
 async function lireEtatsAppareils() {
   if(!_fbDb) return [];
-  const snap = await _fbDb.collection("bellejolie").where("eaBoutique","==",BOUTIQUE_ID_ACTUEL).get();
+  const snap = await _fbDb.collection("bellejolie").where("eaBoutique","in",BOUTIQUES.map(b=>b.id)).get();
   const l = []; snap.forEach(d => { const x = d.data(); if(x) l.push(x); });
   return l.filter(x => x.vu && Date.now()-new Date(x.vu).getTime() < 7*864e5).sort((a,b)=>String(b.vu).localeCompare(String(a.vu)));
 }
@@ -526,6 +526,7 @@ function texteEtatsAppareils(l) {
   const ago = iso => { if(!iso) return "jamais"; const m = Math.round((Date.now()-new Date(iso).getTime())/60000);
     return m<2 ? "à l'instant" : m<60 ? "il y a "+m+" min" : m<1440 ? "il y a "+Math.round(m/60)+" h" : new Date(iso).toLocaleDateString("fr-FR"); };
   return l.map(x => (x.device===DEVICE_ID?"• Cet appareil":"• "+x.type+(x.vendeur?" ("+x.vendeur+")":""))
+    +(x.eaBoutique!==BOUTIQUE_ID_ACTUEL?" ⚠️ RÉGLÉ SUR "+nomBoutiqueCourt(x.eaBoutique).toUpperCase():"")
     +" : vu "+ago(x.vu)+(x.enLigne===false?" HORS LIGNE":"")
     +(x.enAttente>0?" · ⚠️ "+x.enAttente+" vente(s) pas encore envoyée(s)":" · tout envoyé")
     +(x.derniereVente?" · dernière vente "+new Date(x.derniereVente).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"")
@@ -3453,12 +3454,19 @@ window.verifierMAJCloud = async () => {
     syncRecu();
     const nouvelles = (STATE.ventes||[]).filter(v=>!avant.has(v.id));
     envoyerEtatAppareil();
-    let etats = ""; try { etats = texteEtatsAppareils(await lireEtatsAppareils()); } catch{}
+    let etats = ""; try { etats = texteEtatsAppareils(await lireEtatsAppareils()); } catch(e) { console.error(e); }
+    // Ventes du jour enregistrées sur l'AUTRE boutique (appareil réglé sur la mauvaise boutique ?)
+    let autres = "";
+    try { for(const b of BOUTIQUES.filter(x=>x.id!==BOUTIQUE_ID_ACTUEL)) {
+      const j = await lireJournalVentes(b.id); const auj = dateLocaleStr();
+      const duJour = j.filter(v => v && v.date && dateLocaleStr(new Date(v.date))===auj && !v.test);
+      if(duJour.length) autres += "\n\n🚨 "+duJour.length+" vente(s) aujourd'hui enregistrée(s) sur "+nomBoutiqueCourt(b.id).toUpperCase()+" ("+eur(duJour.reduce((s,v)=>s+(v.total||0),0))+") : un appareil du magasin est réglé sur la mauvaise boutique !";
+    } } catch(e) { console.error(e); }
     render();
     alert((nouvelles.length
       ? "✅ "+nouvelles.length+" ticket(s) récupéré(s) depuis les autres appareils :\n\n"+nouvelles.slice(-12).map(v=>"• "+new Date(v.date).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})+" — "+eur(v.total)+(v.vendeur?.nom?" ("+v.vendeur.nom+")":"")).join("\n")
       : "✅ Cet appareil est à jour : "+journal.length+" tickets dans le cloud, tous présents ici.\n\nSi des ventes manquent encore, l'appareil de la boutique ne les a pas envoyées.")
-      + (etats ? "\n\n📡 État des appareils de la boutique :\n"+etats : "\n\n📡 Les autres appareils n'ont pas encore donné de nouvelles (ils le feront après leur mise à jour)."));
+      + autres + (etats ? "\n\n📡 État des appareils :\n"+etats : "\n\n📡 Les autres appareils n'ont pas encore donné de nouvelles (ils le feront après leur mise à jour)."));
   } catch(err) {
     console.error("Erreur vérification cloud:", err);
     alert("❌ Synchronisation impossible : "+explicationErreurSync(err?.code||"", String(err?.message||err)));
@@ -6409,6 +6417,11 @@ window.openPayModal = () => {
 };
 
 window.validerPaiement = () => {
+  // Garde-fou : Maurepas n'ouvre que le 21/11/2026 — une vente là-bas avant est presque sûrement une erreur de boutique
+  if(BOUTIQUE_ID_ACTUEL==="boutique_2" && new Date() < new Date("2026-11-21T00:00:00") && !window._okVenteMaurepas) {
+    if(!confirm("⚠️ Cette caisse est réglée sur MAUREPAS, qui n'est pas encore ouverte.\n\nLes ventes faites ici n'apparaîtront PAS dans le chiffre de Chartres.\n\nAnnuler (recommandé) puis repasser sur Chartres avec le bouton ⇄ en haut ?\n\nOK = encaisser quand même sur Maurepas")) return;
+    window._okVenteMaurepas = true;
+  }
   // Garde-fou : aucun article « prix selon formule » ne doit partir sans prix choisi
   { const sansPrix = (STATE.panier||[]).filter(l => !l.retour && !l.avoirId && !l.prixSaisi &&
       (STATE.products||[]).some(x => x.id===(l.prodIdOriginal||l.id) && (x.prixLibre || (!(parseFloat(x.price)>0) && !x.isChequeCadeau && !x.isService))));
