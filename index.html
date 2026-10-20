@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "20/10 · v112 (diagnostic détaillé)";
+const APP_VERSION = "20/10 · v113 (récupération directe entre caisses)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -498,6 +498,47 @@ function nbVentesEnAttenteEnvoi() {
   try { const sigs = JSON.parse(localStorage.getItem("bj_journal_sig__"+BOUTIQUE_ID_ACTUEL)||"{}");
     return (STATE.ventes||[]).filter(v => v && v.id && !v.test && sigs[v.id]!==signatureJournal(v)).length; } catch { return null; }
 }
+function ventesRecentesPourSecours() {
+  try {
+    const depuis = Date.now() - 2*864e5;
+    const l = (STATE.ventes||[]).filter(v => v && v.id && v.date && new Date(v.date).getTime() >= depuis).map(v => JSON.parse(JSON.stringify(v)));
+    allegerVentes(l);
+    let json = JSON.stringify(l);
+    while(json.length > 700000 && l.length) { l.shift(); json = JSON.stringify(l); } // reste sous la limite d'un document
+    return l;
+  } catch { return []; }
+}
+// Récupère directement auprès des autres appareils de la boutique les ventes récentes absentes ici
+async function recupererVentesAutresAppareils() {
+  const res = {recuperees: [], parAppareil: []};
+  if(!_fbDb) return res;
+  const snap = await _fbDb.collection("bellejolie").where("eaBoutique","==",BOUTIQUE_ID_ACTUEL).get();
+  const ici = new Set((STATE.ventes||[]).map(v=>v.id)), suppr = ventesSupprimeesSet();
+  const manquantes = new Map();
+  snap.forEach(d => { const x = d.data(); if(!x || x.device===DEVICE_ID) return;
+    const m = (x.ventesRecentes||[]).filter(v => v && v.id && !ici.has(v.id) && !suppr.has(v.id));
+    if(m.length) res.parAppareil.push((x.type||"Appareil")+(x.vendeur?" ("+x.vendeur+")":"")+" : "+m.length);
+    m.forEach(v => manquantes.set(v.id, v)); });
+  if(manquantes.size) {
+    const l = [...manquantes.values()];
+    appliquerVentesRecues(l);
+    // et on les écrit dans le journal depuis cet appareil, pour que tout le monde les ait
+    try { journaliserVentes(STATE.ventes||[]); } catch{}
+    res.recuperees = l;
+  }
+  return res;
+}
+// Écoute en direct des autres caisses (canal de secours, en plus du journal)
+setTimeout(() => {
+  if(!_fbDb) return;
+  _fbDb.collection("bellejolie").where("eaBoutique","==",BOUTIQUE_ID_ACTUEL).onSnapshot(snap => {
+    const ici = new Set((STATE.ventes||[]).map(v=>v.id)), suppr = ventesSupprimeesSet();
+    const manquantes = [];
+    snap.docChanges().forEach(ch => { if(ch.type==="removed") return; const x = ch.doc.data(); if(!x || x.device===DEVICE_ID) return;
+      (x.ventesRecentes||[]).forEach(v => { if(v && v.id && !ici.has(v.id) && !suppr.has(v.id)) manquantes.push(v); }); });
+    if(manquantes.length) { console.log("Secours en direct : "+manquantes.length+" vente(s) reçue(s) d'une autre caisse"); appliquerVentesRecues(manquantes); try { journaliserVentes(STATE.ventes||[]); } catch{} }
+  }, err => console.error("Écoute des autres caisses :", err));
+}, 15000);
 let _etatT = null;
 function envoyerEtatAppareil() {
   clearTimeout(_etatT);
@@ -506,6 +547,7 @@ function envoyerEtatAppareil() {
     const e = window._etatSync||{};
     const derniere = (STATE.ventes||[]).reduce((m,v)=>(v && v.date && (!m || v.date>m)) ? v.date : m, null);
     _fbDb.collection("bellejolie").doc("etat_appareil__"+DEVICE_ID).set({
+      ventesRecentes: ventesRecentesPourSecours(),
       eaBoutique: BOUTIQUE_ID_ACTUEL, type: typeAppareil(), vendeur: STATE.vendeur?.nom||"", version: APP_VERSION,
       vu: new Date().toISOString(), enAttente: nbVentesEnAttenteEnvoi(), journalPret: !!window._journalPret,
       dernierEnvoi: e.envoye ? new Date(e.envoye).toISOString() : null, derniereVente: derniere,
@@ -553,6 +595,7 @@ async function rattraperSync(force) {
       const l = []; sl.forEach(d => { const x = d.data(); if(x && x.value) l.push(x.value); });
       if(l.length) appliquerJLRecus(k, l);
     }
+    try { const sc = await recupererVentesAutresAppareils(); if(sc.recuperees.length) { n += sc.recuperees.length; console.log("Secours : "+sc.recuperees.length+" vente(s) récupérée(s) auprès des autres caisses"); } } catch(e) { console.error(e); }
     if(n) console.log("Rattrapage : "+n+" ticket(s) récupéré(s)");
   } catch(err) { console.error("Rattrapage de synchro impossible :", err); }
   return n;
@@ -3452,10 +3495,11 @@ window.verifierMAJCloud = async () => {
     appliquerVentesRecues(journal);
     await rattraperSync("large");
     syncRecu();
+    let secours = {recuperees:[], parAppareil:[]}; try { secours = await recupererVentesAutresAppareils(); } catch(e) { console.error("Secours :", e); }
     const nouvelles = (STATE.ventes||[]).filter(v=>!avant.has(v.id));
     // Écriture directe de l'état de cet appareil (pour vérifier qu'il arrive aussi à ÉCRIRE dans le cloud)
     let ecritureKO = "";
-    try { await _fbDb.collection("bellejolie").doc("etat_appareil__"+DEVICE_ID).set({ eaBoutique: BOUTIQUE_ID_ACTUEL, type: typeAppareil(), vendeur: STATE.vendeur?.nom||"", version: APP_VERSION,
+    try { await _fbDb.collection("bellejolie").doc("etat_appareil__"+DEVICE_ID).set({ ventesRecentes: ventesRecentesPourSecours(), eaBoutique: BOUTIQUE_ID_ACTUEL, type: typeAppareil(), vendeur: STATE.vendeur?.nom||"", version: APP_VERSION,
       vu: new Date().toISOString(), enAttente: nbVentesEnAttenteEnvoi(), journalPret: !!window._journalPret, enLigne: navigator.onLine, device: DEVICE_ID,
       derniereVente: (STATE.ventes||[]).reduce((m,v)=>(v && v.date && (!m || v.date>m)) ? v.date : m, null) }); }
     catch(e) { ecritureKO = "\n\n⚠️ Cet appareil n'arrive pas à ÉCRIRE dans le cloud : "+explicationErreurSync(e?.code||"", String(e?.message||e)); }
@@ -3479,6 +3523,7 @@ window.verifierMAJCloud = async () => {
     alert((nouvelles.length
       ? "✅ "+nouvelles.length+" ticket(s) récupéré(s) depuis les autres appareils :\n\n"+nouvelles.slice(-12).map(v=>"• "+new Date(v.date).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})+" — "+eur(v.total)+(v.vendeur?.nom?" ("+v.vendeur.nom+")":"")).join("\n")
       : "✅ Cet appareil est à jour : "+journal.length+" tickets dans le cloud, tous présents ici.\n\nSi des ventes manquent encore, l'appareil de la boutique ne les a pas envoyées.")
+      + (secours.recuperees.length ? "\n\n🛟 "+secours.recuperees.length+" vente(s) récupérée(s) DIRECTEMENT auprès des autres caisses ("+secours.parAppareil.join(", ")+") : elles n'étaient pas dans le journal du cloud." : "")
       + resume + ecritureKO + autres + (etats ? "\n\n📡 État des appareils :\n"+etats : "\n\n📡 Les autres appareils n'ont pas encore donné de nouvelles (ils le feront après leur mise à jour)."));
   } catch(err) {
     console.error("Erreur vérification cloud:", err);
