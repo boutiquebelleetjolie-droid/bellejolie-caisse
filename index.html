@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "20/10 · v113 (récupération directe entre caisses)";
+const APP_VERSION = "21/10 · v114 (envoi ticket par ticket)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -169,6 +169,7 @@ function explicationErreurSync(code, msg) {
   return "erreur du cloud ("+(code||"inconnue")+") : "+msg.slice(0,120);
 }
 function bandeauEtatSync() {
+  if(window._etatSync.erreurEcriture) return '<div style="background:#fcebeb;border:1px solid #f09595;border-radius:9px;padding:9px 14px;margin-bottom:6px;font-size:13px;color:#a32d2d;">☁️⚠️ <strong>Des ventes n\'arrivent pas à partir vers le cloud</strong> : '+String(window._etatSync.erreurEcriture).replace(/</g,"&lt;")+' — cliquez sur « Vérifier les mises à jour » et envoyez une capture.</div>';
   const e = window._etatSync.erreur;
   if(!e || Date.now()-e.date > 30*60*1000) return "";
   return '<div style="background:#fcebeb;border:1px solid #f09595;border-radius:9px;padding:9px 14px;margin-bottom:6px;font-size:13px;color:#a32d2d;">☁️⚠️ <strong>Synchronisation bloquée</strong> : '+explicationErreurSync(e.code, e.msg)+'</div>';
@@ -551,7 +552,7 @@ function envoyerEtatAppareil() {
       eaBoutique: BOUTIQUE_ID_ACTUEL, type: typeAppareil(), vendeur: STATE.vendeur?.nom||"", version: APP_VERSION,
       vu: new Date().toISOString(), enAttente: nbVentesEnAttenteEnvoi(), journalPret: !!window._journalPret,
       dernierEnvoi: e.envoye ? new Date(e.envoye).toISOString() : null, derniereVente: derniere,
-      erreur: e.erreur ? (e.erreur.code||"")+" "+String(e.erreur.msg||"").slice(0,120) : null, enLigne: navigator.onLine, device: DEVICE_ID,
+      erreur: e.erreurEcriture || (e.erreur ? (e.erreur.code||"")+" "+String(e.erreur.msg||"").slice(0,120) : null), enLigne: navigator.onLine, device: DEVICE_ID,
     }).catch(()=>{});
   }, 3000);
 }
@@ -670,7 +671,13 @@ function ecrireJournal(aEcrire, sigs, cleSig) {
       syncEnvoye();
       lot.forEach(v => { sigs[v.id] = signatureJournal(v); });
       try { localStorage.setItem(cleSig, JSON.stringify(sigs)); } catch{}
-    }).catch(err => console.error("Journal des tickets : échec d'écriture", err));
+    }).catch(err => {
+      console.error("Journal des tickets : échec d'écriture du lot, envoi ticket par ticket", err);
+      window._etatSync.erreurEcriture = (err?.code||"")+" "+String(err?.message||err).slice(0,140);
+      lot.forEach(v => col.doc(prefixeJournal()+v.id).set({ value:JSON.parse(JSON.stringify(v)), date:v.date||"", maj:majJ, ["jv_"+BOUTIQUE_ID_ACTUEL]:majJ, device:DEVICE_ID })
+        .then(() => { sigs[v.id] = signatureJournal(v); try { localStorage.setItem(cleSig, JSON.stringify(sigs)); } catch{} syncEnvoye(); })
+        .catch(e => { console.error("Ticket "+v.id+" refusé par le cloud :", e); window._etatSync.erreurEcriture = "ticket "+v.id+" : "+(e?.code||"")+" "+String(e?.message||e).slice(0,140); }));
+    });
   }
 }
 // Au démarrage : lit le journal, le fusionne avec la liste locale, puis n'écrit dans le journal
@@ -3495,6 +3502,25 @@ window.verifierMAJCloud = async () => {
     appliquerVentesRecues(journal);
     await rattraperSync("large");
     syncRecu();
+    // Ventes de CET appareil absentes du journal du cloud : on les envoie une par une et on note l'erreur exacte
+    const idsCloud = new Set(journal.map(v=>v && v.id));
+    const absentes = (STATE.ventes||[]).filter(v => v && v.id && !v.test && !idsCloud.has(v.id) && !ventesSupprimeesSet().has(v.id));
+    let envoiRapport = "";
+    if(absentes.length) {
+      let ok = 0; const erreurs = {};
+      const col = _fbDb.collection("bellejolie");
+      const cleSig = "bj_journal_sig__"+BOUTIQUE_ID_ACTUEL; let sigs = {}; try { sigs = JSON.parse(localStorage.getItem(cleSig)||"{}"); } catch{}
+      for(const v of absentes.slice(-200)) {
+        try {
+          const maj = new Date().toISOString();
+          await col.doc(prefixeJournal()+v.id).set({ value: JSON.parse(JSON.stringify(v)), date: v.date||"", maj, ["jv_"+BOUTIQUE_ID_ACTUEL]: maj, device: DEVICE_ID });
+          sigs[v.id] = signatureJournal(v); ok++;
+        } catch(e) { const k = (e?.code||"")+" "+String(e?.message||e).slice(0,140); erreurs[k] = (erreurs[k]||0)+1; console.error("Envoi ticket "+v.id+" :", e); }
+      }
+      try { localStorage.setItem(cleSig, JSON.stringify(sigs)); } catch{}
+      envoiRapport = "\n\n📤 "+absentes.length+" vente(s) de cet appareil manquaient dans le cloud : "+ok+" envoyée(s) maintenant."
+        + Object.entries(erreurs).map(([k,n])=>"\n❌ "+n+" refusée(s) : "+k).join("");
+    }
     let secours = {recuperees:[], parAppareil:[]}; try { secours = await recupererVentesAutresAppareils(); } catch(e) { console.error("Secours :", e); }
     const nouvelles = (STATE.ventes||[]).filter(v=>!avant.has(v.id));
     // Écriture directe de l'état de cet appareil (pour vérifier qu'il arrive aussi à ÉCRIRE dans le cloud)
@@ -3524,7 +3550,7 @@ window.verifierMAJCloud = async () => {
       ? "✅ "+nouvelles.length+" ticket(s) récupéré(s) depuis les autres appareils :\n\n"+nouvelles.slice(-12).map(v=>"• "+new Date(v.date).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})+" — "+eur(v.total)+(v.vendeur?.nom?" ("+v.vendeur.nom+")":"")).join("\n")
       : "✅ Cet appareil est à jour : "+journal.length+" tickets dans le cloud, tous présents ici.\n\nSi des ventes manquent encore, l'appareil de la boutique ne les a pas envoyées.")
       + (secours.recuperees.length ? "\n\n🛟 "+secours.recuperees.length+" vente(s) récupérée(s) DIRECTEMENT auprès des autres caisses ("+secours.parAppareil.join(", ")+") : elles n'étaient pas dans le journal du cloud." : "")
-      + resume + ecritureKO + autres + (etats ? "\n\n📡 État des appareils :\n"+etats : "\n\n📡 Les autres appareils n'ont pas encore donné de nouvelles (ils le feront après leur mise à jour)."));
+      + envoiRapport + resume + ecritureKO + autres + (etats ? "\n\n📡 État des appareils :\n"+etats : "\n\n📡 Les autres appareils n'ont pas encore donné de nouvelles (ils le feront après leur mise à jour)."));
   } catch(err) {
     console.error("Erreur vérification cloud:", err);
     alert("❌ Synchronisation impossible : "+explicationErreurSync(err?.code||"", String(err?.message||err)));
