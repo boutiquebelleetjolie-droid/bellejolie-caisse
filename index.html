@@ -89,13 +89,13 @@ const BOUTIQUE_CONFIG = {
   // Données "globales" partagées entre boutiques (clients, avoirs, fidélité)
   // Données "locales" propres à cette boutique (ventes, stock, Z de caisse, réservations)
   DONNEES_GLOBALES: ["bj_clients","bj_avoirs","bj_promotions","bj_transferts","bj_clients_suppr","bj_avoirs_suppr","bj_vendeurs","bj_ejs_service","bj_ejs_template","bj_ejs_key","bj_lien_avis_google","bj_commission_artisan","bj_journal_emails","bj_quota_emails","bj_couturiere"],
-  DONNEES_LOCALES:  ["bj_products","bj_ventes","bj_caisse_jour","bj_reservations","bj_annul_lignes","bj_attente","bj_depots_vente","bj_depots_banque","bj_solde_depot_reporte","bj_mouvements_defectueux","bj_ouvertures","bj_registre_personnel"],
+  DONNEES_LOCALES:  ["bj_products","bj_ventes","bj_caisse_jour","bj_reservations","bj_annul_lignes","bj_attente","bj_depots_vente","bj_depots_banque","bj_solde_depot_reporte","bj_mouvements_defectueux","bj_ouvertures","bj_registre_personnel","bj_sorties_especes"],
 };
 
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "21/10 · v116 (ticket imprimé une seule fois)";
+const APP_VERSION = "21/10 · v117 (sortie d'espèces)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -878,6 +878,7 @@ const CLES_SYNC_TEMPS_REEL = {
   bj_journal_emails: "journalEmails",
   bj_couturiere: "couturiere",
   bj_depots_vente: "depotsVente",
+  bj_sorties_especes: "sortiesEspeces",
 };
 // Dépôts-vente : fusion lot par lot (jamais de remplacement en bloc), articles réunis
 function fusionnerDepotsVente(locaux, recus) {
@@ -1556,6 +1557,7 @@ let STATE = {
   clientsSuppr: ls("bj_clients_suppr", []),
   avoirsSuppr: ls("bj_avoirs_suppr", []),
   commissionArtisan: ls("bj_commission_artisan", 20),
+  sortiesEspeces: ls("bj_sorties_especes", []),
   couturiere: ls("bj_couturiere", {nom:"", email:"", mode:"pct", valeur:100, payes:{}}),
   releveTPE: ls("bj_releve_tpe", {}),
   showRetoucheForm: false, retoucheForm: null, showSuiviRetouches: false, filtreRetouches: "encours",
@@ -11667,6 +11669,41 @@ window.imprimerZone = (idZone) => {
     imgs.forEach(im => im.complete ? fin() : (im.onload = im.onerror = fin)); setTimeout(lancer, 1500); }
 };
 
+
+// ── Sorties d'espèces (ex. remboursement du fond de caisse apporté sur fonds personnels) ──
+function sortiesEspecesDuJour(dateStr) { return (STATE.sortiesEspeces||[]).filter(x=>x.date===dateStr); }
+function totalSortiesJour(dateStr) { return Math.round(sortiesEspecesDuJour(dateStr).reduce((s,x)=>s+(x.montant||0),0)*100)/100; }
+window.ajouterSortieEspeces = (dateStr) => {
+  if(STATE.vendeur?.id!=="V1") { alert("Réservé à la gérante."); return; }
+  const m = prompt("Montant retiré de la caisse en espèces (€) :", "80");
+  if(m===null) return;
+  const montant = Math.round(parseFloat(String(m).replace(",","."))*100)/100;
+  if(!(montant>0)) { alert("Montant invalide."); return; }
+  const motif = prompt("Motif (apparaîtra sur le ticket Z) :", "Remboursement du fond de caisse apporté par Élodie (fonds personnels)");
+  if(motif===null) return;
+  const sortie = {id: uid("SORT"), date: dateStr, montant, motif: motif.trim()||"Sortie d'espèces", par: STATE.vendeur?.nom||"", le: new Date().toISOString()};
+  STATE.sortiesEspeces = [...(STATE.sortiesEspeces||[]), sortie];
+  lsSet("bj_sorties_especes", STATE.sortiesEspeces);
+  // Journée déjà clôturée : on corrige son Z (montant à déposer)
+  const z = (STATE.caisseJour||[]).find(x=>x.date===dateStr);
+  if(z) {
+    STATE.caisseJour = STATE.caisseJour.map(x => x.date!==dateStr ? x : {...x, sorties:[...(x.sorties||[]), sortie],
+      sortiesTotal: Math.round(((x.sortiesTotal||0)+montant)*100)/100, aDeposer: Math.max(0, Math.round(((x.aDeposer||0)-montant)*100)/100)});
+    lsSet("bj_caisse_jour", STATE.caisseJour);
+  }
+  render();
+  alert("✅ Sortie d'espèces de "+eur(montant)+" enregistrée"+(z?" sur le Z du "+new Date(dateStr+"T12:00:00").toLocaleDateString("fr-FR")+" (montant à déposer corrigé).":". Elle sera déduite du montant à déposer et figurera sur le ticket Z.")+"\n\nRetirez les billets de la caisse APRÈS l'avoir comptée.");
+};
+window.supprimerSortieEspeces = (id) => {
+  const x = (STATE.sortiesEspeces||[]).find(s=>s.id===id); if(!x) return;
+  if(!confirm("Annuler la sortie d'espèces de "+eur(x.montant)+" ("+x.motif+") ?")) return;
+  STATE.sortiesEspeces = STATE.sortiesEspeces.filter(s=>s.id!==id);
+  lsSet("bj_sorties_especes", STATE.sortiesEspeces);
+  const z = (STATE.caisseJour||[]).find(zz=>zz.date===x.date && (zz.sorties||[]).some(s=>s.id===id));
+  if(z) { STATE.caisseJour = STATE.caisseJour.map(zz => zz!==z ? zz : {...zz, sorties: zz.sorties.filter(s=>s.id!==id), sortiesTotal: Math.max(0, (zz.sortiesTotal||0)-x.montant), aDeposer: Math.round(((zz.aDeposer||0)+x.montant)*100)/100});
+    lsSet("bj_caisse_jour", STATE.caisseJour); }
+  render();
+};
 window.reimprimerZDate = (dateStr) => { const z = (STATE.caisseJour||[]).find(zz=>zz.date===dateStr); if(z) imprimerZ(z); };
 // Passer un ticket payé en CB en espèces (le paiement n'est pas passé au terminal)
 window.passerTicketEnEspeces = (venteId) => {
@@ -16020,7 +16057,8 @@ function renderCaisseJour() {
   // Le fond d'ouverture reel = celui valide et sauvegarde ce matin (totalOuvBrut se vide au rechargement de page)
   const totalOuv = totalOuvBrut || ouvertureJour?.totalOuv || FOND_RESERVE;
   const totalFer = Object.entries(STATE.fondFermeture||{}).reduce((s,[k,v])=>{const val=parseFloat(k.replace("fer_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
-  const aDeposer = Math.max(0, totalFer - FOND_RESERVE);
+  const sortiesJ = totalSortiesJour(zDateStr);
+  const aDeposer = Math.max(0, totalFer - FOND_RESERVE - sortiesJ);
   const ecart    = totalFer - (totalOuv + especes - retours);
   // Écart fond de caisse matin : totalOuv doit être = FOND_RESERVE (100€)
   const ecartOuverture = totalOuv - FOND_RESERVE;
@@ -16178,9 +16216,11 @@ function renderCaisseJour() {
             <div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="color:#888;">Espèces encaissées</span><span>+${eur(especes)}</span></div>
             <div style="display:flex;justify-content:space-between;margin-bottom:3px;"><span style="color:#888;">Retours espèces</span><span style="color:#e07c00;">−${eur(retours)}</span></div>
             <div style="display:flex;justify-content:space-between;margin-bottom:3px;font-weight:500;"><span>Théorique en caisse</span><span>${eur(totalOuv+especes-retours)}</span></div>
+            ${sortiesEspecesDuJour(zDateStr).map(x=>`<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;color:#a32d2d;"><span>➖ ${x.motif}</span><span style="white-space:nowrap;">−${eur(x.montant)} ${STATE.vendeur.id==="V1"?`<button onclick="supprimerSortieEspeces('${x.id}')" title="Annuler" style="background:none;border:none;color:#aaa;cursor:pointer;">✕</button>`:""}</span></div>`).join("")}
             <div style="border-top:0.5px solid #ddd;margin:5px 0;padding-top:5px;display:flex;justify-content:space-between;font-weight:700;font-size:13px;color:#185fa5;">
               <span>💰 À déposer en banque</span><span id="depot-fermeture">${eur(aDeposer)}</span>
             </div>
+            ${STATE.vendeur.id==="V1"?`<button onclick="ajouterSortieEspeces('${zDateStr}')" style="width:100%;margin:4px 0 6px;padding:6px;background:#fff;border:1px dashed #e8a0a0;color:#a32d2d;border-radius:7px;cursor:pointer;font-size:12px;">➖ Sortie d'espèces (ex. récupérer le fond de caisse apporté)</button>`:""}
             <div id="ecart-fermeture-bloc" style="display:flex;justify-content:space-between;font-size:12px;margin-top:4px;padding:5px 8px;border-radius:7px;background:${Math.abs(ecart)<0.01?"#eaf3de":ecart>0?"#fff3e8":"#fcebeb"};">
               <span style="color:#555;">Écart caisse</span>
               <span id="ecart-fermeture" style="font-weight:700;color:${Math.abs(ecart)<0.01?"#3b6d11":ecart>0?"#e07c00":"#a32d2d"};">
@@ -16344,7 +16384,7 @@ window.updateFermetureTotal = () => {
   const totalOuvBrut = Object.entries(STATE.fondOuverture||{}).reduce((s,[k,v])=>{const val=parseFloat(k.replace("ouv_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
   const ouvertureJour = (STATE.ouvertures||{})[zDateStr] || null;
   const totalOuv = totalOuvBrut || ouvertureJour?.totalOuv || FOND_RESERVE;
-  const aDeposer = Math.max(0, totalFer - FOND_RESERVE);
+  const aDeposer = Math.max(0, totalFer - FOND_RESERVE - totalSortiesJour(zDateStr));
   const ecart = totalFer - (totalOuv + especes - retours);
 
   const elDepot = document.getElementById("depot-fermeture"); if(elDepot) elDepot.textContent = eur(aDeposer);
@@ -16428,10 +16468,11 @@ window.cloturerCaisse = (targetDateStr) => {
   const ouvertureJourCloture = (STATE.ouvertures||{})[dateStr] || null;
   const totalOuv = totalOuvBrut || ouvertureJourCloture?.totalOuv || FOND_RESERVE;
   const totalFer=Object.entries(STATE.fondFermeture||{}).reduce((s,[k,v])=>{const val=parseFloat(k.replace("fer_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
-  const aDeposer=Math.max(0,totalFer-FOND_RESERVE);
+  const sortiesCl = sortiesEspecesDuJour(dateStr), sortiesTotal = totalSortiesJour(dateStr);
+  const aDeposer=Math.max(0,totalFer-FOND_RESERVE-sortiesTotal);
   const ecart=totalFer-(totalOuv+especes);
-  if(!confirm(`Clôturer la caisse du ${new Date(dateStr).toLocaleDateString("fr-FR")} ?\n\nCA TTC : ${eur(caTTC)}\nEspèces : ${eur(especes)}\nTotal compté : ${eur(totalFer)}\nÀ déposer : ${eur(aDeposer)}\nÉcart : ${eur(ecart)}`)) return;
-  const z={id:uid("Z"),date:dateStr,heure:now.toISOString(),nbVentes:ventesJour.length,caTTC,caHT:caTTC/(1+TVA),tvaCol:caTTC-caTTC/(1+TVA),especes,fondOuverture:totalOuv,fondFermeture:totalFer,aDeposer,ecart,payM,note,vendeur:STATE.vendeur.nom};
+  if(!confirm(`Clôturer la caisse du ${new Date(dateStr).toLocaleDateString("fr-FR")} ?\n\nCA TTC : ${eur(caTTC)}\nEspèces : ${eur(especes)}\nTotal compté : ${eur(totalFer)}\n${sortiesTotal?"Sorties d'espèces : −"+eur(sortiesTotal)+"\n":""}À déposer : ${eur(aDeposer)}\nÉcart : ${eur(ecart)}`)) return;
+  const z={id:uid("Z"),date:dateStr,heure:now.toISOString(),nbVentes:ventesJour.length,caTTC,caHT:caTTC/(1+TVA),tvaCol:caTTC-caTTC/(1+TVA),especes,fondOuverture:totalOuv,fondFermeture:totalFer,aDeposer,ecart,payM,note,vendeur:STATE.vendeur.nom,sorties:sortiesCl,sortiesTotal};
   STATE.caisseJour=[...(STATE.caisseJour||[]),z];
   setState({caisseJour:STATE.caisseJour});
   STATE.fondFermeture = {};
@@ -16634,6 +16675,7 @@ window.imprimerZ = (z) => {
     <tr><td>Fond ouverture</td><td>${eur(z.fondOuverture)}</td></tr>
     <tr><td>Espèces encaissées</td><td>${eur(z.especes)}</td></tr>
     <tr><td>Total compté fermeture</td><td class="bold">${eur(z.fondFermeture)}</td></tr>
+    ${(z.sorties||[]).map(x=>`<tr><td>Sortie d'espèces : ${x.motif}</td><td style="color:#a32d2d;font-weight:700;">−${eur(x.montant)}</td></tr>`).join("")}
     <tr><td>À déposer en banque</td><td style="font-weight:700;color:#185fa5;">${eur(z.aDeposer||0)}</td></tr>
     <tr><td>Écart</td><td style="color:${Math.abs(z.ecart||0)>5?"red":"green"};font-weight:700;">${eur(z.ecart||0)}</td></tr>
   </table>
