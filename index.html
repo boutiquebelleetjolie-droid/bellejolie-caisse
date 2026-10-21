@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "21/10 · v114 (envoi ticket par ticket)";
+const APP_VERSION = "21/10 · v115 (contrôle automatique des envois)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -661,25 +661,38 @@ function journaliserVentes(liste) {
   ecrireJournal(aEcrire, sigs, cleSig);
 }
 function ecrireJournal(aEcrire, sigs, cleSig) {
+  // Ticket par ticket (les envois groupés se sont révélés perdus sans erreur le 20/10/2026)
   const col = _fbDb.collection("bellejolie");
-  for(let i=0; i<aEcrire.length; i+=400) {
-    const lot = aEcrire.slice(i, i+400);
-    const batch = _fbDb.batch();
+  aEcrire.forEach(v => {
     const majJ = new Date().toISOString();
-    lot.forEach(v => batch.set(col.doc(prefixeJournal()+v.id), { value:JSON.parse(JSON.stringify(v)), date:v.date||"", maj:majJ, ["jv_"+BOUTIQUE_ID_ACTUEL]:majJ, device:DEVICE_ID }));
-    batch.commit().then(() => {
-      syncEnvoye();
-      lot.forEach(v => { sigs[v.id] = signatureJournal(v); });
-      try { localStorage.setItem(cleSig, JSON.stringify(sigs)); } catch{}
-    }).catch(err => {
-      console.error("Journal des tickets : échec d'écriture du lot, envoi ticket par ticket", err);
-      window._etatSync.erreurEcriture = (err?.code||"")+" "+String(err?.message||err).slice(0,140);
-      lot.forEach(v => col.doc(prefixeJournal()+v.id).set({ value:JSON.parse(JSON.stringify(v)), date:v.date||"", maj:majJ, ["jv_"+BOUTIQUE_ID_ACTUEL]:majJ, device:DEVICE_ID })
-        .then(() => { sigs[v.id] = signatureJournal(v); try { localStorage.setItem(cleSig, JSON.stringify(sigs)); } catch{} syncEnvoye(); })
-        .catch(e => { console.error("Ticket "+v.id+" refusé par le cloud :", e); window._etatSync.erreurEcriture = "ticket "+v.id+" : "+(e?.code||"")+" "+String(e?.message||e).slice(0,140); }));
-    });
-  }
+    col.doc(prefixeJournal()+v.id).set({ value:JSON.parse(JSON.stringify(v)), date:v.date||"", maj:majJ, ["jv_"+BOUTIQUE_ID_ACTUEL]:majJ, device:DEVICE_ID })
+      .then(() => { sigs[v.id] = signatureJournal(v); try { localStorage.setItem(cleSig, JSON.stringify(sigs)); } catch{} syncEnvoye(); })
+      .catch(e => { console.error("Ticket "+v.id+" refusé par le cloud :", e); window._etatSync.erreurEcriture = "ticket "+v.id+" : "+(e?.code||"")+" "+String(e?.message||e).slice(0,140); });
+  });
 }
+// Contrôle automatique (au démarrage puis toutes les 30 min) : les ventes des 3 derniers jours de cet appareil
+// sont-elles bien dans le cloud ? Celles qui manquent sont renvoyées.
+async function controlerEnvoisRecents() {
+  if(!_fbDb) return 0;
+  try {
+    const depuis = new Date(Date.now() - 3*864e5).toISOString();
+    const locales = (STATE.ventes||[]).filter(v => v && v.id && !v.test && v.date && v.date >= depuis);
+    if(!locales.length) return 0;
+    const snap = await _fbDb.collection("bellejolie").where("date", ">=", depuis).get();
+    const pre = prefixeJournal(), presents = new Set();
+    snap.forEach(d => { if(d.id.startsWith(pre)) presents.add(d.id.slice(pre.length)); });
+    const suppr = ventesSupprimeesSet();
+    const manquantes = locales.filter(v => !presents.has(v.id) && !suppr.has(v.id));
+    if(manquantes.length) {
+      const cleSig = "bj_journal_sig__"+BOUTIQUE_ID_ACTUEL; let sigs = {}; try { sigs = JSON.parse(localStorage.getItem(cleSig)||"{}"); } catch{}
+      console.log("Contrôle : "+manquantes.length+" vente(s) absente(s) du cloud, renvoi");
+      ecrireJournal(manquantes, sigs, cleSig);
+    }
+    return manquantes.length;
+  } catch(e) { console.error("Contrôle des envois :", e); return 0; }
+}
+setTimeout(controlerEnvoisRecents, 25000);
+setInterval(controlerEnvoisRecents, 30*60*1000);
 // Au démarrage : lit le journal, le fusionne avec la liste locale, puis n'écrit dans le journal
 // que les ventes absentes ou plus récentes ici (jamais d'écrasement aveugle par une copie périmée).
 async function synchroniserJournalAuDemarrage() {
