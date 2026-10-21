@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "21/10 · v115 (contrôle automatique des envois)";
+const APP_VERSION = "21/10 · v116 (ticket imprimé une seule fois)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -11654,7 +11654,9 @@ window.imprimerZone = (idZone) => {
       .no-print { display:none !important; }
     </style></head><body>${zone.outerHTML}</body></html>`);
   doc.close();
+  let dejaImprime = false; // un seul lancement d'impression (avant : images chargées + filet de sécurité = ticket en double)
   const lancer = () => {
+    if(dejaImprime) return; dejaImprime = true;
     try { iframe.contentWindow.focus(); iframe.contentWindow.print(); } catch(e) { window.print(); }
     setTimeout(() => iframe.remove(), 2000);
   };
