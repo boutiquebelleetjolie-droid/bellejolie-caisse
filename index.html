@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "21/10 · v117 (sortie d'espèces)";
+const APP_VERSION = "21/10 · v118 (sorties sur le Z mensuel)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -9749,7 +9749,9 @@ function calculerZMensuel(mois, annee) {
   const cumulAnnee = r2((STATE.ventes||[]).filter(v => { if(v.test||v.annulee) return false; const x=new Date(v.date); return x.getFullYear()===annee && x.getMonth()<=mois; }).reduce((s,v)=>s+v.total,0));
   const zClotures = (STATE.caisseJour||[]).filter(z => z.date && z.date.startsWith(annee+"-"+String(mois+1).padStart(2,"0")));
   const ecartCaisse = r2(zClotures.reduce((s,z)=>s+(typeof z.ecart==="number"?z.ecart:0),0));
+  const sorties = (STATE.sortiesEspeces||[]).filter(x => x.date && x.date.startsWith(annee+"-"+String(mois+1).padStart(2,"0"))).sort((a,b)=>a.date.localeCompare(b.date));
   return {
+    sorties, sortiesTotal: r2(sorties.reduce((s,x)=>s+(x.montant||0),0)),
     mois, annee, caTTC, caHT, tvaCol, tvaDeduct, tvaNette: r2(tvaCol-tvaDeduct), achatsHT,
     brut: r2(brut), remises, retours: r2(retours), nbRetours, corrections, nbCorrections,
     nbTickets: st.tickets, nbArticles: st.articles, panierMoyen: st.pm, idv: st.idv,
@@ -9780,6 +9782,7 @@ function lignesZMensuel(z) {
     L("Avoirs utilisés", eur(z.modes.avoir)), L("Chèques cadeaux utilisés", eur(z.modes.cadeau)),
     L("Total encaissé", eur(Object.values(z.modes).reduce((a,b)=>a+b,0)), true),
     L("Écart de caisse cumulé (espèces)", eur(z.ecartCaisse)),
+    ...(z.sorties && z.sorties.length ? [T("SORTIES D'ESPÈCES"), ...z.sorties.map(x => L(new Date(x.date+"T12:00:00").toLocaleDateString("fr-FR")+" · "+x.motif, "− "+eur(x.montant))), L("Total des sorties d'espèces", "− "+eur(z.sortiesTotal), true)] : []),
     T("ANNULATIONS & AVOIRS"),
     L("Ventes annulées", z.annulees.nb+" · "+eur(z.annulees.montant)),
     L("Avoirs émis (retours)", z.avoirsRetour.nb+" · "+eur(z.avoirsRetour.montant)),
