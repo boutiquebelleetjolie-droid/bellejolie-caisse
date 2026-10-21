@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "21/10 · v118 (sorties sur le Z mensuel)";
+const APP_VERSION = "21/10 · v119 (dépôt-vente hors remises)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -3782,12 +3782,15 @@ function barreFideliteHtml(clientId) {
 }
 
 // ─── CAISSE ─────────────────────────────────────────────────────
+// Articles en dépôt-vente : jamais de remise globale (réseaux, fidélité, remise panier, remise progressive, promo chaussures)
+function estLigneDepot(x) { return !!x && (!!x.depotVente || /^DEPOT-/.test(String(x.ref||""))); }
 function calcPanier() {
   const panier = STATE.panier;
   // Achats en positif, retours en négatif
   // Calculer le sous-total en séparant articles avec/sans remise
   let stTotal = 0;
   let stTotalSansRemise = 0; // base pour la fidélité (-20% uniquement sur articles plein tarif)
+  let stDepot = 0; // articles en dépôt-vente : exclus des remises globales
   panier.forEach(x=>{
     const aRemiseArt = !x.retour && (parseFloat(x.remise||0)>0 || x._promoAuto);
     // La remise doit s'appliquer aussi sur un retour : on rembourse le prix réellement payé (avec sa remise), pas le plein tarif
@@ -3796,6 +3799,7 @@ function calcPanier() {
     const puNet = Math.max(0, x.price - rem);
     const mt = x.retour ? -puNet*x.qty : puNet*x.qty;
     stTotal += mt;
+    if(estLigneDepot(x)) { stDepot += mt; return; }
     // Exclure les articles déjà en promo de la base fidélité
     if(!x.retour && !aRemiseArt) stTotalSansRemise += puNet*x.qty;
   });
@@ -3841,8 +3845,9 @@ function calcPanier() {
       lsSet("bj_clients", STATE.clients);
     }
   }
+  const stHorsDepot = Math.max(0, stTotal - stDepot);
   const remGlobal = STATE.remVal
-    ? (STATE.remType==="pct" ? Math.max(stTotal,0)*(parseFloat(STATE.remVal)/100) : parseFloat(STATE.remVal))
+    ? (STATE.remType==="pct" ? stHorsDepot*(parseFloat(STATE.remVal)/100) : Math.min(parseFloat(STATE.remVal)||0, stHorsDepot))
     : 0;
   // Fidélité -15%/-20% : seulement sur les articles plein tarif — escalade à -20% après 3 utilisations ou profil gros paniers
   const pct15 = bonFid400Actif ? (fid15Escalade ? 20 : 15) : 0;
@@ -3862,6 +3867,7 @@ function calcPanier() {
       panier.forEach(x=>{
         if(x.retour || x.avoirId) return;
         if(x.ref==="SAC-CAISSE" || x.name==="Sac" || x.ref==="RETOUCHE-CAISSE") return;
+        if(estLigneDepot(x)) return; // dépôt-vente : pas de remise progressive
         const aRemiseArt = parseFloat(x.remise||0)>0 || x._promoAuto;
         if(aRemiseArt) return; // déjà en promo, ne compte pas pour le palier
         qtyEligible += (x.qty||1);
@@ -3894,7 +3900,7 @@ function calcPanier() {
         const candidats = achatsPC.filter(x => {
           const p = prodMapPC[x.prodIdOriginal||x.id];
           const dejaRemise = parseFloat(x.remise||0)>0 || x._promoAuto;
-          return p?.category!=="Chaussures" && !dejaRemise;
+          return p?.category!=="Chaussures" && !dejaRemise && !estLigneDepot(x);
         });
         if(candidats.length) {
           const cible = candidats.reduce((a,b)=>b.price>a.price?b:a);
@@ -3907,7 +3913,7 @@ function calcPanier() {
   const remiseChaussuresMontant = promoChaussuresInfo ? promoChaussuresInfo.remiseTotale : 0;
 
   const total = stTotal - remGlobal - remiseFidMontant - remiseProgMontant - remiseChaussuresMontant;
-  return {stTotal, stTotalSansRemise, remGlobal, fidPct, fidPctFinal, remiseFidMontant, fid20Escalade, fid15Escalade, nbUtilisationsFid20, nbUtilisationsFid15, remiseProgPct, remiseProgMontant, remiseProgPalier, promoChaussuresInfo, remiseChaussuresMontant, total};
+  return {stTotal, stTotalSansRemise, stDepot, stHorsDepot, remGlobal, fidPct, fidPctFinal, remiseFidMontant, fid20Escalade, fid15Escalade, nbUtilisationsFid20, nbUtilisationsFid15, remiseProgPct, remiseProgMontant, remiseProgPalier, promoChaussuresInfo, remiseChaussuresMontant, total};
 }
 
 function getCaisseTotal()    { return calcPanier().total; } // peut être négatif
@@ -4327,18 +4333,19 @@ function renderCaisse() {
             ${(()=>{
               // Taux de remise globale effectif (fidélité + remise panier + remise progressive), à répercuter ligne par ligne pour l'affichage
               const totalRemiseGlobale = (remGlobal||0) + (remiseFidMontant||0) + (remiseProgMontant||0);
-              const tauxRemiseGlobale = stTotal>0 ? Math.min(1, totalRemiseGlobale/stTotal) : 0;
+              const baseRemGlob = stTotal - (calcPanier().stDepot||0);
+              const tauxRemiseGlobale = baseRemGlob>0 ? Math.min(1, totalRemiseGlobale/baseRemGlob) : 0;
               return panier.map(it=>{
               const remArt = it.remiseType==="pct" ? it.price*(parseFloat(it.remise||0)/100)
                            : it.remiseType==="eur" ? parseFloat(it.remise||0)/it.qty : 0;
               const puNet = Math.max(0, it.price - remArt);
-              const puNetFinal = it.retour ? puNet : puNet * (1 - tauxRemiseGlobale);
+              const puNetFinal = (it.retour || estLigneDepot(it)) ? puNet : puNet * (1 - tauxRemiseGlobale);
               const ligneTotal = puNet * it.qty;
               return `
               <tr style="border-bottom:0.5px solid #e8e0e4;${it.retour?"background:#fff8f0;":""}">
                 <td style="padding:8px 4px;">
                   <div style="font-weight:500;">${it.retour?"↩️ ":""}${it.name} <span style="font-size:10px;color:#bbb;cursor:pointer;" onclick="afficherInfoArticlePanier('${it.id}')">ℹ️</span></div>
-                  <div style="font-size:11px;color:#888;">${it.ref}${it.taille||it.couleur ? ' — '+[it.taille?'T.'+it.taille:'',it.couleur||'']. filter(Boolean).join(' ') : ''}</div>
+                  <div style="font-size:11px;color:#888;">${it.ref}${it.taille||it.couleur ? ' — '+[it.taille?'T.'+it.taille:'',it.couleur||'']. filter(Boolean).join(' ') : ''}${estLigneDepot(it)&&!it.retour?' <span style="color:#993556;">· 🔄 dépôt-vente, hors remises</span>':''}</div>
                   ${it.retour&&!it.avoirId?`
                   <div style="margin-top:3px;display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
                     <select onchange="STATE.panier=STATE.panier.map(x=>x.id===it.id?{...x,motifRetour:this.value}:x);if(this.value==='Autre'){}else render()"
@@ -4359,7 +4366,7 @@ function renderCaisse() {
                   </div>`}
                 </td>
                 <td style="text-align:right;padding:8px 4px;">
-                  ${(it.remise || (!it.retour && tauxRemiseGlobale>0.0001)) ?
+                  ${(it.remise || (!it.retour && !estLigneDepot(it) && tauxRemiseGlobale>0.0001)) ?
                     `<span style="text-decoration:line-through;color:#aaa;font-size:11px;">${eur(it.price)}</span><br/><span style="color:${it.retour?"#e07c00":"#3b6d11"};font-weight:500;">${eur(it.retour?puNet:puNetFinal)}</span>`
                     : eur(it.price)}
                 </td>
@@ -4867,7 +4874,8 @@ function calculerPrixPayeReel(venteOrigine, ligneOrigine) {
   const remArticle = ligneOrigine.remiseType==="pct" ? ligneOrigine.price*(parseFloat(ligneOrigine.remise||0)/100)
                     : ligneOrigine.remiseType==="eur" ? parseFloat(ligneOrigine.remise||0)/ligneOrigine.qty : 0;
   const puApresRemiseArticle = Math.max(0, ligneOrigine.price - remArticle);
-  const sousTotalVente = (venteOrigine.panier||[]).filter(x=>!x.retour&&!x.avoirId).reduce((s,i)=>{
+  if(estLigneDepot(ligneOrigine)) return +puApresRemiseArticle.toFixed(2); // dépôt-vente : aucune remise globale
+  const sousTotalVente = (venteOrigine.panier||[]).filter(x=>!x.retour&&!x.avoirId&&!estLigneDepot(x)).reduce((s,i)=>{
     const r = i.remiseType==="pct" ? i.price*(parseFloat(i.remise||0)/100) : i.remiseType==="eur" ? parseFloat(i.remise||0)/i.qty : 0;
     return s+Math.max(0,i.price-r)*i.qty;
   },0);
@@ -5088,8 +5096,8 @@ window.appliquerRemiseReseaux = () => {
       alert("⚠️ Cette cliente a déjà bénéficié de la remise réseaux sociaux (-5€) précédemment. Elle ne peut être accordée qu'une seule fois par cliente.");
       return;
     }
-    const sousTotal = calcPanier().stTotal;
-    if(sousTotal < 20) { alert("⚠️ Cette remise de -5€ n'est accordée qu'à partir de 20€ d'achat (panier actuel : "+eur(sousTotal)+")."); return; }
+    const cpR = calcPanier(), sousTotal = cpR.stHorsDepot;
+    if(sousTotal < 20) { alert("⚠️ Cette remise de -5€ n'est accordée qu'à partir de 20€ d'achat"+(cpR.stDepot>0?" hors articles en dépôt-vente":"")+" (panier concerné : "+eur(sousTotal)+")."); return; }
     setState({remVal:"5",remType:"eur"});
     STATE._remiseReseauxEnCours = true; // sera taggé dans la vente
     STATE._remiseReseauxAccordeeEnCours = true; // pour pouvoir annuler si la remise est désactivée avant validation
