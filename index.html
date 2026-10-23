@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "23/10 · v123 (ticket cadeau par mail)";
+const APP_VERSION = "23/10 · v124 (bons de bienvenue restaurés)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -10322,6 +10322,31 @@ window.envoyerSouhaitsAnniversaire = (clientId) => {
   }
 };
 
+
+// ── Bons de bienvenue disparus : recréés automatiquement (même code que dans le mail), s'ils n'ont jamais servi ──
+function restaurerBonsBienvenue() {
+  try {
+    const avoirs = STATE.avoirs||[], clients = STATE.clients||[];
+    const aBienvenue = new Set(avoirs.filter(a=>a.typeAvoir==="bienvenue").map(a=>a.clientId||a.client?.id));
+    const codesAvoirs = new Set(avoirs.map(a=>a.code));
+    const ventesTxt = toutesVentesClientes().map(v => JSON.stringify((v.panier||[]).filter(x=>x.avoirId||x.ref==="AVOIR"))+JSON.stringify(v.avoirsPayes||[])).join("|");
+    const nouveaux = [];
+    clients.forEach(c => {
+      if(!c || !c.id || !c.createdAt || new Date(c.createdAt) < DATE_REOUVERTURE || aBienvenue.has(c.id)) return;
+      const code = "BIENVEN"+c.id.slice(-6).toUpperCase();
+      if(codesAvoirs.has(code)) return;
+      if(ventesTxt.includes(code) || ventesTxt.includes("#"+code.slice(-6))) return; // déjà utilisé
+      const debut = new Date(c.createdAt); debut.setDate(debut.getDate()+1); debut.setHours(0,0,0,0);
+      const exp = new Date(debut); exp.setMonth(debut.getMonth()+3);
+      if(exp < new Date()) return; // expiré
+      nouveaux.push({ id:"AVBV"+c.id, code, date:debut.toISOString(), expiration:exp.toISOString(), montant:5, solde:5, utilise:false,
+        client:{id:c.id, prenom:c.prenom, nom:c.nom, email:c.email||""}, clientId:c.id, motif:"Bon de bienvenue", typeAvoir:"bienvenue", restaure:true });
+    });
+    if(nouveaux.length) { STATE.avoirs = [...avoirs, ...nouveaux]; lsSet("bj_avoirs", STATE.avoirs); console.log("Bons de bienvenue restaurés :", nouveaux.length); render(); }
+    return nouveaux.length;
+  } catch(e) { console.error("Restauration bons bienvenue :", e); return 0; }
+}
+setTimeout(restaurerBonsBienvenue, 20000);
 window.saveClient = () => {
   const f=STATE.clientForm;
   if(!f.nom||!f.prenom) return;
