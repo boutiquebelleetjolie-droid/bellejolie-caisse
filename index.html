@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "23/10 · v120 (plus de rechargements en boucle)";
+const APP_VERSION = "23/10 · v121 (connexion cloud compatible antivirus)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -143,7 +143,9 @@ try {
     firebase.initializeApp(firebaseConfig);
     _fbDb = firebase.firestore();
     // Un champ « undefined » dans un ticket ne doit jamais bloquer la sauvegarde : il est simplement ignoré
-    try { _fbDb.settings({ ignoreUndefinedProperties: true, merge: true }); } catch(e) { console.error("Réglage Firestore:", e); }
+    // Longue interrogation : passe à travers les antivirus / pare-feu qui bloquent les envois en continu
+    try { _fbDb.settings({ ignoreUndefinedProperties: true, experimentalForceLongPolling: true, merge: true }); }
+    catch(e) { console.error("Réglage Firestore (longue interrogation) :", e); try { _fbDb.settings({ ignoreUndefinedProperties: true, merge: true }); } catch(e2) { console.error("Réglage Firestore:", e2); } }
   }
 } catch(e) { console.error("Firebase init error:", e); }
 
@@ -3519,6 +3521,9 @@ window.pousserToutVersCloud = async () => {
   alert("✅ "+compte+" élément(s) envoyé(s) vers le cloud."+(erreurs>0?"\n⚠️ "+erreurs+" échec(s), vérifie les règles Firestore.":""));
 };
 
+function avecDelai(promesse, ms, quoi) {
+  return Promise.race([promesse, new Promise((_, rej) => setTimeout(() => rej({code:"deadline-exceeded", message:"pas de réponse du cloud au bout de "+Math.round(ms/1000)+" s ("+quoi+")"}), ms))]);
+}
 window.verifierMAJCloud = async () => {
   if(!_fbDb) { alert("⚠️ Pas de connexion au cloud sur cet appareil (vérifiez internet)."); return; }
   if(window._verifEnCours) return;
@@ -3527,9 +3532,9 @@ window.verifierMAJCloud = async () => {
   const btn = document.getElementById("btn-verif-maj"); if(btn) { btn.disabled = true; btn.textContent = "⏳ Synchronisation en cours…"; }
   try {
     const avant = new Set((STATE.ventes||[]).map(v=>v.id));
-    const journal = await lireJournalVentes();
+    const journal = await avecDelai(lireJournalVentes(), 45000, "lecture du journal");
     appliquerVentesRecues(journal);
-    await rattraperSync("large");
+    try { await avecDelai(rattraperSync("large"), 20000, "rattrapage"); } catch(e) { console.error(e); }
     syncRecu();
     // Ventes de CET appareil absentes du journal du cloud : on les envoie une par une et on note l'erreur exacte
     const idsCloud = new Set(journal.map(v=>v && v.id));
@@ -3542,21 +3547,21 @@ window.verifierMAJCloud = async () => {
       for(const v of absentes.slice(-200)) {
         try {
           const maj = new Date().toISOString();
-          await col.doc(prefixeJournal()+v.id).set({ value: JSON.parse(JSON.stringify(v)), date: v.date||"", maj, ["jv_"+BOUTIQUE_ID_ACTUEL]: maj, device: DEVICE_ID });
+          await avecDelai(col.doc(prefixeJournal()+v.id).set({ value: JSON.parse(JSON.stringify(v)), date: v.date||"", maj, ["jv_"+BOUTIQUE_ID_ACTUEL]: maj, device: DEVICE_ID }), 10000, "envoi d'un ticket");
           sigs[v.id] = signatureJournal(v); ok++;
-        } catch(e) { const k = (e?.code||"")+" "+String(e?.message||e).slice(0,140); erreurs[k] = (erreurs[k]||0)+1; console.error("Envoi ticket "+v.id+" :", e); }
+        } catch(e) { const k = (e?.code||"")+" "+String(e?.message||e).slice(0,140); erreurs[k] = (erreurs[k]||0)+1; console.error("Envoi ticket "+v.id+" :", e); if(e?.code==="deadline-exceeded" && erreurs[k]>=2) break; }
       }
       try { localStorage.setItem(cleSig, JSON.stringify(sigs)); } catch{}
       envoiRapport = "\n\n📤 "+absentes.length+" vente(s) de cet appareil manquaient dans le cloud : "+ok+" envoyée(s) maintenant."
         + Object.entries(erreurs).map(([k,n])=>"\n❌ "+n+" refusée(s) : "+k).join("");
     }
-    let secours = {recuperees:[], parAppareil:[]}; try { secours = await recupererVentesAutresAppareils(); } catch(e) { console.error("Secours :", e); }
+    let secours = {recuperees:[], parAppareil:[]}; try { secours = await avecDelai(recupererVentesAutresAppareils(), 15000, "ventes des autres caisses"); } catch(e) { console.error("Secours :", e); }
     const nouvelles = (STATE.ventes||[]).filter(v=>!avant.has(v.id));
     // Écriture directe de l'état de cet appareil (pour vérifier qu'il arrive aussi à ÉCRIRE dans le cloud)
     let ecritureKO = "";
-    try { await _fbDb.collection("bellejolie").doc("etat_appareil__"+DEVICE_ID).set({ ventesRecentes: ventesRecentesPourSecours(), eaBoutique: BOUTIQUE_ID_ACTUEL, type: typeAppareil(), vendeur: STATE.vendeur?.nom||"", version: APP_VERSION,
+    try { await avecDelai(_fbDb.collection("bellejolie").doc("etat_appareil__"+DEVICE_ID).set({ ventesRecentes: ventesRecentesPourSecours(), eaBoutique: BOUTIQUE_ID_ACTUEL, type: typeAppareil(), vendeur: STATE.vendeur?.nom||"", version: APP_VERSION,
       vu: new Date().toISOString(), enAttente: nbVentesEnAttenteEnvoi(), journalPret: !!window._journalPret, enLigne: navigator.onLine, device: DEVICE_ID,
-      derniereVente: (STATE.ventes||[]).reduce((m,v)=>(v && v.date && (!m || v.date>m)) ? v.date : m, null) }); }
+      derniereVente: (STATE.ventes||[]).reduce((m,v)=>(v && v.date && (!m || v.date>m)) ? v.date : m, null) }), 10000, "écriture de l'état"); }
     catch(e) { ecritureKO = "\n\n⚠️ Cet appareil n'arrive pas à ÉCRIRE dans le cloud : "+explicationErreurSync(e?.code||"", String(e?.message||e)); }
     const auj = dateLocaleStr();
     const fmtT = v => new Date(v.date).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})+" "+eur(v.total)+(v.vendeur?.nom?" ("+v.vendeur.nom+")":"");
@@ -3566,11 +3571,11 @@ window.verifierMAJCloud = async () => {
     const resume = "\n\n📊 Aujourd'hui : "+cloudAuj.length+" ticket(s) dans le cloud ("+eur(cloudAuj.reduce((s,v)=>s+(v.total||0),0))+"), "+localAuj.length+" sur cet appareil ("+eur(localAuj.reduce((s,v)=>s+(v.total||0),0))+")."
       +"\nDerniers tickets sur cet appareil :\n"+derniersLocaux.map(v=>"  · "+fmtT(v)).join("\n")
       +"\nBoutique de cet appareil : "+nomBoutiqueCourt(BOUTIQUE_ID_ACTUEL)+" · version "+APP_VERSION;
-    let etats = ""; try { etats = texteEtatsAppareils(await lireEtatsAppareils()); } catch(e) { console.error(e); }
+    let etats = ""; try { etats = texteEtatsAppareils(await avecDelai(lireEtatsAppareils(), 15000, "état des appareils")); } catch(e) { console.error(e); }
     // Ventes du jour enregistrées sur l'AUTRE boutique (appareil réglé sur la mauvaise boutique ?)
     let autres = "";
     try { for(const b of BOUTIQUES.filter(x=>x.id!==BOUTIQUE_ID_ACTUEL)) {
-      const j = await lireJournalVentes(b.id); const auj = dateLocaleStr();
+      const j = await avecDelai(lireJournalVentes(b.id), 20000, "journal de l'autre boutique"); const auj = dateLocaleStr();
       const duJour = j.filter(v => v && v.date && dateLocaleStr(new Date(v.date))===auj && !v.test);
       if(duJour.length) autres += "\n\n🚨 "+duJour.length+" vente(s) aujourd'hui enregistrée(s) sur "+nomBoutiqueCourt(b.id).toUpperCase()+" ("+eur(duJour.reduce((s,v)=>s+(v.total||0),0))+") : un appareil du magasin est réglé sur la mauvaise boutique !";
     } } catch(e) { console.error(e); }
