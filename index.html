@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "23/10 · v121 (connexion cloud compatible antivirus)";
+const APP_VERSION = "23/10 · v122 (fin des envois en boucle entre appareils)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -313,7 +313,7 @@ function fusionnerProduits(base, arrivee) {
   });
   return [...m.values()];
 }
-function signatureListeProduits(l) { return (l||[]).map(p=>p&&(p.id+":"+(p.majLe||""))).join("|"); }
+function signatureListeProduits(l) { return (l||[]).filter(Boolean).map(p=>p.id+":"+(p.majLe||"")).sort().join("|"); }
 
 // ── Fusion générique des listes partagées (clientes, bons/avoirs) ──────────────
 // Même principe que les articles : jamais de remplacement en bloc par la liste d'un autre appareil,
@@ -346,7 +346,7 @@ function fusionnerListe(key, base, arrivee) {
   (arrivee||[]).forEach(x => { if(!x||!x.id||suppr.has(x.id)) return; const ex = m.get(x.id); if(!ex || (x.majLe||"") >= (ex.majLe||"")) m.set(x.id, x); });
   return [...m.values()];
 }
-function sigListe(l) { return (l||[]).map(x=>x&&(x.id+":"+(x.majLe||""))).join("|"); }
+function sigListe(l) { return (l||[]).filter(Boolean).map(x=>x.id+":"+(x.majLe||"")).sort().join("|"); } // indépendant de l'ordre (sinon deux appareils se renvoient la liste sans fin)
 // ── Journal individuel (un document cloud par cliente / par bon) ──
 // Aucun appareil, même ancien, ne peut effacer ces documents en réécrivant la liste globale.
 const _jlPret = {}, _jlSigs = {};
@@ -559,7 +559,7 @@ function envoyerEtatAppareil() {
   }, 3000);
 }
 setTimeout(envoyerEtatAppareil, 20000);
-setInterval(envoyerEtatAppareil, 5*60*1000);
+setInterval(envoyerEtatAppareil, 15*60*1000);
 window.addEventListener("online", envoyerEtatAppareil);
 async function lireEtatsAppareils() {
   if(!_fbDb) return [];
@@ -808,10 +808,11 @@ function firestorePush(key, val) {
     const refD = _fbDb.collection("bellejolie").doc(cle);
     refD.get().then(doc => {
       const fusion = fusionnerDepotsVente(doc.exists ? (doc.data().value||[]) : [], val);
-      if(JSON.stringify(fusion)!==JSON.stringify(val)) {
+      if(sigDepotsVente(fusion)!==sigDepotsVente(val)) {
         STATE.depotsVente = fusion; try { localStorage.setItem(cle, JSON.stringify(fusion)); } catch{}
         setTimeout(render, 0);
       }
+      if(doc.exists && sigDepotsVente(doc.data().value||[])===sigDepotsVente(fusion)) return; // déjà à jour : aucune écriture
       return refD.set({ value: fusion, maj: maintenant, device: DEVICE_ID });
     }).catch(err => console.error("Firestore push (dépôts-vente) error:", err));
     return;
@@ -883,6 +884,9 @@ const CLES_SYNC_TEMPS_REEL = {
   bj_sorties_especes: "sortiesEspeces",
 };
 // Dépôts-vente : fusion lot par lot (jamais de remplacement en bloc), articles réunis
+function sigDepotsVente(l) {
+  return (l||[]).filter(x=>x&&x.id).map(x => [x.id, [...new Set(x.articleIds||[])].sort().join(","), x.bonGenereId||"", x.montantBonGenere||"", x.clientEmail||"", x.recapEnvoyeLe||"", x.articlesPerdus||0, x.reconstruit?1:0, x.clientId||"", x.clientTel||""].join("~")).sort().join("|");
+}
 function fusionnerDepotsVente(locaux, recus) {
   const m = new Map((locaux||[]).filter(l=>l&&l.id).map(l=>[l.id, l]));
   (recus||[]).forEach(r => { if(!r||!r.id) return; const l = m.get(r.id);
@@ -950,7 +954,7 @@ function demarrerSyncTempsReel() {
           const fusion = fusionnerDepotsVente(STATE.depotsVente||[], recus);
           STATE.depotsVente = fusion;
           localStorage.setItem(cleFirestore(storageKey), JSON.stringify(fusion));
-          if(JSON.stringify(fusion)!==JSON.stringify(recus)) firestorePush(storageKey, fusion);
+          if(sigDepotsVente(fusion)!==sigDepotsVente(recus)) firestorePush(storageKey, fusion); // seulement si cet appareil apporte vraiment du nouveau
           render(); afficherBandeauSyncDiscret();
         } catch(err) { console.error("Erreur fusion dépôts-vente:", err); }
         return;
