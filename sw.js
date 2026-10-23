@@ -3,7 +3,7 @@
 // affiche toujours la dernière version déployée dès qu'il y a une connexion.
 // Le cache ne sert que de secours en cas de coupure réseau (mode hors-ligne).
 
-const CACHE_NAME = "bj-caisse-cache-v3"; // change ce numéro si tu ajoutes des fichiers à mettre en cache
+const CACHE_NAME = "bj-caisse-cache-v4"; // change ce numéro si tu ajoutes des fichiers à mettre en cache
 
 self.addEventListener("install", (event) => {
   // Active la nouvelle version tout de suite, sans attendre la fermeture des onglets ouverts
@@ -34,7 +34,11 @@ self.addEventListener("fetch", (event) => {
     (async () => {
       try {
         // 1. Toujours essayer le réseau en premier → version la plus récente
-        const networkResponse = await fetch(request);
+        // La page elle-même est toujours redemandée au serveur (jamais la copie du navigateur),
+        // sinon une ancienne version peut revenir et provoquer des rechargements en boucle.
+        const networkResponse = request.mode === "navigate"
+          ? await fetch(request.url, { cache: "no-store", credentials: "same-origin" })
+          : await fetch(request);
         // On garde une copie fraîche en cache pour le mode hors-ligne
         const cache = await caches.open(CACHE_NAME);
         cache.put(request, networkResponse.clone());

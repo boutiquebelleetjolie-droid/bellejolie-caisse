@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "21/10 · v119 (dépôt-vente hors remises)";
+const APP_VERSION = "23/10 · v120 (plus de rechargements en boucle)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -1728,14 +1728,25 @@ async function verifierNouvelleVersion() {
   try {
     if(STATE.panier && STATE.panier.length) return;          // jamais pendant un ticket en cours
     if(document.querySelector(".modal-bg")) return;           // ni pendant une saisie dans une fenêtre
+    if(window._verifEnCours) return;                           // ni pendant une vérification de synchro
     const r = await fetch(location.pathname+"?v="+Date.now(), {cache:"no-store"});
     if(!r.ok) return;
     const txt = await r.text();
     const m = txt.match(/const APP_VERSION = "([^"]+)"/);
-    if(m && m[1] && m[1]!==APP_VERSION) { console.log("Nouvelle version :", m[1]); location.reload(); }
+    if(m && m[1] && m[1]!==APP_VERSION) {
+      // Anti-boucle : si on a déjà rechargé vers cette version il y a moins de 10 min sans l'obtenir
+      // (copie ancienne gardée par le navigateur), on ne recharge plus en boucle.
+      let t = null; try { t = JSON.parse(sessionStorage.getItem("bj_maj_tentee")||"null"); } catch{}
+      if(t && t.v===m[1] && Date.now()-t.d < 10*60*1000) { console.warn("Mise à jour "+m[1]+" déjà tentée, pas de nouveau rechargement"); return; }
+      try { sessionStorage.setItem("bj_maj_tentee", JSON.stringify({v:m[1], d:Date.now()})); } catch{}
+      console.log("Nouvelle version :", m[1]);
+      const u = new URL(location.href); u.searchParams.set("maj", Date.now().toString(36)); // adresse unique : contourne la copie en cache
+      location.replace(u.toString());
+    }
   } catch(e) {}
 }
 setInterval(verifierNouvelleVersion, 10*60*1000);
+try { const u0 = new URL(location.href); if(u0.searchParams.has("maj")) { u0.searchParams.delete("maj"); history.replaceState(null, "", u0.toString()); } } catch{}
 document.addEventListener("visibilitychange", () => { if(document.visibilityState==="visible") setTimeout(verifierNouvelleVersion, 3000); });
 setTimeout(verifierNouvelleVersion, 60*1000);
 
@@ -3510,6 +3521,9 @@ window.pousserToutVersCloud = async () => {
 
 window.verifierMAJCloud = async () => {
   if(!_fbDb) { alert("⚠️ Pas de connexion au cloud sur cet appareil (vérifiez internet)."); return; }
+  if(window._verifEnCours) return;
+  window._verifEnCours = true;
+  setTimeout(() => { window._verifEnCours = false; }, 3*60*1000);
   const btn = document.getElementById("btn-verif-maj"); if(btn) { btn.disabled = true; btn.textContent = "⏳ Synchronisation en cours…"; }
   try {
     const avant = new Set((STATE.ventes||[]).map(v=>v.id));
@@ -3571,6 +3585,7 @@ window.verifierMAJCloud = async () => {
     alert("❌ Synchronisation impossible : "+explicationErreurSync(err?.code||"", String(err?.message||err)));
   }
   if(btn) { btn.disabled = false; btn.textContent = "☁️ Vérifier les mises à jour (autre appareil)"; }
+  window._verifEnCours = false;
 };
 
 window.restaurerDepuisCloud = async () => {
