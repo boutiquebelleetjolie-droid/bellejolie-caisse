@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "23/10 · v122 (fin des envois en boucle entre appareils)";
+const APP_VERSION = "23/10 · v123 (ticket cadeau par mail)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -5589,6 +5589,56 @@ window.imprimerTicketCadeau = () => {
   setTimeout(()=>{ win.print(); setTimeout(()=>win.close(),500); }, 300);
 };
 
+
+// ── Ticket cadeau (sans prix) envoyé par mail ──
+window.envoyerTicketCadeauMail = async () => {
+  const v = STATE.showTicket; if(!v) return;
+  if(!STATE.emailjsServiceId || !STATE.emailjsTemplateId || !STATE.emailjsPublicKey) { alert("⚠️ L'envoi d'emails n'est pas configuré (EmailJS)."); return; }
+  const cli = v.client?.id ? (STATE.clients||[]).find(c=>c.id===v.client.id) : null;
+  const email = (prompt("Adresse email où envoyer le ticket cadeau :\n(la cliente elle-même, ou directement la personne qui reçoit le cadeau)", cli?.email||v.client?.email||"")||"").trim();
+  if(!email) return;
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { alert("Email invalide : "+email); return; }
+  const deLaPart = prompt("Petit mot ou « de la part de » (facultatif) :", cli ? "De la part de "+cli.prenom : "");
+  if(deLaPart===null) return;
+  const esc = t => String(t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;");
+  const articles = (v.panier||[]).filter(x=>!x.retour && !x.avoirId && x.ref!=="SAC-CAISSE" && x.name!=="Sac" && !x.isChequeCadeau);
+  if(!articles.length) { alert("Aucun article à mettre sur le ticket cadeau."); return; }
+  const date = new Date(v.date).toLocaleDateString("fr-FR",{day:"numeric",month:"long",year:"numeric"});
+  const num = String(v.id||"").replace(/^V/,"");
+  const lignes = articles.map(a => { const infos = [a.taille?"Taille "+a.taille:"", a.couleur&&a.couleur!=="_"?a.couleur:""].filter(Boolean).join(" · ");
+    return `<tr><td style="padding:10px 8px;border-bottom:1px solid #f0e6ea;font-size:15px;color:#333;">${a.qty||1} × ${esc(a.name)}${infos?`<div style="font-size:12px;color:#999;">${esc(infos)}</div>`:""}</td></tr>`; }).join("");
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:0;background:#f5f0f2;font-family:Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0f2;padding:20px 10px;"><tr><td align="center">
+<table width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%;">
+  <tr><td style="background:#fff;border-radius:16px 16px 0 0;padding:22px;text-align:center;border-bottom:3px solid #c99a54;">
+    <img src="${LOGO_TICKET_B64}" width="90" height="90" alt="Belle&Jolie" style="border-radius:50%;"/>
+    <div style="font-size:24px;font-family:Georgia,serif;letter-spacing:3px;color:#993556;margin-top:8px;">🎁 TICKET CADEAU</div>
+    <div style="font-size:12px;color:#aaa;margin-top:4px;">Achat du ${date} · n° ${esc(num)}</div>
+  </td></tr>
+  <tr><td style="background:#fff;padding:22px;">
+    ${deLaPart && deLaPart.trim() ? `<div style="font-family:Georgia,serif;font-style:italic;font-size:17px;color:#555;text-align:center;margin-bottom:16px;">${esc(deLaPart.trim())}</div>` : ""}
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">${lignes}</table>
+    <div style="background:#fbf3e6;border-radius:10px;padding:14px 16px;font-size:13px;color:#854f0b;line-height:1.7;margin-top:18px;">
+      🔄 Article(s) <strong>échangeable(s) sous 30 jours</strong> en boutique, sur présentation de ce mail (montrez-le simplement sur votre téléphone).<br/>
+      Non porté, non lavé, sans odeur, étiquette intacte.
+    </div>
+  </td></tr>
+  <tr><td style="background:#f9f6f8;padding:14px 22px;text-align:center;border-radius:0 0 16px 16px;border-top:0.5px solid #e8e0e4;">
+    <div style="font-size:12px;color:#aaa;">Belle&amp;Jolie · ${adresseCarteCadeau()}</div>
+    <div style="font-size:11px;color:#bbb;margin-top:2px;">🕐 ${BOUTIQUE_HORAIRES}</div>
+    <div style="font-size:11px;color:#ccc;margin-top:4px;">⚠️ Merci de ne pas répondre à cet email. Contact : boutiquebelleetjolie@gmail.com</div>
+  </td></tr>
+</table></td></tr></table></body></html>`;
+  const texte = "TICKET CADEAU Belle&Jolie — achat du "+date+" (n° "+num+")\n\n"+(deLaPart&&deLaPart.trim()?deLaPart.trim()+"\n\n":"")+articles.map(a=>"- "+(a.qty||1)+" × "+a.name+(a.taille?" · T."+a.taille:"")).join("\n")+"\n\nÉchangeable sous 30 jours en boutique sur présentation de ce mail.";
+  try {
+    await emailjs.init(STATE.emailjsPublicKey);
+    await emailjs.send(STATE.emailjsServiceId, STATE.emailjsTemplateId, {
+      to_email: email, to_name: "", subject: "🎁 Votre ticket cadeau Belle&Jolie", message: html, articles: texte, total: "Ticket cadeau", paiement: "", vendeur: "Belle&Jolie",
+    });
+    try { incrementerEnvoisJour(1); } catch{}
+    alert("✅ Ticket cadeau envoyé à "+email);
+  } catch(err) { console.error("Envoi ticket cadeau :", err); alert("❌ L'email n'a pas pu être envoyé. Vérifiez l'adresse et la connexion."); }
+};
 // Libellé lisible du type d'un avoir, pour indiquer sur le ticket d'où vient la remise
 function labelTypeAvoir(typeAvoir, source) {
   if(typeAvoir==="bienvenue") return "🎁 Bon de bienvenue";
@@ -5930,9 +5980,10 @@ function renderTicketModal() {
         </div>
         <button onclick="imprimerZone('ticket-print-area');setTimeout(()=>setState({showTicket:null}),300)" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le ticket</button>
         ${STATE.vendeur.id==="V1" && v.id && (STATE.ventes||[]).some(x=>x.id===v.id) ? `<button onclick="separerLigneTicket('${v.id}')" class="btn-ghost" style="width:100%;margin-bottom:8px;">✂️ Séparer une ligne (ex. créole + pampille)</button>` : ""}
-        <button onclick="imprimerTicketCadeau()" style="width:100%;padding:10px;background:#fbf3e6;color:#854f0b;border:1px solid #f0dcb0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:8px;">
-          🎁 Ticket cadeau (sans prix)
-        </button>
+        <div style="display:flex;gap:6px;margin-bottom:8px;">
+          <button onclick="imprimerTicketCadeau()" style="flex:1;padding:10px;background:#fbf3e6;color:#854f0b;border:1px solid #f0dcb0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">🎁 Ticket cadeau (sans prix)</button>
+          <button onclick="envoyerTicketCadeauMail()" style="flex:1;padding:10px;background:#fff;color:#854f0b;border:1px solid #f0dcb0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">✉️ Ticket cadeau par mail</button>
+        </div>
         <button onclick="imprimerViaUSB()" style="width:100%;padding:10px;background:#eaf3de;color:#3b6d11;border:1px solid #b5d89a;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;margin-bottom:8px;">
           🔌 Imprimer via USB (essai)
         </button>
