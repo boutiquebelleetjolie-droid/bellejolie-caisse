@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "23/10 · v124 (bons de bienvenue restaurés)";
+const APP_VERSION = "24/10 · v125 (Z fusionnés + compteur d'écritures)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -148,6 +148,31 @@ try {
     catch(e) { console.error("Réglage Firestore (longue interrogation) :", e); try { _fbDb.settings({ ignoreUndefinedProperties: true, merge: true }); } catch(e2) { console.error("Réglage Firestore:", e2); } }
   }
 } catch(e) { console.error("Firebase init error:", e); }
+
+// ── Compteur des écritures cloud de cet appareil (pour repérer ce qui consomme le quota quotidien) ──
+function categorieDoc(id) {
+  id = String(id||"");
+  if(id.startsWith("journal__")) return "tickets"; if(id.startsWith("jl__bj_clients")) return "fiches clientes"; if(id.startsWith("jl__bj_avoirs")) return "bons";
+  if(id.startsWith("photo__")) return "photos"; if(id.startsWith("etat_appareil__")) return "état appareil";
+  return id.replace(/^boutique_\d+__/, "").replace(/^bj_/, "") || "autre";
+}
+function compterEcriture(id) {
+  try {
+    const jour = new Date().toISOString().slice(0,10);
+    let c = JSON.parse(localStorage.getItem("bj_compteur_ecritures")||"null");
+    if(!c || c.jour!==jour) c = {jour, total:0, parCle:{}};
+    const k = categorieDoc(id); c.total++; c.parCle[k] = (c.parCle[k]||0)+1;
+    localStorage.setItem("bj_compteur_ecritures", JSON.stringify(c));
+  } catch{}
+}
+function compteurEcritures() { try { const c = JSON.parse(localStorage.getItem("bj_compteur_ecritures")||"null"); return c && c.jour===new Date().toISOString().slice(0,10) ? c : {total:0, parCle:{}}; } catch { return {total:0, parCle:{}}; } }
+try {
+  if(typeof firebase!=="undefined" && firebase.firestore) {
+    const DR = firebase.firestore.DocumentReference.prototype, WB = firebase.firestore.WriteBatch.prototype;
+    ["set","update","delete"].forEach(m => { const o = DR[m]; if(o) DR[m] = function(...a) { compterEcriture(this.id); return o.apply(this, a); }; });
+    ["set","update","delete"].forEach(m => { const o = WB[m]; if(o) WB[m] = function(ref, ...a) { compterEcriture(ref && ref.id); return o.call(this, ref, ...a); }; });
+  }
+} catch(e) { console.error("Compteur d'écritures :", e); }
 
 // ── État de la synchronisation cloud (affiché en caisse si quelque chose bloque) ──
 window._etatSync = { recu: null, envoye: null, erreur: null };
@@ -552,7 +577,7 @@ function envoyerEtatAppareil() {
     _fbDb.collection("bellejolie").doc("etat_appareil__"+DEVICE_ID).set({
       ventesRecentes: ventesRecentesPourSecours(),
       eaBoutique: BOUTIQUE_ID_ACTUEL, type: typeAppareil(), vendeur: STATE.vendeur?.nom||"", version: APP_VERSION,
-      vu: new Date().toISOString(), enAttente: nbVentesEnAttenteEnvoi(), journalPret: !!window._journalPret,
+      vu: new Date().toISOString(), enAttente: nbVentesEnAttenteEnvoi(), journalPret: !!window._journalPret, ecrituresJour: compteurEcritures(),
       dernierEnvoi: e.envoye ? new Date(e.envoye).toISOString() : null, derniereVente: derniere,
       erreur: e.erreurEcriture || (e.erreur ? (e.erreur.code||"")+" "+String(e.erreur.msg||"").slice(0,120) : null), enLigne: navigator.onLine, device: DEVICE_ID,
     }).catch(()=>{});
@@ -575,7 +600,8 @@ function texteEtatsAppareils(l) {
     +" : vu "+ago(x.vu)+(x.enLigne===false?" HORS LIGNE":"")
     +(x.enAttente>0?" · ⚠️ "+x.enAttente+" vente(s) pas encore envoyée(s)":" · tout envoyé")
     +(x.derniereVente?" · dernière vente "+new Date(x.derniereVente).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"}):"")
-    +(x.erreur?" · erreur : "+x.erreur:"")+(x.journalPret===false?" · envoi pas encore démarré":"")).join("\n");
+    +(x.erreur?" · erreur : "+x.erreur:"")+(x.journalPret===false?" · envoi pas encore démarré":"")
+    +(x.ecrituresJour&&x.ecrituresJour.total?" · "+x.ecrituresJour.total+" écritures le "+String(x.ecrituresJour.jour||"").slice(8,10)+"/"+String(x.ecrituresJour.jour||"").slice(5,7):"")).join("\n");
 }
 // Rattrapage : relit les tickets et fiches modifiés récemment (au retour sur l'onglet et toutes les 10 min),
 // au cas où l'écoute en direct aurait décroché (veille de l'ordinateur, coupure réseau…)
@@ -3567,6 +3593,24 @@ window.verifierMAJCloud = async () => {
       vu: new Date().toISOString(), enAttente: nbVentesEnAttenteEnvoi(), journalPret: !!window._journalPret, enLigne: navigator.onLine, device: DEVICE_ID,
       derniereVente: (STATE.ventes||[]).reduce((m,v)=>(v && v.date && (!m || v.date>m)) ? v.date : m, null) }), 10000, "écriture de l'état"); }
     catch(e) { ecritureKO = "\n\n⚠️ Cet appareil n'arrive pas à ÉCRIRE dans le cloud : "+explicationErreurSync(e?.code||"", String(e?.message||e)); }
+    // Z de caisse : fusion avec le cloud (journée par journée) puis renvoi, pour que la clôture apparaisse partout
+    let zRapport = "";
+    try {
+      const refZ = _fbDb.collection("bellejolie").doc(cleFirestore("bj_caisse_jour"));
+      const docZ = await avecDelai(refZ.get(), 10000, "lecture des Z");
+      const cloudZ = docZ.exists ? (docZ.data().value||[]) : [];
+      const m = new Map(cloudZ.filter(z=>z&&z.date).map(z=>[z.date, z]));
+      let ajoutsIci = 0, ajoutsCloud = 0;
+      (STATE.caisseJour||[]).forEach(z => { if(!z||!z.date) return; const c = m.get(z.date);
+        if(!c) { m.set(z.date, z); ajoutsCloud++; } else if(String(z.heure||"") > String(c.heure||"")) m.set(z.date, z); });
+      const fusionZ = [...m.values()].sort((a,b)=>a.date.localeCompare(b.date));
+      ajoutsIci = fusionZ.length - (STATE.caisseJour||[]).length;
+      if(ajoutsIci > 0) { STATE.caisseJour = fusionZ; try { localStorage.setItem(cleFirestore("bj_caisse_jour"), JSON.stringify(fusionZ)); } catch{} }
+      if(ajoutsCloud > 0) await avecDelai(refZ.set({ value: fusionZ, maj: new Date().toISOString(), device: DEVICE_ID }), 10000, "envoi des Z");
+      if(ajoutsIci>0 || ajoutsCloud>0) zRapport = "\n\n🏦 Clôtures : "+(ajoutsIci>0?ajoutsIci+" Z récupéré(s) du cloud":"")+(ajoutsIci>0&&ajoutsCloud>0?", ":"")+(ajoutsCloud>0?ajoutsCloud+" Z envoyé(s) au cloud":"")+".";
+    } catch(e) { zRapport = "\n\n🏦 Clôtures : "+explicationErreurSync(e?.code||"", String(e?.message||e)); }
+    const cpt = compteurEcritures();
+    const cptTxt = "\n\n✍️ Écritures cloud de cet appareil aujourd'hui : "+cpt.total+(cpt.total?" ("+Object.entries(cpt.parCle).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,n])=>k+" "+n).join(", ")+")":"");
     const auj = dateLocaleStr();
     const fmtT = v => new Date(v.date).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})+" "+eur(v.total)+(v.vendeur?.nom?" ("+v.vendeur.nom+")":"");
     const cloudAuj = journal.filter(v=>v && v.date && dateLocaleStr(new Date(v.date))===auj && !v.test);
@@ -3588,7 +3632,7 @@ window.verifierMAJCloud = async () => {
       ? "✅ "+nouvelles.length+" ticket(s) récupéré(s) depuis les autres appareils :\n\n"+nouvelles.slice(-12).map(v=>"• "+new Date(v.date).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})+" — "+eur(v.total)+(v.vendeur?.nom?" ("+v.vendeur.nom+")":"")).join("\n")
       : "✅ Cet appareil est à jour : "+journal.length+" tickets dans le cloud, tous présents ici.\n\nSi des ventes manquent encore, l'appareil de la boutique ne les a pas envoyées.")
       + (secours.recuperees.length ? "\n\n🛟 "+secours.recuperees.length+" vente(s) récupérée(s) DIRECTEMENT auprès des autres caisses ("+secours.parAppareil.join(", ")+") : elles n'étaient pas dans le journal du cloud." : "")
-      + envoiRapport + resume + ecritureKO + autres + (etats ? "\n\n📡 État des appareils :\n"+etats : "\n\n📡 Les autres appareils n'ont pas encore donné de nouvelles (ils le feront après leur mise à jour)."));
+      + envoiRapport + zRapport + resume + ecritureKO + cptTxt + autres + (etats ? "\n\n📡 État des appareils :\n"+etats : "\n\n📡 Les autres appareils n'ont pas encore donné de nouvelles (ils le feront après leur mise à jour)."));
   } catch(err) {
     console.error("Erreur vérification cloud:", err);
     alert("❌ Synchronisation impossible : "+explicationErreurSync(err?.code||"", String(err?.message||err)));
