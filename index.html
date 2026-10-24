@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "24/10 · v125 (Z fusionnés + compteur d'écritures)";
+const APP_VERSION = "24/10 · v126 (moins de lectures cloud)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -278,6 +278,9 @@ function attacherPhotosLocales(liste) {
 }
 async function chargerPhotosManquantes() {
   if(!_fbDb || window._chargementPhotos) return;
+  // Économie de lectures : au plus une fois par jour et par appareil
+  const jourP = new Date().toISOString().slice(0,10);
+  try { if(localStorage.getItem("bj_photos_chargees_le")===jourP) return; localStorage.setItem("bj_photos_chargees_le", jourP); } catch{}
   if(!(STATE.products||[]).some(p => p && p.aPhoto && !p.photo)) return;
   window._chargementPhotos = true;
   try {
@@ -445,7 +448,7 @@ function recupererClientesPerdues() {
 // Au démarrage, si une synchro complète a eu lieu il y a moins de 3 jours, on ne lit que les documents
 // modifiés depuis (avec 3 h de marge pour les horloges décalées). Rien n'est jamais effacé : tout l'historique
 // reste dans le cloud et sur l'appareil ; une synchro complète est refaite automatiquement tous les 3 jours.
-const SYNC_MARGE_MS = 36*3600*1000, SYNC_COMPLETE_JOURS = 3; // 36 h de marge : tolère des appareils dont l'horloge est décalée
+const SYNC_MARGE_MS = 36*3600*1000, SYNC_COMPLETE_JOURS = 30; // 36 h de marge : tolère des appareils dont l'horloge est décalée
 function cleRepereSync() { return "bj_sync_repere__"+BOUTIQUE_ID_ACTUEL; }
 function majRepereSync(iso, complete) {
   try {
@@ -632,7 +635,7 @@ async function rattraperSync(force) {
 let _cacheDepuis = 0;
 document.addEventListener("visibilitychange", () => { if(document.visibilityState==="hidden") _cacheDepuis = Date.now(); else if(_cacheDepuis && Date.now()-_cacheDepuis > 5*60*1000) rattraperSync(false); });
 window.addEventListener("online", () => rattraperSync(true));
-setInterval(() => { if(document.visibilityState==="visible") rattraperSync(true); try { journaliserVentes(STATE.ventes||[]); } catch{} }, 30*60*1000); // et renvoie ce qui n'aurait pas pu partir
+setInterval(() => { if(document.visibilityState==="visible") rattraperSync(true); try { journaliserVentes(STATE.ventes||[]); } catch{} }, 2*3600*1000); // et renvoie ce qui n'aurait pas pu partir
 // ── Tickets de l'autre boutique, en lecture seule (historique client, fidélité commune) ──
 let VENTES_AUTRES = (()=>{ try { return JSON.parse(localStorage.getItem("bj_ventes_autres__"+BOUTIQUE_ID_ACTUEL)||"[]"); } catch { return []; } })();
 function toutesVentesClientes() { return VENTES_AUTRES.length ? (STATE.ventes||[]).concat(VENTES_AUTRES) : (STATE.ventes||[]); }
@@ -703,7 +706,7 @@ function ecrireJournal(aEcrire, sigs, cleSig) {
 async function controlerEnvoisRecents() {
   if(!_fbDb) return 0;
   try {
-    const depuis = new Date(Date.now() - 3*864e5).toISOString();
+    const depuis = new Date(Date.now() - 864e5).toISOString();
     const locales = (STATE.ventes||[]).filter(v => v && v.id && !v.test && v.date && v.date >= depuis);
     if(!locales.length) return 0;
     const snap = await _fbDb.collection("bellejolie").where("date", ">=", depuis).get();
@@ -720,7 +723,7 @@ async function controlerEnvoisRecents() {
   } catch(e) { console.error("Contrôle des envois :", e); return 0; }
 }
 setTimeout(controlerEnvoisRecents, 25000);
-setInterval(controlerEnvoisRecents, 30*60*1000);
+setInterval(controlerEnvoisRecents, 2*3600*1000);
 // Au démarrage : lit le journal, le fusionne avec la liste locale, puis n'écrit dans le journal
 // que les ventes absentes ou plus récentes ici (jamais d'écrasement aveugle par une copie périmée).
 async function synchroniserJournalAuDemarrage() {
@@ -770,6 +773,19 @@ function ecouterJournalVentes() {
       render(); afficherBandeauSyncDiscret();
     }
   }, err => console.error("Écoute du journal impossible:", err));
+}
+async function lireJournalRecent(boutiqueId, jours) {
+  const depuis = new Date(Date.now() - jours*864e5).toISOString();
+  const pre = boutiqueId ? "journal__"+boutiqueId+"__" : prefixeJournal();
+  const snap = await _fbDb.collection("bellejolie").where("date", ">=", depuis).get();
+  const res = []; snap.forEach(d => { if(!d.id.startsWith(pre)) return; const x = d.data(); if(x && x.value) res.push(x.value); });
+  return res;
+}
+const _cacheJournal = {};
+async function lireJournalVentesCache(boutiqueId) {
+  const c = _cacheJournal[boutiqueId];
+  if(c && Date.now()-c.t < 60*60*1000) return c.l;
+  const l = await lireJournalVentes(boutiqueId); _cacheJournal[boutiqueId] = {t: Date.now(), l}; return l;
 }
 async function lireJournalVentes(boutiqueId) {
   const FP = firebase.firestore.FieldPath.documentId();
@@ -957,7 +973,6 @@ function demarrerSyncTempsReel() {
           localStorage.setItem(cleFirestore(storageKey), JSON.stringify(fusion));
           if(signatureListeProduits(fusion)!==signatureListeProduits(recus)) firestorePush("bj_products", fusion);
           render(); afficherBandeauSyncDiscret();
-          chargerPhotosManquantes();
         } catch(err) { console.error("Erreur application articles:", err); }
         return;
       }
@@ -3562,13 +3577,14 @@ window.verifierMAJCloud = async () => {
   const btn = document.getElementById("btn-verif-maj"); if(btn) { btn.disabled = true; btn.textContent = "⏳ Synchronisation en cours…"; }
   try {
     const avant = new Set((STATE.ventes||[]).map(v=>v.id));
-    const journal = await avecDelai(lireJournalVentes(), 45000, "lecture du journal");
+    const JOURS_VERIF = 10, depuisVerif = new Date(Date.now() - JOURS_VERIF*864e5).toISOString();
+    const journal = await avecDelai(lireJournalRecent(null, JOURS_VERIF), 45000, "lecture du journal");
     appliquerVentesRecues(journal);
     try { await avecDelai(rattraperSync("large"), 20000, "rattrapage"); } catch(e) { console.error(e); }
     syncRecu();
     // Ventes de CET appareil absentes du journal du cloud : on les envoie une par une et on note l'erreur exacte
     const idsCloud = new Set(journal.map(v=>v && v.id));
-    const absentes = (STATE.ventes||[]).filter(v => v && v.id && !v.test && !idsCloud.has(v.id) && !ventesSupprimeesSet().has(v.id));
+    const absentes = (STATE.ventes||[]).filter(v => v && v.id && !v.test && v.date && v.date >= depuisVerif && !idsCloud.has(v.id) && !ventesSupprimeesSet().has(v.id));
     let envoiRapport = "";
     if(absentes.length) {
       let ok = 0; const erreurs = {};
@@ -3623,14 +3639,14 @@ window.verifierMAJCloud = async () => {
     // Ventes du jour enregistrées sur l'AUTRE boutique (appareil réglé sur la mauvaise boutique ?)
     let autres = "";
     try { for(const b of BOUTIQUES.filter(x=>x.id!==BOUTIQUE_ID_ACTUEL)) {
-      const j = await avecDelai(lireJournalVentes(b.id), 20000, "journal de l'autre boutique"); const auj = dateLocaleStr();
+      const j = await avecDelai(lireJournalRecent(b.id, 1), 20000, "journal de l'autre boutique"); const auj = dateLocaleStr();
       const duJour = j.filter(v => v && v.date && dateLocaleStr(new Date(v.date))===auj && !v.test);
       if(duJour.length) autres += "\n\n🚨 "+duJour.length+" vente(s) aujourd'hui enregistrée(s) sur "+nomBoutiqueCourt(b.id).toUpperCase()+" ("+eur(duJour.reduce((s,v)=>s+(v.total||0),0))+") : un appareil du magasin est réglé sur la mauvaise boutique !";
     } } catch(e) { console.error(e); }
     render();
     alert((nouvelles.length
       ? "✅ "+nouvelles.length+" ticket(s) récupéré(s) depuis les autres appareils :\n\n"+nouvelles.slice(-12).map(v=>"• "+new Date(v.date).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})+" — "+eur(v.total)+(v.vendeur?.nom?" ("+v.vendeur.nom+")":"")).join("\n")
-      : "✅ Cet appareil est à jour : "+journal.length+" tickets dans le cloud, tous présents ici.\n\nSi des ventes manquent encore, l'appareil de la boutique ne les a pas envoyées.")
+      : "✅ Cet appareil est à jour : "+journal.length+" tickets des "+JOURS_VERIF+" derniers jours dans le cloud, tous présents ici.\n\nSi des ventes manquent encore, l'appareil de la boutique ne les a pas envoyées.")
       + (secours.recuperees.length ? "\n\n🛟 "+secours.recuperees.length+" vente(s) récupérée(s) DIRECTEMENT auprès des autres caisses ("+secours.parAppareil.join(", ")+") : elles n'étaient pas dans le journal du cloud." : "")
       + envoiRapport + zRapport + resume + ecritureKO + cptTxt + autres + (etats ? "\n\n📡 État des appareils :\n"+etats : "\n\n📡 Les autres appareils n'ont pas encore donné de nouvelles (ils le feront après leur mise à jour)."));
   } catch(err) {
@@ -7796,7 +7812,7 @@ window.ouvrirVueToutesBoutiques = async () => {
         _fbDb.collection("bellejolie").doc(cleV).get(),
         _fbDb.collection("bellejolie").doc(cleP).get(),
       ]);
-      const ventesJournal = await lireJournalVentes(b.id).catch(()=>[]);
+      const ventesJournal = await lireJournalVentesCache(b.id).catch(()=>[]);
       const ventes = fusionnerListesVentes(docV.exists ? (docV.data().value||[]) : [], ventesJournal);
       const products = docP.exists ? (docP.data().value||[]) : [];
       const prodMap = {}; products.forEach(p=>prodMap[p.id]=p);
