@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "25/10 · v127 (fin des renvois en boucle)";
+const APP_VERSION = "25/10 · v128 (encore moins de lectures)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -449,7 +449,7 @@ function recupererClientesPerdues() {
 // Au démarrage, si une synchro complète a eu lieu il y a moins de 3 jours, on ne lit que les documents
 // modifiés depuis (avec 3 h de marge pour les horloges décalées). Rien n'est jamais effacé : tout l'historique
 // reste dans le cloud et sur l'appareil ; une synchro complète est refaite automatiquement tous les 3 jours.
-const SYNC_MARGE_MS = 36*3600*1000, SYNC_COMPLETE_JOURS = 30; // 36 h de marge : tolère des appareils dont l'horloge est décalée
+const SYNC_MARGE_MS = 12*3600*1000, SYNC_COMPLETE_JOURS = 30; // 36 h de marge : tolère des appareils dont l'horloge est décalée
 function cleRepereSync() { return "bj_sync_repere__"+BOUTIQUE_ID_ACTUEL; }
 function majRepereSync(iso, complete) {
   try {
@@ -574,8 +574,9 @@ async function recupererVentesAutresAppareils() {
   }
   return res;
 }
-// Écoute en direct des autres caisses (canal de secours, en plus du journal)
-setTimeout(() => {
+// Écoute en direct des autres caisses (canal de secours) : désactivée pour économiser les lectures,
+// le secours reste consulté au bouton « Vérifier » et lors des rattrapages
+if(false) setTimeout(() => {
   if(!_fbDb) return;
   _fbDb.collection("bellejolie").where("eaBoutique","==",BOUTIQUE_ID_ACTUEL).onSnapshot(snap => {
     const ici = new Set((STATE.ventes||[]).map(v=>v.id)), suppr = ventesSupprimeesSet();
@@ -602,7 +603,7 @@ function envoyerEtatAppareil() {
   }, 3000);
 }
 setTimeout(envoyerEtatAppareil, 20000);
-setInterval(envoyerEtatAppareil, 15*60*1000);
+setInterval(envoyerEtatAppareil, 45*60*1000);
 window.addEventListener("online", envoyerEtatAppareil);
 async function lireEtatsAppareils() {
   if(!_fbDb) return [];
