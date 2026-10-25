@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "24/10 · v126 (moins de lectures cloud)";
+const APP_VERSION = "25/10 · v127 (fin des renvois en boucle)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -259,7 +259,8 @@ function produitsSansPhotos(liste) {
 function envoyerPhotosProduits(liste) {
   if(!_fbDb) return;
   const cle = "bj_photo_sig__"+BOUTIQUE_ID_ACTUEL;
-  let sigs = {}; try { sigs = JSON.parse(localStorage.getItem(cle)||"{}"); } catch{}
+  if(!window._sigsPhotos) { try { window._sigsPhotos = JSON.parse(localStorage.getItem(cle)||"{}"); } catch { window._sigsPhotos = {}; } }
+  const sigs = window._sigsPhotos;
   const col = _fbDb.collection("bellejolie");
   (liste||[]).forEach(p => {
     if(!p || !p.id) return;
@@ -469,15 +470,29 @@ function repereSyncIncrementale() {
     return o;
   } catch { return null; }
 }
+// Signatures des tickets déjà envoyés : UNE seule copie en mémoire partagée par toutes les fonctions
+// (avant, plusieurs copies s'écrasaient entre elles → des tickets étaient renvoyés en boucle entre appareils,
+// ce qui épuisait le quota quotidien du cloud)
+const _sigsJ = {};
+function sigsJournal() {
+  const c = "bj_journal_sig__"+BOUTIQUE_ID_ACTUEL;
+  if(!_sigsJ[c]) { try { _sigsJ[c] = JSON.parse(localStorage.getItem(c)||"{}"); } catch { _sigsJ[c] = {}; } }
+  return _sigsJ[c];
+}
+let _sigsJT = null;
+function sauverSigsJournal() {
+  clearTimeout(_sigsJT);
+  _sigsJT = setTimeout(() => { try { localStorage.setItem("bj_journal_sig__"+BOUTIQUE_ID_ACTUEL, JSON.stringify(sigsJournal())); } catch(e) { console.error("Signatures des tickets non sauvegardées :", e); } }, 800);
+}
 function appliquerVentesRecues(recues) {
   if(!recues.length) return;
   const cleSig = "bj_journal_sig__"+BOUTIQUE_ID_ACTUEL;
-  let sigs = {}; try { sigs = JSON.parse(localStorage.getItem(cleSig)||"{}"); } catch{}
+  let sigs = sigsJournal();
   const copies = new Map(recues.map(v=>[v.id, JSON.parse(JSON.stringify(v))]));
   allegerVentes(recues);
   const fusion = fusionnerListesVentes(STATE.ventes||[], recues);
   fusion.forEach(v => { const j = copies.get(v.id); if(j && signatureJournal(j)===signatureJournal(v)) sigs[v.id] = signatureJournal(v); });
-  try { localStorage.setItem(cleSig, JSON.stringify(sigs)); } catch{}
+  sauverSigsJournal();
   if(signatureVentes(fusion)!==signatureVentes(STATE.ventes||[])) {
     STATE.ventes = fusion;
     try { localStorage.setItem(cleFirestore("bj_ventes"), JSON.stringify(fusion)); } catch{}
@@ -526,7 +541,7 @@ function demarrerSyncIncrementale(o) {
 // ── État de chaque appareil (pour voir à distance si la caisse du magasin envoie bien ses ventes) ──
 function typeAppareil() { const ua = navigator.userAgent||""; return /iPad|Tablet|SM-T|Tab/i.test(ua) ? "Tablette" : /Mobi|Android|iPhone/i.test(ua) ? "Téléphone" : "Ordinateur"; }
 function nbVentesEnAttenteEnvoi() {
-  try { const sigs = JSON.parse(localStorage.getItem("bj_journal_sig__"+BOUTIQUE_ID_ACTUEL)||"{}");
+  try { const sigs = sigsJournal();
     return (STATE.ventes||[]).filter(v => v && v.id && !v.test && sigs[v.id]!==signatureJournal(v)).length; } catch { return null; }
 }
 function ventesRecentesPourSecours() {
@@ -682,9 +697,10 @@ function signatureJournal(v) { return versionVente(v)+":"+JSON.stringify(v).leng
 function journaliserVentes(liste) {
   if(!_fbDb || !window._journalPret) return; // la synchro de démarrage écrira tout ce qu'il faut
   const cleSig = "bj_journal_sig__"+BOUTIQUE_ID_ACTUEL;
-  let sigs = {}; try { sigs = JSON.parse(localStorage.getItem(cleSig)||"{}"); } catch{}
+  let sigs = sigsJournal();
   const maintenantJ = new Date().toISOString();
-  const aEcrire = (liste||[]).filter(v => v && v.id && sigs[v.id]!==signatureJournal(v));
+  const limite = new Date(Date.now() - 90*864e5).toISOString();
+  const aEcrire = (liste||[]).filter(v => v && v.id && (v.date||"") >= limite && sigs[v.id]!==signatureJournal(v));
   if(!aEcrire.length) return;
   // Une vente déjà journalisée qui a changé ici (retour, annulation, avoir...) est horodatée,
   // pour que cette version l'emporte sur les autres appareils.
@@ -697,7 +713,7 @@ function ecrireJournal(aEcrire, sigs, cleSig) {
   aEcrire.forEach(v => {
     const majJ = new Date().toISOString();
     col.doc(prefixeJournal()+v.id).set({ value:JSON.parse(JSON.stringify(v)), date:v.date||"", maj:majJ, ["jv_"+BOUTIQUE_ID_ACTUEL]:majJ, device:DEVICE_ID })
-      .then(() => { sigs[v.id] = signatureJournal(v); try { localStorage.setItem(cleSig, JSON.stringify(sigs)); } catch{} syncEnvoye(); })
+      .then(() => { sigs[v.id] = signatureJournal(v); sauverSigsJournal(); syncEnvoye(); })
       .catch(e => { console.error("Ticket "+v.id+" refusé par le cloud :", e); window._etatSync.erreurEcriture = "ticket "+v.id+" : "+(e?.code||"")+" "+String(e?.message||e).slice(0,140); });
   });
 }
@@ -715,7 +731,7 @@ async function controlerEnvoisRecents() {
     const suppr = ventesSupprimeesSet();
     const manquantes = locales.filter(v => !presents.has(v.id) && !suppr.has(v.id));
     if(manquantes.length) {
-      const cleSig = "bj_journal_sig__"+BOUTIQUE_ID_ACTUEL; let sigs = {}; try { sigs = JSON.parse(localStorage.getItem(cleSig)||"{}"); } catch{}
+      const cleSig = "bj_journal_sig__"+BOUTIQUE_ID_ACTUEL; let sigs = sigsJournal();
       console.log("Contrôle : "+manquantes.length+" vente(s) absente(s) du cloud, renvoi");
       ecrireJournal(manquantes, sigs, cleSig);
     }
@@ -736,9 +752,9 @@ async function synchroniserJournalAuDemarrage() {
     const avant = signatureVentes(STATE.ventes||[]);
     const fusion = fusionnerListesVentes(journal, STATE.ventes||[]);
     const cleSig = "bj_journal_sig__"+BOUTIQUE_ID_ACTUEL;
-    const sigs = {};
+    const sigs = sigsJournal(); Object.keys(sigs).forEach(k => delete sigs[k]);
     fusion.forEach(v => { const j = jMap.get(v.id); if(j && signatureJournal(j)===signatureJournal(v)) sigs[v.id] = signatureJournal(v); });
-    try { localStorage.setItem(cleSig, JSON.stringify(sigs)); } catch{}
+    sauverSigsJournal();
     if(signatureVentes(fusion)!==avant) {
       STATE.ventes = fusion;
       try { localStorage.setItem(cleFirestore("bj_ventes"), JSON.stringify(fusion)); } catch{}
@@ -3589,7 +3605,7 @@ window.verifierMAJCloud = async () => {
     if(absentes.length) {
       let ok = 0; const erreurs = {};
       const col = _fbDb.collection("bellejolie");
-      const cleSig = "bj_journal_sig__"+BOUTIQUE_ID_ACTUEL; let sigs = {}; try { sigs = JSON.parse(localStorage.getItem(cleSig)||"{}"); } catch{}
+      const cleSig = "bj_journal_sig__"+BOUTIQUE_ID_ACTUEL; let sigs = sigsJournal();
       for(const v of absentes.slice(-200)) {
         try {
           const maj = new Date().toISOString();
@@ -3597,7 +3613,7 @@ window.verifierMAJCloud = async () => {
           sigs[v.id] = signatureJournal(v); ok++;
         } catch(e) { const k = (e?.code||"")+" "+String(e?.message||e).slice(0,140); erreurs[k] = (erreurs[k]||0)+1; console.error("Envoi ticket "+v.id+" :", e); if(e?.code==="deadline-exceeded" && erreurs[k]>=2) break; }
       }
-      try { localStorage.setItem(cleSig, JSON.stringify(sigs)); } catch{}
+      sauverSigsJournal();
       envoiRapport = "\n\n📤 "+absentes.length+" vente(s) de cet appareil manquaient dans le cloud : "+ok+" envoyée(s) maintenant."
         + Object.entries(erreurs).map(([k,n])=>"\n❌ "+n+" refusée(s) : "+k).join("");
     }
