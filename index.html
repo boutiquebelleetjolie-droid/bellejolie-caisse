@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "27/10 · v131 (classement vendeuses dépôt-vente)";
+const APP_VERSION = "27/10 · v132 (fin des envois en double hors connexion)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -266,6 +266,9 @@ function envoyerPhotosProduits(liste) {
     if(!p || !p.id) return;
     const sig = p.photo ? p.photo.length+":"+p.photo.slice(-24) : "";
     let op = null;
+    window._photosEnCours = window._photosEnCours || {};
+    if(sig && window._photosEnCours[p.id]===sig) return;
+    if(sig && sigs[p.id]!==sig) window._photosEnCours[p.id] = sig;
     if(sig && sigs[p.id]!==sig) op = col.doc(prefixePhotos()+p.id).set({ value:p.photo, maj:new Date().toISOString(), device:DEVICE_ID });
     else if(!sig && sigs[p.id] && p.aPhoto===false) op = col.doc(prefixePhotos()+p.id).delete(); // photo retirée volontairement
     if(!op) return;
@@ -372,13 +375,19 @@ function fusionnerListe(key, base, arrivee) {
   let suppr; try { suppr = new Set(STATE[cfg.etatSuppr]||[]); } catch { suppr = new Set(); }
   const m = new Map();
   (base||[]).forEach(x => { if(x && x.id && !suppr.has(x.id)) m.set(x.id, x); });
-  (arrivee||[]).forEach(x => { if(!x||!x.id||suppr.has(x.id)) return; const ex = m.get(x.id); if(!ex || (x.majLe||"") >= (ex.majLe||"")) m.set(x.id, x); });
+  (arrivee||[]).forEach(x => { if(!x||!x.id||suppr.has(x.id)) return; const ex = m.get(x.id);
+    if(!ex) { m.set(x.id, x); return; }
+    const a = x.majLe||"", b = ex.majLe||"";
+    if(a > b) m.set(x.id, x);
+    else if(a === b) { const sx = sigElem(x), se = sigElem(ex); if(sx !== se && sx > se) m.set(x.id, x); } // égalité : même choix sur tous les appareils (sinon renvoi sans fin)
+  });
   return [...m.values()];
 }
+function listeAChange(base, fusion) { if((base||[]).length!==fusion.length) return true; const s = new Set(base||[]); return fusion.some(x => !s.has(x)); }
 function sigListe(l) { return (l||[]).filter(Boolean).map(x=>x.id+":"+(x.majLe||"")).sort().join("|"); } // indépendant de l'ordre (sinon deux appareils se renvoient la liste sans fin)
 // ── Journal individuel (un document cloud par cliente / par bon) ──
 // Aucun appareil, même ancien, ne peut effacer ces documents en réécrivant la liste globale.
-const _jlPret = {}, _jlSigs = {};
+const _jlPret = {}, _jlSigs = {}, _jlEnCours = {}, _jvEnCours = {};
 function h32(str) { let h = 5381; for(let i=0;i<str.length;i++) h = ((h<<5)+h+str.charCodeAt(i))|0; return (h>>>0).toString(36)+":"+str.length; }
 const _jlSauveT = {};
 function sauverJLSigs(key) { clearTimeout(_jlSauveT[key]); _jlSauveT[key] = setTimeout(()=>{ try { localStorage.setItem("bj_jl_sig__"+key, JSON.stringify(_jlSigs[key]||{})); } catch{} }, 1500); }
@@ -386,12 +395,17 @@ function prefixeJL(key) { return "jl__"+key+"__"; }
 function journaliserListe(key, liste) {
   if(!_fbDb || !_jlPret[key] || !Array.isArray(liste)) return;
   const sigs = _jlSigs[key] = _jlSigs[key] || {};
-  const aEcrire = liste.filter(x => x && x.id && sigs[x.id]!==h32(sigElem(x)));
+  // Envois déjà en file d'attente (connexion lente ou coupée) : on ne les remet PAS une 2e fois en file,
+  // sinon chaque modification renvoyait toute la liste et le quota du cloud explosait
+  const enCours = _jlEnCours[key] = _jlEnCours[key] || {};
+  const aEcrire = liste.filter(x => { if(!x || !x.id) return false; const h = h32(sigElem(x)); return sigs[x.id]!==h && enCours[x.id]!==h; });
   for(let i=0; i<aEcrire.length; i+=400) {
     const lot = aEcrire.slice(i, i+400), batch = _fbDb.batch();
     const majJ = new Date().toISOString();
-    lot.forEach(x => batch.set(_fbDb.collection("bellejolie").doc(prefixeJL(key)+x.id), {value:JSON.parse(JSON.stringify(x)), maj:majJ, ["jl_"+key]:majJ, device:DEVICE_ID}));
-    batch.commit().then(() => { lot.forEach(x => sigs[x.id] = h32(sigElem(x))); sauverJLSigs(key); }).catch(err => console.error("Journal "+key+" :", err));
+    const hs = lot.map(x => h32(sigElem(x)));
+    lot.forEach((x,j) => { enCours[x.id] = hs[j]; batch.set(_fbDb.collection("bellejolie").doc(prefixeJL(key)+x.id), {value:JSON.parse(JSON.stringify(x)), maj:majJ, ["jl_"+key]:majJ, device:DEVICE_ID}); });
+    batch.commit().then(() => { lot.forEach((x,j) => { sigs[x.id] = hs[j]; if(enCours[x.id]===hs[j]) delete enCours[x.id]; }); sauverJLSigs(key); })
+      .catch(err => { lot.forEach((x,j) => { if(enCours[x.id]===hs[j]) delete enCours[x.id]; }); console.error("Journal "+key+" :", err); });
   }
 }
 function ecouterJournalListe(key) {
@@ -404,9 +418,9 @@ function ecouterJournalListe(key) {
     recus.forEach(x => { if(x && x.id) sigs[x.id] = h32(sigElem(x)); });
     sauverJLSigs(key);
     if(recus.length) {
-      const avant = sigListe(STATE[cfg.etat]||[]);
-      const fusion = fusionnerListe(key, STATE[cfg.etat]||[], recus);
-      if(sigListe(fusion)!==avant) {
+      const base = STATE[cfg.etat]||[];
+      const fusion = fusionnerListe(key, base, recus);
+      if(listeAChange(base, fusion)) {
         STATE[cfg.etat] = fusion; memoriserSigListe(key, fusion);
         try { localStorage.setItem(cleFirestore(key), JSON.stringify(fusion)); } catch{}
         firestorePush(key, fusion); // remet aussi la liste globale du cloud à jour
@@ -504,9 +518,9 @@ function appliquerJLRecus(key, recus) {
   const sigs = _jlSigs[key] = _jlSigs[key] || {};
   recus.forEach(x => { if(x && x.id) sigs[x.id] = h32(sigElem(x)); });
   sauverJLSigs(key);
-  const avant = sigListe(STATE[cfg.etat]||[]);
-  const fusion = fusionnerListe(key, STATE[cfg.etat]||[], recus);
-  if(sigListe(fusion)!==avant) {
+  const base = STATE[cfg.etat]||[];
+  const fusion = fusionnerListe(key, base, recus);
+  if(listeAChange(base, fusion)) {
     STATE[cfg.etat] = fusion; memoriserSigListe(key, fusion);
     try { localStorage.setItem(cleFirestore(key), JSON.stringify(fusion)); } catch{}
     firestorePush(key, fusion);
@@ -712,10 +726,13 @@ function ecrireJournal(aEcrire, sigs, cleSig) {
   // Ticket par ticket (les envois groupés se sont révélés perdus sans erreur le 20/10/2026)
   const col = _fbDb.collection("bellejolie");
   aEcrire.forEach(v => {
+    const sg = signatureJournal(v);
+    if(_jvEnCours[v.id]===sg) return; // déjà en file d'attente d'envoi
+    _jvEnCours[v.id] = sg;
     const majJ = new Date().toISOString();
     col.doc(prefixeJournal()+v.id).set({ value:JSON.parse(JSON.stringify(v)), date:v.date||"", maj:majJ, ["jv_"+BOUTIQUE_ID_ACTUEL]:majJ, device:DEVICE_ID })
-      .then(() => { sigs[v.id] = signatureJournal(v); sauverSigsJournal(); syncEnvoye(); })
-      .catch(e => { console.error("Ticket "+v.id+" refusé par le cloud :", e); window._etatSync.erreurEcriture = "ticket "+v.id+" : "+(e?.code||"")+" "+String(e?.message||e).slice(0,140); });
+      .then(() => { sigs[v.id] = sg; if(_jvEnCours[v.id]===sg) delete _jvEnCours[v.id]; sauverSigsJournal(); syncEnvoye(); })
+      .catch(e => { if(_jvEnCours[v.id]===sg) delete _jvEnCours[v.id]; console.error("Ticket "+v.id+" refusé par le cloud :", e); window._etatSync.erreurEcriture = "ticket "+v.id+" : "+(e?.code||"")+" "+String(e?.message||e).slice(0,140); });
   });
 }
 // Contrôle automatique (au démarrage puis toutes les 30 min) : les ventes des 3 derniers jours de cet appareil
@@ -858,6 +875,7 @@ function firestorePush(key, val) {
         try { localStorage.setItem(cle, JSON.stringify(fusion)); } catch{}
         setTimeout(render, 0);
       }
+      if(doc.exists && !listeAChange(serveur, fusion)) return; // le cloud a déjà exactement cette liste : aucune écriture
       return refL.set({ value: fusion, maj: maintenant, device: DEVICE_ID });
     }).then(() => { try { localStorage.setItem("bj_dernier_push_local", maintenant); } catch{} })
     .catch(err => console.error("Firestore push (fusion "+key+") error:", err));
