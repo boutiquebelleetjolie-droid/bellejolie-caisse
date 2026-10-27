@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "27/10 · v129 (bilan chaussures corrigé)";
+const APP_VERSION = "27/10 · v130 (mémos partagés entre appareils)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -863,6 +863,17 @@ function firestorePush(key, val) {
     .catch(err => console.error("Firestore push (fusion "+key+") error:", err));
     return;
   }
+  if(key==="bj_memos" && Array.isArray(val)) {
+    const refM = _fbDb.collection("bellejolie").doc(cle);
+    refM.get().then(doc => {
+      const cloud = doc.exists ? (doc.data().value||[]) : [];
+      const fusion = fusionnerMemos(cloud, val);
+      if(sigMemos(fusion)!==sigMemos(val)) { STATE.memos = fusion; try { localStorage.setItem(cle, JSON.stringify(fusion)); } catch{} setTimeout(render, 0); }
+      if(doc.exists && sigMemos(cloud)===sigMemos(fusion)) return;
+      return refM.set({ value: fusion, maj: maintenant, device: DEVICE_ID });
+    }).catch(err => console.error("Firestore push (mémos) error:", err));
+    return;
+  }
   if(key==="bj_depots_vente" && Array.isArray(val)) {
     const refD = _fbDb.collection("bellejolie").doc(cle);
     refD.get().then(doc => {
@@ -941,7 +952,16 @@ const CLES_SYNC_TEMPS_REEL = {
   bj_couturiere: "couturiere",
   bj_depots_vente: "depotsVente",
   bj_sorties_especes: "sortiesEspeces",
+  bj_memos: "memos",
 };
+// Mémos & météo : fusion jour par jour (le plus récent l'emporte), jamais de remplacement en bloc
+function sigMemos(l) { return (l||[]).filter(m=>m&&m.jourKey).map(m=>m.jourKey+"~"+(m.updated||"")).sort().join("|"); }
+function fusionnerMemos(a, b) {
+  const m = new Map();
+  [...(a||[]), ...(b||[])].forEach(x => { if(!x||!x.jourKey) return; const c = m.get(x.jourKey);
+    if(!c || String(x.updated||"") > String(c.updated||"")) m.set(x.jourKey, x); });
+  return [...m.values()];
+}
 // Dépôts-vente : fusion lot par lot (jamais de remplacement en bloc), articles réunis
 function sigDepotsVente(l) {
   return (l||[]).filter(x=>x&&x.id).map(x => [x.id, [...new Set(x.articleIds||[])].sort().join(","), x.bonGenereId||"", x.montantBonGenere||"", x.clientEmail||"", x.recapEnvoyeLe||"", x.articlesPerdus||0, x.reconstruit?1:0, x.clientId||"", x.clientTel||""].join("~")).sort().join("|");
@@ -1004,6 +1024,17 @@ function demarrerSyncTempsReel() {
           journaliserVentes(fusion);
           render(); afficherBandeauSyncDiscret();
         } catch(err) { console.error("Erreur fusion ventes:", err); }
+        return;
+      }
+      if(storageKey==="bj_memos") {
+        try {
+          const recus = data.value||[];
+          const fusion = fusionnerMemos(STATE.memos||[], recus);
+          STATE.memos = fusion;
+          localStorage.setItem(cleFirestore(storageKey), JSON.stringify(fusion));
+          if(sigMemos(fusion)!==sigMemos(recus)) firestorePush(storageKey, fusion);
+          render();
+        } catch(err) { console.error("Erreur fusion mémos:", err); }
         return;
       }
       if(storageKey==="bj_depots_vente") {
