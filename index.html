@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "27/10 · v132 (fin des envois en double hors connexion)";
+const APP_VERSION = "27/10 · v133 (le téléphone rattrape après une coupure)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -173,6 +173,35 @@ try {
     ["set","update","delete"].forEach(m => { const o = WB[m]; if(o) WB[m] = function(ref, ...a) { compterEcriture(ref && ref.id); return o.call(this, ref, ...a); }; });
   }
 } catch(e) { console.error("Compteur d'écritures :", e); }
+
+// ── Écoutes en direct coupées par le cloud (quota, réseau) : elles ne repartent jamais seules.
+// On recharge l'appli dès que c'est sans risque (panier vide, appli au premier plan), au plus toutes les 20 min.
+window._ecouteCoupee = false;
+try {
+  if(typeof firebase!=="undefined" && firebase.firestore) {
+    [firebase.firestore.Query.prototype, firebase.firestore.DocumentReference.prototype].forEach(P => {
+      const o = P.onSnapshot; if(!o) return;
+      P.onSnapshot = function(...a) {
+        const iErr = a.findIndex((x,i) => i>0 && typeof x==="function" && typeof a[i-1]==="function");
+        const errOrig = iErr>0 ? a[iErr] : null;
+        const errNouv = e => { window._ecouteCoupee = true; try { errOrig && errOrig(e); } catch{} };
+        if(iErr>0) a[iErr] = errNouv; else if(typeof a[a.length-1]==="function") a.push(errNouv);
+        return o.apply(this, a);
+      };
+    });
+  }
+} catch(e) { console.error("Surveillance des écoutes :", e); }
+function relancerSiEcouteCoupee() {
+  if(!window._ecouteCoupee || !navigator.onLine || document.visibilityState!=="visible") return;
+  if((STATE.panier||[]).length || window._verifEnCours) return;
+  let der = 0; try { der = parseInt(sessionStorage.getItem("bj_relance_ecoute")||"0"); } catch{}
+  if(Date.now()-der < 20*60*1000) return;
+  try { sessionStorage.setItem("bj_relance_ecoute", String(Date.now())); } catch{}
+  console.log("Écoute du cloud coupée : rechargement pour la relancer");
+  location.reload();
+}
+setInterval(relancerSiEcouteCoupee, 5*60*1000);
+document.addEventListener("visibilitychange", () => setTimeout(relancerSiEcouteCoupee, 3000));
 
 // ── État de la synchronisation cloud (affiché en caisse si quelque chose bloque) ──
 window._etatSync = { recu: null, envoye: null, erreur: null };
@@ -643,7 +672,13 @@ async function rattraperSync(force) {
   if(!_fbDb) return 0;
   if(!force && Date.now()-_dernierRattrapage < 60000) return 0;
   _dernierRattrapage = Date.now();
-  const depuis = new Date(Date.now() - (force==="large" ? SYNC_MARGE_MS : 6*3600*1000)).toISOString();
+  // Depuis la dernière réception réussie (et pas seulement 6 h) : un téléphone resté en veille ou bloqué
+  // par le quota récupère ainsi tout ce qu'il a manqué (10 jours au plus)
+  let wm = null; try { wm = (JSON.parse(localStorage.getItem(cleRepereSync())||"{}")||{}).wm || null; } catch{}
+  let tDepuis = Date.now() - (force==="large" ? SYNC_MARGE_MS : 6*3600*1000);
+  if(wm) tDepuis = Math.min(tDepuis, new Date(wm).getTime() - SYNC_MARGE_MS); else tDepuis = Math.min(tDepuis, Date.now() - 2*864e5);
+  tDepuis = Math.max(tDepuis, Date.now() - 10*864e5);
+  const depuis = new Date(tDepuis).toISOString();
   const col = _fbDb.collection("bellejolie");
   let n = 0;
   try {
