@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "25/10 · v128 (encore moins de lectures)";
+const APP_VERSION = "27/10 · v129 (bilan chaussures corrigé)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -12115,12 +12115,14 @@ const FAMILLES_CHAUSSURES = [["baskets","👟 Baskets"],["bottes","🥾 Bottes &
 function familleChaussure(nom, categorie) {
   const t = normStr(nom||""), c = normStr(categorie||"");
   if(/chaussette/.test(t)) return null;
+  if(c && c!=="chaussures") return null; // un pantalon, un haut… n'est jamais une chaussure
+  if(familleArticle(nom, categorie)) return null; // sac, pochette, bijou… rangé par erreur en chaussures
   if(/basket|sneaker|running|tennis/.test(t)) return "baskets";
   if(/botte|bottine|boots?\b|godillot|ranger|chelsea/.test(t)) return "bottes";
   if(/ballerine|babies|salome/.test(t)) return "ballerines";
-  if(/mocassin|derby|richelieu|loafer/.test(t)) return "mocassins";
-  if(/escarpin|talon/.test(t)) return "escarpins";
-  if(/sandale|\bmules?\b|tong|claquette|espadrille|sabot/.test(t)) return "sandales";
+  if(/mocassin|derby|derbies|richelieu|loafer/.test(t)) return "mocassins";
+  if(/sandale|\bmules?\b|\btongs?\b|claquette|espadrille|sabot|nu-pieds/.test(t)) return "sandales";
+  if(/escarpin|\btalons?\b/.test(t) && !/pantalon/.test(t)) return "escarpins";
   return c==="chaussures" ? "autres" : null;
 }
 function renderBilanFamilles(mois, annee, type) {
