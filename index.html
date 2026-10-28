@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "27/10 · v133 (le téléphone rattrape après une coupure)";
+const APP_VERSION = "28/10 · v134 (frein de sécurité quota)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -427,7 +427,15 @@ function journaliserListe(key, liste) {
   // Envois déjà en file d'attente (connexion lente ou coupée) : on ne les remet PAS une 2e fois en file,
   // sinon chaque modification renvoyait toute la liste et le quota du cloud explosait
   const enCours = _jlEnCours[key] = _jlEnCours[key] || {};
-  const aEcrire = liste.filter(x => { if(!x || !x.id) return false; const h = h32(sigElem(x)); return sigs[x.id]!==h && enCours[x.id]!==h; });
+  let aEcrire = liste.filter(x => { if(!x || !x.id) return false; const h = h32(sigElem(x)); return sigs[x.id]!==h && enCours[x.id]!==h; });
+  // Frein de sécurité : au-delà de 2 500 écritures dans la journée pour cette liste, on n'envoie plus
+  // que ce qui vient vraiment d'être modifié (dernières 15 min), pour ne jamais épuiser le quota du cloud
+  const cat = key==="bj_clients" ? "fiches clientes" : key==="bj_avoirs" ? "bons" : key;
+  if((compteurEcritures().parCle[cat]||0) > 2500) {
+    const recent = new Date(Date.now()-15*60*1000).toISOString();
+    const n = aEcrire.length; aEcrire = aEcrire.filter(x => (x.majLe||"") >= recent);
+    if(n > aEcrire.length) console.warn("Frein quota : "+(n-aEcrire.length)+" "+cat+" reportée(s) à demain");
+  }
   for(let i=0; i<aEcrire.length; i+=400) {
     const lot = aEcrire.slice(i, i+400), batch = _fbDb.batch();
     const majJ = new Date().toISOString();
