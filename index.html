@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "28/10 · v134 (frein de sécurité quota)";
+const APP_VERSION = "28/10 · v135 (seules les vraies modifications partent)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -173,6 +173,14 @@ try {
     ["set","update","delete"].forEach(m => { const o = WB[m]; if(o) WB[m] = function(ref, ...a) { compterEcriture(ref && ref.id); return o.call(this, ref, ...a); }; });
   }
 } catch(e) { console.error("Compteur d'écritures :", e); }
+
+// ── Stockage de l'appareil plein ? (les sauvegardes locales échouent alors en silence) ──
+window._echecStockage = null;
+try {
+  const SP = Storage.prototype, oSet = SP.setItem;
+  SP.setItem = function(k, v) { try { return oSet.call(this, k, v); } catch(e) { window._echecStockage = String(k)+" ("+(e && e.name || e)+")"; throw e; } };
+} catch{}
+function tailleStockageLocal() { let n = 0; try { for(let i=0;i<localStorage.length;i++){ const k = localStorage.key(i); n += k.length + (localStorage.getItem(k)||"").length; } } catch{} return n; }
 
 // ── Écoutes en direct coupées par le cloud (quota, réseau) : elles ne repartent jamais seules.
 // On recharge l'appli dès que c'est sans risque (panier vide, appli au premier plan), au plus toutes les 20 min.
@@ -388,7 +396,9 @@ function horodaterListe(key, liste) {
   if(!Array.isArray(liste)) return;
   if(!_sigListes[key]) { memoriserSigListe(key, liste); return; }
   const now = new Date().toISOString(), ids = new Set();
-  liste.forEach(x => { if(!x||!x.id) return; ids.add(x.id); if(_sigListes[key].get(x.id)!==sigElem(x)) x.majLe = now; });
+  let marques = 0;
+  liste.forEach(x => { if(!x||!x.id) return; ids.add(x.id); if(_sigListes[key].get(x.id)!==sigElem(x)) { x.majLe = now; aEnvoyerJL(key).add(x.id); marques++; } });
+  if(marques) sauverAEnvoyerJL(key);
   const supprimes = [..._sigListes[key].keys()].filter(id=>!ids.has(id));
   memoriserSigListe(key, liste);
   if(supprimes.length) {
@@ -417,6 +427,16 @@ function sigListe(l) { return (l||[]).filter(Boolean).map(x=>x.id+":"+(x.majLe||
 // ── Journal individuel (un document cloud par cliente / par bon) ──
 // Aucun appareil, même ancien, ne peut effacer ces documents en réécrivant la liste globale.
 const _jlPret = {}, _jlSigs = {}, _jlEnCours = {}, _jvEnCours = {};
+// Fiches / bons réellement modifiés SUR CET APPAREIL et pas encore confirmés par le cloud.
+// Seuls ceux-là sont envoyés : une copie locale ancienne (rechargée après une coupure, un stockage plein…)
+// ne peut plus jamais écraser la version plus récente du cloud ni relancer des renvois sans fin entre appareils.
+const _jlAEnvoyer = {};
+function aEnvoyerJL(key) {
+  if(!_jlAEnvoyer[key]) { try { _jlAEnvoyer[key] = new Set(JSON.parse(localStorage.getItem("bj_jl_aenvoyer__"+key)||"[]")); } catch { _jlAEnvoyer[key] = new Set(); } }
+  return _jlAEnvoyer[key];
+}
+const _jlAEnvT = {};
+function sauverAEnvoyerJL(key) { clearTimeout(_jlAEnvT[key]); _jlAEnvT[key] = setTimeout(() => { try { localStorage.setItem("bj_jl_aenvoyer__"+key, JSON.stringify([...aEnvoyerJL(key)])); } catch(e) { window._echecStockage = "liste d'envoi "+key; } }, 800); }
 function h32(str) { let h = 5381; for(let i=0;i<str.length;i++) h = ((h<<5)+h+str.charCodeAt(i))|0; return (h>>>0).toString(36)+":"+str.length; }
 const _jlSauveT = {};
 function sauverJLSigs(key) { clearTimeout(_jlSauveT[key]); _jlSauveT[key] = setTimeout(()=>{ try { localStorage.setItem("bj_jl_sig__"+key, JSON.stringify(_jlSigs[key]||{})); } catch{} }, 1500); }
@@ -427,7 +447,10 @@ function journaliserListe(key, liste) {
   // Envois déjà en file d'attente (connexion lente ou coupée) : on ne les remet PAS une 2e fois en file,
   // sinon chaque modification renvoyait toute la liste et le quota du cloud explosait
   const enCours = _jlEnCours[key] = _jlEnCours[key] || {};
-  let aEcrire = liste.filter(x => { if(!x || !x.id) return false; const h = h32(sigElem(x)); return sigs[x.id]!==h && enCours[x.id]!==h; });
+  const pend = aEnvoyerJL(key);
+  let aEcrire = liste.filter(x => { if(!x || !x.id || !pend.has(x.id)) return false; const h = h32(sigElem(x)); return sigs[x.id]!==h && enCours[x.id]!==h; });
+  // ce qui est en attente mais déjà identique dans le cloud n'est plus à envoyer
+  liste.forEach(x => { if(x && x.id && pend.has(x.id) && sigs[x.id]===h32(sigElem(x))) pend.delete(x.id); });
   // Frein de sécurité : au-delà de 2 500 écritures dans la journée pour cette liste, on n'envoie plus
   // que ce qui vient vraiment d'être modifié (dernières 15 min), pour ne jamais épuiser le quota du cloud
   const cat = key==="bj_clients" ? "fiches clientes" : key==="bj_avoirs" ? "bons" : key;
@@ -441,7 +464,7 @@ function journaliserListe(key, liste) {
     const majJ = new Date().toISOString();
     const hs = lot.map(x => h32(sigElem(x)));
     lot.forEach((x,j) => { enCours[x.id] = hs[j]; batch.set(_fbDb.collection("bellejolie").doc(prefixeJL(key)+x.id), {value:JSON.parse(JSON.stringify(x)), maj:majJ, ["jl_"+key]:majJ, device:DEVICE_ID}); });
-    batch.commit().then(() => { lot.forEach((x,j) => { sigs[x.id] = hs[j]; if(enCours[x.id]===hs[j]) delete enCours[x.id]; }); sauverJLSigs(key); })
+    batch.commit().then(() => { lot.forEach((x,j) => { sigs[x.id] = hs[j]; if(enCours[x.id]===hs[j]) delete enCours[x.id]; if(h32(sigElem(x))===hs[j]) pend.delete(x.id); }); sauverJLSigs(key); sauverAEnvoyerJL(key); })
       .catch(err => { lot.forEach((x,j) => { if(enCours[x.id]===hs[j]) delete enCours[x.id]; }); console.error("Journal "+key+" :", err); });
   }
 }
@@ -3740,7 +3763,9 @@ window.verifierMAJCloud = async () => {
       if(ajoutsIci>0 || ajoutsCloud>0) zRapport = "\n\n🏦 Clôtures : "+(ajoutsIci>0?ajoutsIci+" Z récupéré(s) du cloud":"")+(ajoutsIci>0&&ajoutsCloud>0?", ":"")+(ajoutsCloud>0?ajoutsCloud+" Z envoyé(s) au cloud":"")+".";
     } catch(e) { zRapport = "\n\n🏦 Clôtures : "+explicationErreurSync(e?.code||"", String(e?.message||e)); }
     const cpt = compteurEcritures();
-    const cptTxt = "\n\n✍️ Écritures cloud de cet appareil aujourd'hui : "+cpt.total+(cpt.total?" ("+Object.entries(cpt.parCle).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,n])=>k+" "+n).join(", ")+")":"");
+    const tailleLS = tailleStockageLocal();
+    const stockTxt = "\n\n💾 Stockage de cet appareil : "+(tailleLS/1e6).toFixed(1)+" M caractères utilisés (limite ≈ 5)"+(window._echecStockage ? "\n⚠️ SAUVEGARDE LOCALE IMPOSSIBLE (stockage plein) : "+window._echecStockage : "");
+    const cptTxt = stockTxt + "\n\n✍️ Écritures cloud de cet appareil aujourd'hui : "+cpt.total+(cpt.total?" ("+Object.entries(cpt.parCle).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([k,n])=>k+" "+n).join(", ")+")":"");
     const auj = dateLocaleStr();
     const fmtT = v => new Date(v.date).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})+" "+eur(v.total)+(v.vendeur?.nom?" ("+v.vendeur.nom+")":"");
     const cloudAuj = journal.filter(v=>v && v.date && dateLocaleStr(new Date(v.date))===auj && !v.test);
@@ -10509,6 +10534,7 @@ function restaurerBonsBienvenue() {
       if(!c || !c.id || !c.createdAt || new Date(c.createdAt) < DATE_REOUVERTURE || aBienvenue.has(c.id)) return;
       const code = "BIENVEN"+c.id.slice(-6).toUpperCase();
       if(codesAvoirs.has(code)) return;
+      if((STATE.avoirsSuppr||[]).includes("AVBV"+c.id)) return; // bon supprimé volontairement
       if(ventesTxt.includes(code) || ventesTxt.includes("#"+code.slice(-6))) return; // déjà utilisé
       const debut = new Date(c.createdAt); debut.setDate(debut.getDate()+1); debut.setHours(0,0,0,0);
       const exp = new Date(debut); exp.setMonth(debut.getMonth()+3);
