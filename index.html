@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "28/10 · v136 (classement des déposantes)";
+const APP_VERSION = "29/10 · v137 (suppression d'un dépôt-vente)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -1048,7 +1048,7 @@ function fusionnerMemos(a, b) {
 }
 // Dépôts-vente : fusion lot par lot (jamais de remplacement en bloc), articles réunis
 function sigDepotsVente(l) {
-  return (l||[]).filter(x=>x&&x.id).map(x => [x.id, [...new Set(x.articleIds||[])].sort().join(","), x.bonGenereId||"", x.montantBonGenere||"", x.clientEmail||"", x.recapEnvoyeLe||"", x.articlesPerdus||0, x.reconstruit?1:0, x.clientId||"", x.clientTel||""].join("~")).sort().join("|");
+  return (l||[]).filter(x=>x&&x.id).map(x => [x.id, [...new Set(x.articleIds||[])].sort().join(","), x.bonGenereId||"", x.montantBonGenere||"", x.clientEmail||"", x.recapEnvoyeLe||"", x.articlesPerdus||0, x.reconstruit?1:0, x.clientId||"", x.clientTel||"", x.supprime?1:0].join("~")).sort().join("|");
 }
 function fusionnerDepotsVente(locaux, recus) {
   const m = new Map((locaux||[]).filter(l=>l&&l.id).map(l=>[l.id, l]));
@@ -1059,6 +1059,7 @@ function fusionnerDepotsVente(locaux, recus) {
     ["bonGenereId","montantBonGenere","clientEmail","recapEnvoyeLe","recapNbArticles","clientId"].forEach(k => { if(f[k]==null || f[k]==="") f[k] = l[k] ?? r[k]; });
     if(l.recapEnvoyeLe && r.recapEnvoyeLe) f.recapEnvoyeLe = l.recapEnvoyeLe > r.recapEnvoyeLe ? l.recapEnvoyeLe : r.recapEnvoyeLe;
     f.articlesPerdus = Math.min(l.articlesPerdus||0, r.articlesPerdus||0);
+    if(l.supprime || r.supprime) { f.supprime = true; f.supprimeLe = l.supprimeLe || r.supprimeLe; f.supprimePar = l.supprimePar || r.supprimePar; }
     m.set(r.id, f); });
   return [...m.values()];
 }
@@ -2566,6 +2567,23 @@ window.encaisserArticleDepot = (prodId) => {
   if(!(p.stock>0)) { STATE.products = STATE.products.map(x=>x.id===prodId?{...x, stock:1}:x); lsSet("bj_products", STATE.products); }
   STATE.tab = "caisse"; addToCart(prodId);
 };
+window.supprimerDepot = (lotId) => {
+  if(!peutGererArtisans()) { alert("Seules Élodie et Sabrina peuvent supprimer un dépôt."); return; }
+  const lot = (STATE.depotsVente||[]).find(l=>l.id===lotId); if(!lot) return;
+  const nom = ((lot.clientPrenom||"")+" "+(lot.clientNom||"")).trim() || "cette personne";
+  const ids = [...new Set(lot.articleIds||[])];
+  const enVente = ids.filter(pid => STATE.products.some(p=>p.id===pid) && !getVenteInfoArticleDepot(pid).vendu);
+  const vendus = ids.filter(pid => getVenteInfoArticleDepot(pid).vendu);
+  if(!confirm("Supprimer le dépôt de "+nom+" ?\n\n"
+    + (enVente.length ? "• "+enVente.length+" article(s) encore en vente seront RETIRÉS du stock.\n" : "")
+    + (vendus.length ? "• "+vendus.length+" article(s) déjà vendu(s) : les ventes restent dans le chiffre d'affaires et les tickets.\n" : "")
+    + (lot.bonGenereId ? "• Le bon d'achat déjà généré reste valable.\n" : (vendus.length ? "⚠️ Aucun bon n'a été généré pour ses articles vendus.\n" : ""))
+    + "\nCette action ne peut pas être annulée.")) return;
+  if(enVente.length) { const s = new Set(enVente); STATE.products = STATE.products.filter(p=>!s.has(p.id)); lsSet("bj_products", STATE.products); }
+  STATE.depotsVente = (STATE.depotsVente||[]).map(l => l.id!==lotId ? l : {...l, supprime:true, supprimeLe:new Date().toISOString(), supprimePar:STATE.vendeur?.nom||""});
+  lsSet("bj_depots_vente", STATE.depotsVente);
+  render();
+};
 window.retirerArticleDepot = (prodId) => {
   if(!confirm("Retirer définitivement cet article du stock ? La cliente devra venir le récupérer.")) return;
   STATE.products = STATE.products.filter(p=>p.id!==prodId);
@@ -2631,7 +2649,7 @@ window.decalerMoisBilanDepot = (sens) => {
 };
 function renderBilanDepotVente() {
   if(!peutGererArtisans()) return "";
-  const lots = STATE.depotsVente||[];
+  const lots = (STATE.depotsVente||[]).filter(l=>!l.supprime);
   if(!lots.length) return "";
   const ouvert = STATE._bilanDepotOuvert!==false;
   const tout = STATE._bilanDepotMois==="tout";
@@ -2700,7 +2718,7 @@ function renderBilanDepotVente() {
   </div>`;
 }
 function renderDepotVente() {
-  const lots = [...(STATE.depotsVente||[])].sort((a,b)=>new Date(b.dateDepot)-new Date(a.dateDepot));
+  const lots = [...(STATE.depotsVente||[])].filter(l=>!l.supprime).sort((a,b)=>new Date(b.dateDepot)-new Date(a.dateDepot));
   const now = new Date();
 
   let html = `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px;">
@@ -2771,6 +2789,7 @@ function renderDepotVente() {
         <button onclick="genererBonAchatDepot('${lot.id}')" style="width:100%;margin-top:12px;padding:10px;background:#993556;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;">
           💰 Générer le bon d'achat (${eur(totalVentesLot*(1-DEPOT_COMMISSION_PCT/100))} — ${DEPOT_COMMISSION_PCT}% de commission déduite)
         </button>` : ""}
+      ${peutGererArtisans() ? `<button onclick="supprimerDepot('${lot.id}')" style="width:100%;margin-top:10px;padding:7px;background:#fff;color:#a32d2d;border:1px solid #f0c8c8;border-radius:8px;cursor:pointer;font-size:12px;">🗑️ Supprimer ce dépôt (cette personne)</button>` : ""}
     </div>`;
   });
 
