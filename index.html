@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "29/10 · v137 (suppression d'un dépôt-vente)";
+const APP_VERSION = "02/11 · v138 (corriger l'article d'un ticket)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -6191,6 +6191,7 @@ function renderTicketModal() {
           </div>
         </div>
         <button onclick="imprimerZone('ticket-print-area');setTimeout(()=>setState({showTicket:null}),300)" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le ticket</button>
+        ${(STATE.vendeur.id==="V1" || peutGererArtisans()) && v.id && (STATE.ventes||[]).some(x=>x.id===v.id) ? `<button onclick="remplacerArticleTicket('${v.id}')" class="btn-ghost" style="width:100%;margin-bottom:8px;">🔁 Mauvaise référence scannée : corriger l'article</button>` : ""}
         ${STATE.vendeur.id==="V1" && v.id && (STATE.ventes||[]).some(x=>x.id===v.id) ? `<button onclick="separerLigneTicket('${v.id}')" class="btn-ghost" style="width:100%;margin-bottom:8px;">✂️ Séparer une ligne (ex. créole + pampille)</button>` : ""}
         <div style="display:flex;gap:6px;margin-bottom:8px;">
           <button onclick="imprimerTicketCadeau()" style="flex:1;padding:10px;background:#fbf3e6;color:#854f0b;border:1px solid #f0dcb0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">🎁 Ticket cadeau (sans prix)</button>
@@ -19104,6 +19105,56 @@ window.separerLigneTicket = (venteId) => {
   if(STATE.showTicket && STATE.showTicket.id===v.id) STATE.showTicket = {...STATE.showTicket, panier};
   render();
   alert("✅ Ligne séparée : "+ligne.name+" "+eur(reste)+" + "+art.name+" "+eur(montant)+".");
+};
+
+// Mauvaise référence scannée : on remplace l'article d'une ligne par le bon, le prix payé ne change pas
+window.remplacerArticleTicket = (venteId) => {
+  if(!(STATE.vendeur.id==="V1" || peutGererArtisans())) { alert("Seules Élodie et Sabrina peuvent corriger un ticket."); return; }
+  const v = (STATE.ventes||[]).find(x=>x.id===venteId); if(!v) return;
+  const lignes = (v.panier||[]).map((l,i)=>({l,i})).filter(({l})=>!l.retour && !l.avoirId && l.id!=="correction_manuelle" && !l.isChequeCadeau);
+  if(!lignes.length) { alert("Aucun article à corriger sur ce ticket."); return; }
+  let choix = lignes[0];
+  if(lignes.length>1) {
+    const r = prompt("Quelle ligne a été scannée avec la mauvaise référence ?\n\n"+lignes.map(({l},k)=>(k+1)+". "+l.name+(l.taille?" ("+l.taille+")":"")+" — "+eur((l.price||0)*(l.qty||1))).join("\n"), "1");
+    if(r===null) return;
+    choix = lignes[parseInt(r)-1]; if(!choix) { alert("Numéro invalide."); return; }
+  }
+  const ligne = choix.l, q0 = ligne.qty||1, idAncien = ligne.prodIdOriginal || ligne.id;
+  const q = prompt("Le BON article vendu à la place de « "+ligne.name+" » :\nscanne son code-barres, ou tape son nom ou sa référence", ""); if(q===null || !q.trim()) return;
+  let art = null, taille = null, couleur = null;
+  const scan = trouverParCodeBarre(q.trim());
+  if(scan) { art = scan.p; taille = scan.taille; couleur = scan.couleur; }
+  else {
+    const trouves = (STATE.products||[]).filter(p => p.id!==idAncien && !p.isChequeCadeau && normStr(p.name+" "+(p.ref||"")+" "+(p.barcode||"")).includes(normStr(q.trim())));
+    if(!trouves.length) { alert("Aucun article trouvé pour « "+q+" »."); return; }
+    art = trouves[0];
+    if(trouves.length>1) {
+      const r = prompt("Plusieurs articles trouvés :\n\n"+trouves.slice(0,9).map((p,k)=>(k+1)+". "+p.name+(p.ref?" — réf. "+p.ref:"")+" — "+eur(p.price||0)).join("\n"), "1");
+      if(r===null) return;
+      art = trouves.slice(0,9)[parseInt(r)-1]; if(!art) { alert("Numéro invalide."); return; }
+    }
+  }
+  if(art.id===idAncien && (taille||null)===(ligne.taille||null)) { alert("C'est déjà cet article sur le ticket."); return; }
+  if(!taille && (art.tailles||[]).length) {
+    const t = prompt("Taille vendue de « "+art.name+" » ?\n("+art.tailles.join(", ")+")", ligne.taille && art.tailles.includes(ligne.taille) ? ligne.taille : art.tailles[0]);
+    if(t===null) return; taille = t.trim() || null;
+  }
+  if(!confirm("Ticket du "+new Date(v.date).toLocaleDateString("fr-FR")+" :\n\n✕ "+ligne.name+(ligne.taille?" ("+ligne.taille+")":"")+" → remis en stock (+"+q0+")\n✓ "+art.name+(taille?" ("+taille+")":"")+" → sorti du stock (−"+q0+")"
+    +"\n\nPrix encaissé inchangé : "+eur((ligne.price||0)*q0)+(Math.abs((art.price||0)-(ligne.price||0))>0.009?" (prix étiquette du bon article : "+eur(art.price||0)+")":"")+".\nLe total du ticket et le Z ne changent pas.")) return;
+  const nouvelle = {...ligne, id: art.id, prodIdOriginal: art.id, name: art.name, ref: art.ref, category: art.category, prixAchat: art.prixAchat||0,
+    taille: taille||"", couleur: couleur||"", artisanat: !!art.artisanat, nomArtisan: art.nomArtisan||"", depotVente: !!art.depotVente, depotLotId: art.depotLotId||undefined,
+    corrigeDe: {id: idAncien, name: ligne.name, taille: ligne.taille||"", le: new Date().toISOString(), par: STATE.vendeur?.nom||""}};
+  const panier = (v.panier||[]).map((l,i)=> i===choix.i ? nouvelle : l);
+  const maj = {...v, panier, modifLe: new Date().toISOString()};
+  STATE.ventes = STATE.ventes.map(x=>x.id===v.id ? maj : x);
+  lsSet("bj_ventes", STATE.ventes);
+  let prods = STATE.products;
+  if(prods.some(p=>p.id===idAncien)) prods = ajusterStock(prods, idAncien, +q0, ligne.taille||null, ligne.couleur||null);
+  prods = ajusterStock(prods, art.id, -q0, taille, couleur);
+  STATE.products = prods; lsSet("bj_products", STATE.products);
+  if(STATE.showTicket && STATE.showTicket.id===v.id) STATE.showTicket = {...STATE.showTicket, panier};
+  render();
+  alert("✅ Ticket corrigé : "+ligne.name+" remplacé par "+art.name+". Stock mis à jour.");
 };
 
 window.voirTicketVenteId = (venteId) => {
