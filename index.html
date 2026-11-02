@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "02/11 · v142 (nombre de tickets en bas de page)";
+const APP_VERSION = "02/11 · v143 (commission 1 € par lot de pampilles)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -9301,7 +9301,7 @@ function renderProdModal() {
         : '<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#c2185b;cursor:pointer;margin-bottom:10px;background:#fce4ec;border-radius:7px;padding:6px 10px;"><input type="checkbox" '+(f.octobreRose===true?'checked':'')+' onchange="STATE.prodForm.octobreRose=this.checked" style="width:16px;height:16px;"/> 🎀 Octobre Rose (10% reversés à l\'association)</label>')
       +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#6a3d9a;cursor:pointer;margin-bottom:6px;background:#f3e8fc;border-radius:7px;padding:6px 10px;"><input type="checkbox" '+(f.artisanat?'checked':'')+' onchange="STATE.prodForm.artisanat=this.checked;render()" style="width:16px;height:16px;"/> 🎨 Produit d\'artisan</label>'
       +(f.artisanat?'<div style="margin-bottom:10px;"><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Nom de l\'artisan / atelier</label><input value="'+(f.nomArtisan||'')+'" oninput="STATE.prodForm.nomArtisan=this.value" placeholder="Ex: Atelier Claire M." style="width:100%;box-sizing:border-box;"/></div>'
-        +'<div style="margin-bottom:10px;"><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Commission fixe par pièce vendue (€) — laisse vide pour le taux en %</label><input type="text" inputmode="decimal" value="'+(f.commissionFixe||'')+'" oninput="STATE.prodForm.commissionFixe=this.value" placeholder="Ex : 1" style="width:120px;box-sizing:border-box;"/></div>':'')
+        +'<div style="margin-bottom:10px;"><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Commission fixe par pièce vendue (€) — laisse vide pour le taux en %</label><input type="text" inputmode="decimal" value="'+(f.commissionFixe||'')+'" oninput="STATE.prodForm.commissionFixe=this.value" placeholder="Ex : 1" style="width:120px;box-sizing:border-box;"/><div style="font-size:10px;color:#888;margin-top:3px;">Vendu en lot (formule « 2 pampilles », « 3 pampilles »…) : commission prise une seule fois pour tout le lot.</div></div>':'')
       +'<label style="display:flex;align-items:center;gap:8px;font-size:13px;color:#185fa5;cursor:pointer;margin-bottom:6px;background:#eef4fd;border-radius:7px;padding:6px 10px;"><input type="checkbox" '+(f.prixLibre?'checked':'')+' onchange="STATE.prodForm.prixLibre=this.checked;render()" style="width:16px;height:16px;"/> 💶 Prix à indiquer en caisse</label>'
       +(f.prixLibre?'<div style="margin-bottom:10px;"><label style="font-size:11px;color:#888;display:block;margin-bottom:3px;">Formule de prix (rappelée en caisse)</label><input value="'+String(f.formulePrix||'').replace(/"/g,'&quot;')+'" oninput="STATE.prodForm.formulePrix=this.value" placeholder="Ex : 1 pampille 7 € · 2 pampilles 12 € · 3 pampilles 20 €" style="width:100%;box-sizing:border-box;"/><div style="font-size:10px;color:#888;margin-top:3px;">Sépare les formules par « · » ou « ; ». En caisse, chaque formule devient un bouton à choisir. Le prix de vente peut rester vide.</div>'+(parseFormulePrix(f.formulePrix).length?'<div style="font-size:11px;color:#185fa5;margin-top:4px;">Aperçu : '+parseFormulePrix(f.formulePrix).map(o=>o.libelle+' → '+eur(o.prix)).join(' · ')+'</div>':'')
         +'<label style="font-size:11px;color:#888;display:block;margin:8px 0 3px;">Article ajouté automatiquement avec chaque formule (facultatif)</label>'
@@ -10013,7 +10013,7 @@ function calculerZMensuel(mois, annee) {
   brut += corrections; // régularisations intégrées aux ventes (aucune ligne distincte)
   { const idsV = idsVentesValides();
     const txA = STATE.commissionArtisan ?? 20;
-    toutes.filter(venteCompteArtisan).forEach(v => { lignesArtisanVente(v, prodMap).forEach(l => { artisansCA += l.montant; artisansCom += commissionLigneArtisan(l.p, l.qty, l.montant, txA, v.date); }); retoursArtisanSansTicket(v, prodMap, idsV).forEach(l => { artisansCA += l.montant; artisansCom += commissionLigneArtisan(l.p, l.qty, l.montant, txA, v.date); }); }); }
+    toutes.filter(venteCompteArtisan).forEach(v => { lignesArtisanVente(v, prodMap).forEach(l => { artisansCA += l.montant; artisansCom += commissionLigneArtisan(l.p, l.qty, l.montant, txA, v.date, l.i); }); retoursArtisanSansTicket(v, prodMap, idsV).forEach(l => { artisansCA += l.montant; artisansCom += commissionLigneArtisan(l.p, l.qty, l.montant, txA, v.date, l.i); }); }); }
   const remises = Math.max(0, r2(brut - retours - caTTC));
   const caHT = r2(caTTC/(1+TVA)), tvaCol = r2(caTTC - caHT);
   const modes = {cb:0, especes:0, cheque:0, avoir:0, cadeau:0};
@@ -12244,9 +12244,13 @@ function retoursArtisanSansTicket(v, prodMap, idsVentes) {
   }).filter(Boolean);
 }
 // Commission de la boutique sur une ligne d'artisan : montant fixe par pièce si défini sur l'article (à partir de sa date), sinon le taux en %
-function commissionLigneArtisan(p, qty, montant, taux, dateVente) {
+// Vendu en lot (formule « 2 pampilles », « 3 pampilles »…) : la commission fixe est prise UNE fois pour tout le lot
+function commissionLigneArtisan(p, qty, montant, taux, dateVente, ligne) {
   const f = parseFloat(p && p.commissionFixe);
-  if(f>0 && (!p.commissionFixeDepuis || dateLocaleStr(new Date(dateVente)) >= p.commissionFixeDepuis)) return f * qty;
+  if(f>0 && (!p.commissionFixeDepuis || dateLocaleStr(new Date(dateVente)) >= p.commissionFixeDepuis)) {
+    const tailleLot = ligne && ligne.formuleChoisie && (ligne.qty||1) > 1 ? (ligne.qty||1) : 1;
+    return f * qty / tailleLot;
+  }
   return montant * taux / 100;
 }
 function venteCompteArtisan(v) { return !!v && !v.test && (!v.annulee || v.typeAnnulation==="comptable"); }
@@ -12433,8 +12437,8 @@ function ventesArtisans(debut, fin) {
     if(!venteCompteArtisan(v)) return;
     const d = dateLocaleStr(new Date(v.date)); if(d<debut || d>fin) return;
     const tx = STATE.commissionArtisan ?? 20;
-    lignesArtisanVente(v, prodMap).forEach(l => lignes.push({date:v.date, venteId:v.id, artisan:l.artisan, article:l.i.name||l.p.name, qty:l.qty, montant:Math.round(l.montant*100)/100, com:commissionLigneArtisan(l.p, l.qty, l.montant, tx, v.date), retour:false, annuleeCompta:!!v.annulee}));
-    retoursArtisanSansTicket(v, prodMap, ids).forEach(l => lignes.push({date:v.date, venteId:v.id, artisan:l.artisan, article:l.i.name||l.p.name, qty:l.qty, montant:Math.round(l.montant*100)/100, com:commissionLigneArtisan(l.p, l.qty, l.montant, tx, v.date), retour:true}));
+    lignesArtisanVente(v, prodMap).forEach(l => lignes.push({date:v.date, venteId:v.id, artisan:l.artisan, article:l.i.name||l.p.name, qty:l.qty, montant:Math.round(l.montant*100)/100, com:commissionLigneArtisan(l.p, l.qty, l.montant, tx, v.date, l.i), retour:false, annuleeCompta:!!v.annulee}));
+    retoursArtisanSansTicket(v, prodMap, ids).forEach(l => lignes.push({date:v.date, venteId:v.id, artisan:l.artisan, article:l.i.name||l.p.name, qty:l.qty, montant:Math.round(l.montant*100)/100, com:commissionLigneArtisan(l.p, l.qty, l.montant, tx, v.date, l.i), retour:true}));
   });
   return lignes.sort((a,b)=>new Date(a.date)-new Date(b.date));
 }
