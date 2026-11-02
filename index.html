@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "02/11 · v138 (corriger l'article d'un ticket)";
+const APP_VERSION = "02/11 · v139 (correction de ticket réservée à Élodie)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -6191,7 +6191,7 @@ function renderTicketModal() {
           </div>
         </div>
         <button onclick="imprimerZone('ticket-print-area');setTimeout(()=>setState({showTicket:null}),300)" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le ticket</button>
-        ${(STATE.vendeur.id==="V1" || peutGererArtisans()) && v.id && (STATE.ventes||[]).some(x=>x.id===v.id) ? `<button onclick="remplacerArticleTicket('${v.id}')" class="btn-ghost" style="width:100%;margin-bottom:8px;">🔁 Mauvaise référence scannée : corriger l'article</button>` : ""}
+        ${STATE.vendeur.id==="V1" && v.id && (STATE.ventes||[]).some(x=>x.id===v.id) ? `<button onclick="remplacerArticleTicket('${v.id}')" class="btn-ghost" style="width:100%;margin-bottom:8px;">🔁 Mauvaise référence scannée : corriger l'article</button>` : ""}
         ${STATE.vendeur.id==="V1" && v.id && (STATE.ventes||[]).some(x=>x.id===v.id) ? `<button onclick="separerLigneTicket('${v.id}')" class="btn-ghost" style="width:100%;margin-bottom:8px;">✂️ Séparer une ligne (ex. créole + pampille)</button>` : ""}
         <div style="display:flex;gap:6px;margin-bottom:8px;">
           <button onclick="imprimerTicketCadeau()" style="flex:1;padding:10px;background:#fbf3e6;color:#854f0b;border:1px solid #f0dcb0;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">🎁 Ticket cadeau (sans prix)</button>
@@ -19109,7 +19109,7 @@ window.separerLigneTicket = (venteId) => {
 
 // Mauvaise référence scannée : on remplace l'article d'une ligne par le bon, le prix payé ne change pas
 window.remplacerArticleTicket = (venteId) => {
-  if(!(STATE.vendeur.id==="V1" || peutGererArtisans())) { alert("Seules Élodie et Sabrina peuvent corriger un ticket."); return; }
+  if(STATE.vendeur.id!=="V1") { alert("Seule Élodie peut corriger un ticket."); return; }
   const v = (STATE.ventes||[]).find(x=>x.id===venteId); if(!v) return;
   const lignes = (v.panier||[]).map((l,i)=>({l,i})).filter(({l})=>!l.retour && !l.avoirId && l.id!=="correction_manuelle" && !l.isChequeCadeau);
   if(!lignes.length) { alert("Aucun article à corriger sur ce ticket."); return; }
