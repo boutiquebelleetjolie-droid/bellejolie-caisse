@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "02/11 · v141 (nombre de tickets avec flèches)";
+const APP_VERSION = "02/11 · v142 (nombre de tickets en bas de page)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -2932,7 +2932,7 @@ function renderApp() {
     ${STATE.tab==="stock"     ? renderStock()      : ""}
 
     ${STATE.tab==="crm"       ? renderCRM()        : ""}
-    ${STATE.tab==="stats"     ? renderStats()      : ""}
+    ${STATE.tab==="stats"     ? renderStats()+renderCompteurTickets() : ""}
   ${STATE.tab==="historique" ? renderHistorique() : ""}
     ${STATE.tab==="journal"      ? renderJournal()        : ""}
     ${STATE.tab==="fidelite"     ? renderFidelite()       : ""}
@@ -11188,18 +11188,18 @@ function renderCompteurTickets() {
     const nPrec = de > now ? 0 : compter(anMoins1(de), anMoins1(fin));
     const jours = Math.max(1, Math.ceil((fin - de) / 864e5));
     const evol = nPrec ? Math.round((n-nPrec)/nPrec*100) : null;
-    const btn = d => `<button onclick="STATE.${cleOffset}=(STATE.${cleOffset}||0)+(${d});render()" style="background:#fff;border:1px solid #e0d4da;border-radius:6px;padding:1px 8px;cursor:pointer;font-size:12px;">${d<0?"◀":"▶"}</button>`;
-    return `<div style="background:${actif?"#fbeaf0":"#f5f0f2"};border:1px solid ${actif?"#e8c4d3":"transparent"};border-radius:10px;padding:10px 14px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">${btn(-1)}<span style="font-size:12px;color:#666;text-align:center;">${label}</span>${btn(1)}</div>
-      <div style="font-size:22px;font-weight:600;color:#993556;text-align:center;margin-top:4px;">${n} ticket${n>1?"s":""}</div>
-      <div style="font-size:11px;color:#888;text-align:center;">≈ ${(n/jours).toFixed(1)} / jour${nPrec?` · l'an dernier : ${nPrec} <strong style="color:${evol>=0?"#3b6d11":"#a32d2d"};">${evol>=0?"+":""}${evol} %</strong>`:""}</div>
+    const btn = d => `<button onclick="STATE.${cleOffset}=(STATE.${cleOffset}||0)+(${d});render()" style="background:#fff;border:1px solid #e0d4da;border-radius:6px;padding:0 6px;cursor:pointer;font-size:10px;">${d<0?"◀":"▶"}</button>`;
+    return `<div style="background:${actif?"#fbeaf0":"#f5f0f2"};border:1px solid ${actif?"#e8c4d3":"transparent"};border-radius:8px;padding:6px 10px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">${btn(-1)}<span style="font-size:11px;color:#666;text-align:center;">${label}</span>${btn(1)}</div>
+      <div style="font-size:15px;font-weight:600;color:#993556;text-align:center;margin-top:2px;">${n} ticket${n>1?"s":""}</div>
+      <div style="font-size:10px;color:#888;text-align:center;">≈ ${(n/jours).toFixed(1)} / jour${nPrec?` · l'an dernier : ${nPrec} <strong style="color:${evol>=0?"#3b6d11":"#a32d2d"};">${evol>=0?"+":""}${evol} %</strong>`:""}</div>
     </div>`;
   };
   const per = STATE.statPer;
   const moisL = m0.toLocaleDateString("fr-FR",{month:"long",year:"numeric"}).replace(/^./,c=>c.toUpperCase());
-  return `<div style="margin-bottom:14px;">
-    <div style="font-weight:600;font-size:14px;margin-bottom:8px;">🧾 Nombre de tickets</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;">
+  return `<div style="margin:18px 0 10px;">
+    <div style="font-weight:600;font-size:12px;color:#666;margin-bottom:6px;">🧾 Nombre de tickets</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:6px;">
       ${tuile("Semaine du "+fmt(lun)+" au "+fmt(dim), lun, dim, "statOffsetSem", per==="semaine")}
       ${tuile(moisL, m0, m1, "statOffsetMois", per==="mois")}
       ${tuile("Année "+a0.getFullYear(), a0, a1, "statOffsetAnnee", per==="annee")}
@@ -11406,7 +11406,6 @@ function renderStats() {
   // ── HTML ──────────────────────────────────────────────────────
   return `
   <div>
-    ${renderCompteurTickets()}
     <!-- Onglets -->
     <div style="display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;">
       ${STATE.vendeur.id!=="V1" ? `<div style="font-weight:600;font-size:14px;padding:6px 0;">📊 Aujourd'hui</div>` : ""}
