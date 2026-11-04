@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "02/11 · v143 (commission 1 € par lot de pampilles)";
+const APP_VERSION = "04/11 · v144 (pastille GT grande taille)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
@@ -4580,7 +4580,7 @@ function renderCaisse() {
               return `
               <tr style="border-bottom:0.5px solid #e8e0e4;${it.retour?"background:#fff8f0;":""}">
                 <td style="padding:8px 4px;">
-                  <div style="font-weight:500;">${it.retour?"↩️ ":""}${it.name} <span style="font-size:10px;color:#bbb;cursor:pointer;" onclick="afficherInfoArticlePanier('${it.id}')">ℹ️</span></div>
+                  <div style="font-weight:500;">${it.retour?"↩️ ":""}${it.name}${badgeGT(it)} <span style="font-size:10px;color:#bbb;cursor:pointer;" onclick="afficherInfoArticlePanier('${it.id}')">ℹ️</span></div>
                   <div style="font-size:11px;color:#888;">${it.ref}${it.taille||it.couleur ? ' — '+[it.taille?'T.'+it.taille:'',it.couleur||'']. filter(Boolean).join(' ') : ''}${estLigneDepot(it)&&!it.retour?' <span style="color:#993556;">· 🔄 dépôt-vente, hors remises</span>':''}</div>
                   ${it.retour&&!it.avoirId?`
                   <div style="margin-top:3px;display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
@@ -6335,7 +6335,7 @@ window.searchProdInput = v => {
       ? `<div style="font-size:13px;color:#aaa;padding:8px;">Aucun article trouvé</div>`
       : matches.map(p=>`
         <div onclick="addToCart('${p.id}')" style="padding:9px;border-radius:8px;border:0.5px solid #e8e0e4;background:#fff;cursor:${p.stock>0?"pointer":"not-allowed"};opacity:${p.stock===0?0.5:1};">
-          <div style="font-size:12px;font-weight:500;">${p.name}</div>
+          <div style="font-size:12px;font-weight:500;">${p.name}${badgeGT(p)}</div>
           <div style="font-size:11px;color:#888;">${[p.marque&&!/^Dépôt ·/.test(p.marque)?p.marque:"", p.depotVente?"":p.ref].filter(Boolean).join(" · ")}</div>
           ${p.depotVente?`<div style="font-size:11px;color:#993556;">🔄 Dépôt · ${((p.depotClientPrenom||"")+" "+(p.depotClientNom||"")).trim()}${p.depotTaille?" · T."+p.depotTaille:""}</div>`:""}
           <div style="font-size:13px;font-weight:500;color:#993556;margin-top:3px;">${eur(p.price)}</div>
@@ -8387,6 +8387,9 @@ window.diagnostiquerStockAberrant = () => {
   alert("⚠️ "+suspects.length+" article(s) suspect(s) trouvé(s) :\n\n"+detail+(suspects.length>15?"\n\n… et "+(suspects.length-15)+" de plus.":"")+"\n\nVérifie leur fiche dans Stock (stock ou prix probablement mal saisi).");
 };
 
+// Pastille « GT » (grande taille) affichée à côté du nom et de la référence, sans ouvrir la fiche
+function estGrandeTaille(x) { if(!x) return false; if(x.grandeTaille) return true; const p = (STATE.products||[]).find(q=>q.id===(x.prodIdOriginal||String(x.id||"").replace(/^R_/,""))); return !!(p && p.grandeTaille); }
+function badgeGT(x) { return estGrandeTaille(x) ? ' <span title="Grande taille" style="background:#f3e8ff;color:#6a3d9a;font-size:9px;padding:1px 6px;border-radius:7px;font-weight:700;vertical-align:middle;">GT</span>' : ''; }
 function renderStockTableau(prods, isV1) {
   const cols = ["","Photo","Réf.","Article","Catégorie"];
   if(isV1) cols.push("PV TTC","PV HT","PA HT","PA TTC","🔒 Coeff","🔒 Marge brute","🔒 Coeff final","🔒 Marge finale","Stock","Actions");
@@ -8416,9 +8419,9 @@ prods.forEach(p=>{
   t += '<td style="padding:6px;"><input type="checkbox" '+(sel?"checked":"");
   t += ' data-pid="'+p.id+'" onchange="toggleEtiqSel(this.dataset.pid,this.checked)" style="cursor:pointer;width:16px;height:16px;"/></td>';
   t += '<td style="padding:9px 6px;">'+photo+'</td>';
-  t += '<td style="padding:9px 6px;font-family:monospace;font-size:12px;">'+p.ref+'</td>';
+  t += '<td style="padding:9px 6px;font-family:monospace;font-size:12px;">'+p.ref+badgeGT(p)+'</td>';
   const dernierReassort = p.dernierReassort ? new Date(p.dernierReassort).toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit'}) : null;
-  t += '<td style="padding:9px 6px;"><div onclick="voirHistoriqueVentesArticle(\''+p.id+'\')" style="font-weight:500;text-decoration:underline;text-decoration-style:dotted;cursor:pointer;color:#333;" title="Voir l\'historique des ventes">'+p.name+(p.depotVente?' <span style="background:#eef4fd;color:#185fa5;font-size:9px;padding:1px 6px;border-radius:7px;font-weight:600;">🔄 DÉPÔT</span>':'')+'</div>'+(p.marque?'<div style="font-size:10px;color:#993556;font-weight:600;text-transform:uppercase;">'+p.marque+'</div>':'')+'<div style="font-size:11px;color:#888;">'+p.barcode+(dernierReassort?' · 📦 '+dernierReassort:'')+'</div></td>';
+  t += '<td style="padding:9px 6px;"><div onclick="voirHistoriqueVentesArticle(\''+p.id+'\')" style="font-weight:500;text-decoration:underline;text-decoration-style:dotted;cursor:pointer;color:#333;" title="Voir l\'historique des ventes">'+p.name+badgeGT(p)+(p.depotVente?' <span style="background:#eef4fd;color:#185fa5;font-size:9px;padding:1px 6px;border-radius:7px;font-weight:600;">🔄 DÉPÔT</span>':'')+'</div>'+(p.marque?'<div style="font-size:10px;color:#993556;font-weight:600;text-transform:uppercase;">'+p.marque+'</div>':'')+'<div style="font-size:11px;color:#888;">'+p.barcode+(dernierReassort?' · 📦 '+dernierReassort:'')+'</div></td>';
   const moisEnReserve = p.enReserve && p.dateReserve ? Math.floor((Date.now()-new Date(p.dateReserve))/(1000*60*60*24*30)) : 0;
   const alerteReserve = moisEnReserve >= 5;
   // Vérifier si l'article a des réservations clients actives
