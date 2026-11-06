@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "06/11 · v146 (marge finale du mois + objectifs horaires Dreux)";
+const APP_VERSION = "06/11 · v147 (marge totale avec commissions artisans/dépôt)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -11215,7 +11215,7 @@ function renderMargeFinaleMois() {
   const now = new Date(), off = STATE.statOffsetMois||0;
   const d0 = new Date(now.getFullYear(), now.getMonth()+off, 1), d1 = new Date(d0.getFullYear(), d0.getMonth()+1, 0, 23,59,59,999);
   const prodMap = {}; (STATE.products||[]).forEach(p=>prodMap[p.id]=p);
-  let caHT = 0, caEtiqHT = 0, cout = 0, qte = 0, sansPA = 0, caSansPA = 0, caArtDep = 0;
+  let caHT = 0, caEtiqHT = 0, cout = 0, qte = 0, sansPA = 0, caSansPA = 0, caArtDep = 0, caDepot = 0;
   (STATE.ventes||[]).forEach(v => {
     if(v.test || v.annulee) return;
     const d = new Date(v.date); if(d < d0 || d > d1) return;
@@ -11224,7 +11224,8 @@ function renderMargeFinaleMois() {
       const p = prodMap[i.prodIdOriginal||i.id] || {};
       const signe = i.retour ? -1 : 1, q = (i.qty||1) * signe;
       let paye = 0; try { paye = calculerPrixPayeReel(v, i); } catch { paye = i.price||0; }
-      if(i.artisanat || p.artisanat || i.depotVente || p.depotVente) { caArtDep += paye*q; return; }
+      if(i.depotVente || p.depotVente) { caDepot += paye*q; caArtDep += paye*q; return; }
+      if(i.artisanat || p.artisanat) { caArtDep += paye*q; return; }
       const pa = parseFloat(p.prixAchat ?? i.prixAchat) || 0;
       if(!(pa > 0)) { sansPA += q; caSansPA += paye*q; return; }
       caHT += paye*q/1.20; caEtiqHT += (i.price||0)*q/1.20; cout += pa*q; qte += q;
@@ -11232,6 +11233,18 @@ function renderMargeFinaleMois() {
   });
   const marge = caHT - cout;
   const pct = caHT > 0 ? Math.round(marge/caHT*100) : null;
+  // Artisans et dépôt-vente : la boutique ne garde que sa commission (TVA déduite)
+  let caArt = 0, comArt = 0;
+  try {
+    const idsV = idsVentesValides(), txA = STATE.commissionArtisan ?? 20;
+    (STATE.ventes||[]).filter(v => { const d = new Date(v.date); return d >= d0 && d <= d1; }).filter(venteCompteArtisan).forEach(v => {
+      lignesArtisanVente(v, prodMap).forEach(l => { caArt += l.montant; comArt += commissionLigneArtisan(l.p, l.qty, l.montant, txA, v.date, l.i); });
+      retoursArtisanSansTicket(v, prodMap, idsV).forEach(l => { caArt += l.montant; comArt += commissionLigneArtisan(l.p, l.qty, l.montant, txA, v.date, l.i); });
+    });
+  } catch(e) { console.error("Marge finale (artisans) :", e); }
+  const comDepot = caDepot * DEPOT_COMMISSION_PCT/100;
+  const comHT = (comArt + comDepot)/1.20;
+  const margeTotale = marge + comHT;
   const pctEtiq = caEtiqHT > 0 ? Math.round((caEtiqHT-cout)/caEtiqHT*100) : null;
   const coul = pct===null ? "#aaa" : pct>=50 ? "#3b6d11" : pct>=30 ? "#854f0b" : "#a32d2d";
   const label = d0.toLocaleDateString("fr-FR",{month:"long",year:"numeric"}).replace(/^./,c=>c.toUpperCase());
@@ -11248,7 +11261,12 @@ function renderMargeFinaleMois() {
       ${tuile("CA HT encaissé", eur(caHT), "remises comprises")}
       ${tuile("Coût d'achat HT", eur(cout), "prix d'achat des articles vendus")}
     </div>
-    <div style="font-size:10px;color:#aaa;margin-top:8px;line-height:1.5;">Calcul sur les articles de la boutique, avec le prix réellement payé par la cliente (remises article, remise globale, fidélité, réseaux…). Hors artisans et dépôt-vente${caArtDep?" ("+eur(caArtDep)+" TTC ce mois)":""}, sacs et chèques cadeaux.${sansPA?` ⚠️ ${sansPA} article(s) vendus sans prix d'achat (${eur(caSansPA)} TTC) ne sont pas comptés : renseigne leur prix d'achat dans le stock.`:""}</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:8px;">
+      ${tuile("Commission artisans", eur(comArt), "sur "+eur(caArt)+" TTC vendus")}
+      ${tuile("Commission dépôt-vente", eur(comDepot), DEPOT_COMMISSION_PCT+" % de "+eur(caDepot)+" TTC vendus")}
+      ${tuile("✅ Marge totale du mois (HT)", eur(margeTotale), "marge articles + commissions HT", "#993556")}
+    </div>
+    <div style="font-size:10px;color:#aaa;margin-top:8px;line-height:1.5;">Calcul sur les articles de la boutique, avec le prix réellement payé par la cliente (remises article, remise globale, fidélité, réseaux…). Les ventes des artisans et du dépôt-vente ne sont pas à toi : seule ta commission compte, dans la marge totale. Sacs et chèques cadeaux exclus.${sansPA?` ⚠️ ${sansPA} article(s) vendus sans prix d'achat (${eur(caSansPA)} TTC) ne sont pas comptés : renseigne leur prix d'achat dans le stock.`:""}</div>
   </div>`;
 }
 function renderStats() {
