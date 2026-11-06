@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "06/11 · v145 (2e boutique : Dreux, ouverture 25/11)";
+const APP_VERSION = "06/11 · v146 (marge finale du mois + objectifs horaires Dreux)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -11085,7 +11085,7 @@ function renderPaceWidget(periode) {
 const REPARTITION_HORAIRE_FIXE = {10:5, 11:8, 12:16, 13:13, 14:9, 15:11, 16:13, 17:12, 18:13};
 
 function calculerRepartitionHoraire(weekday) {
-  if(BOUTIQUE_ID_ACTUEL==="boutique_2") return {10:5, 11:8, 12:12, 13:11, 14:10, 15:10, 16:11, 17:12, 18:12, 19:9};
+  if(BOUTIQUE_ID_ACTUEL==="boutique_2") return (weekday===2||weekday===4) ? {...REPARTITION_HORAIRE_FIXE, 13:0} : REPARTITION_HORAIRE_FIXE; // Dreux : fermé 13 h–14 h mardi et jeudi
   return REPARTITION_HORAIRE_FIXE;
 }
 
@@ -11107,8 +11107,9 @@ function renderPaceHoraireWidget() {
   if(!repartHoraire) return "";
 
   // Heures d'ouverture : Lundi 13h30–18h30, Mardi–Samedi 10h00–18h30 (on arrondit à l'heure pleine)
+  if(BOUTIQUE_ID_ACTUEL==="boutique_2" && wd===1) return ""; // Dreux fermé le lundi
   const heureOuv = BOUTIQUE_ID_ACTUEL==="boutique_2" ? 10 : (wd===1 ? 13 : 10);
-  const heureFerm = BOUTIQUE_ID_ACTUEL==="boutique_2" ? 19 : 18; // dernière heure pleine avant la fermeture
+  const heureFerm = 18; // dernière heure pleine avant la fermeture (18h30)
 
   const heureActuelle = now.getHours() + now.getMinutes()/60;
   let poidsEcoule = 0, poidsTotalJour = 0;
@@ -11205,6 +11206,49 @@ function renderCompteurTickets() {
       ${tuile("Année "+a0.getFullYear(), a0, a1, "statOffsetAnnee", per==="annee")}
     </div>
     <div style="font-size:10px;color:#aaa;margin-top:4px;">Tickets de vente uniquement (hors retours, avoirs, remboursements et tests). Les flèches ◀ ▶ de chaque case changent la semaine, le mois ou l'année. Comparaison avec la même période l'an dernier (jusqu'à aujourd'hui pour la période en cours).</div>
+  </div>`;
+}
+// ── Marge finale du mois : prix RÉELLEMENT encaissés (toutes remises incluses) − prix d'achat HT ──
+// Articles de la boutique uniquement (hors artisans, dépôt-vente, sacs, chèques cadeaux), retours déduits.
+function renderMargeFinaleMois() {
+  if(STATE.vendeur.id!=="V1") return "";
+  const now = new Date(), off = STATE.statOffsetMois||0;
+  const d0 = new Date(now.getFullYear(), now.getMonth()+off, 1), d1 = new Date(d0.getFullYear(), d0.getMonth()+1, 0, 23,59,59,999);
+  const prodMap = {}; (STATE.products||[]).forEach(p=>prodMap[p.id]=p);
+  let caHT = 0, caEtiqHT = 0, cout = 0, qte = 0, sansPA = 0, caSansPA = 0, caArtDep = 0;
+  (STATE.ventes||[]).forEach(v => {
+    if(v.test || v.annulee) return;
+    const d = new Date(v.date); if(d < d0 || d > d1) return;
+    (v.panier||[]).forEach(i => {
+      if(i.avoirId || i.isChequeCadeau || estArticleSac(i) || i.id==="correction_manuelle") return;
+      const p = prodMap[i.prodIdOriginal||i.id] || {};
+      const signe = i.retour ? -1 : 1, q = (i.qty||1) * signe;
+      let paye = 0; try { paye = calculerPrixPayeReel(v, i); } catch { paye = i.price||0; }
+      if(i.artisanat || p.artisanat || i.depotVente || p.depotVente) { caArtDep += paye*q; return; }
+      const pa = parseFloat(p.prixAchat ?? i.prixAchat) || 0;
+      if(!(pa > 0)) { sansPA += q; caSansPA += paye*q; return; }
+      caHT += paye*q/1.20; caEtiqHT += (i.price||0)*q/1.20; cout += pa*q; qte += q;
+    });
+  });
+  const marge = caHT - cout;
+  const pct = caHT > 0 ? Math.round(marge/caHT*100) : null;
+  const pctEtiq = caEtiqHT > 0 ? Math.round((caEtiqHT-cout)/caEtiqHT*100) : null;
+  const coul = pct===null ? "#aaa" : pct>=50 ? "#3b6d11" : pct>=30 ? "#854f0b" : "#a32d2d";
+  const label = d0.toLocaleDateString("fr-FR",{month:"long",year:"numeric"}).replace(/^./,c=>c.toUpperCase());
+  const btn = dlt => `<button onclick="STATE.statOffsetMois=(STATE.statOffsetMois||0)+(${dlt});render()" style="background:#fff;border:1px solid #e0d4da;border-radius:6px;padding:2px 10px;cursor:pointer;">${dlt<0?"◀":"▶"}</button>`;
+  const tuile = (t, v, sous, c) => `<div style="background:#f9f6f8;border-radius:10px;padding:10px 12px;"><div style="font-size:11px;color:#888;">${t}</div><div style="font-size:18px;font-weight:600;color:${c||"#333"};">${v}</div>${sous?`<div style="font-size:10px;color:#aaa;">${sous}</div>`:""}</div>`;
+  return `<div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;margin-bottom:16px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:10px;flex-wrap:wrap;">
+      <div style="font-weight:600;font-size:14px;">💶 Marge finale du mois</div>
+      <div style="display:flex;align-items:center;gap:8px;">${btn(-1)}<strong style="font-size:13px;min-width:120px;text-align:center;">${label}</strong>${btn(1)}</div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">
+      ${tuile("Marge finale", pct!==null?pct+" %":"—", pctEtiq!==null?"au prix étiquette : "+pctEtiq+" %":"", coul)}
+      ${tuile("Marge finale en €", eur(marge), qte+" article"+(qte>1?"s":"")+" vendus (retours déduits)", coul)}
+      ${tuile("CA HT encaissé", eur(caHT), "remises comprises")}
+      ${tuile("Coût d'achat HT", eur(cout), "prix d'achat des articles vendus")}
+    </div>
+    <div style="font-size:10px;color:#aaa;margin-top:8px;line-height:1.5;">Calcul sur les articles de la boutique, avec le prix réellement payé par la cliente (remises article, remise globale, fidélité, réseaux…). Hors artisans et dépôt-vente${caArtDep?" ("+eur(caArtDep)+" TTC ce mois)":""}, sacs et chèques cadeaux.${sansPA?` ⚠️ ${sansPA} article(s) vendus sans prix d'achat (${eur(caSansPA)} TTC) ne sont pas comptés : renseigne leur prix d'achat dans le stock.`:""}</div>
   </div>`;
 }
 function renderStats() {
@@ -11741,7 +11785,7 @@ function renderStats() {
       const maxJ=Math.max(...joursAll,1);
       // Clients les plus fidèles
       const topClients=[...STATE.clients].filter(c=>c.totalAchats>0).sort((a,b)=>(b.montantCumule||0)-(a.montantCumule||0)).slice(0,5);
-      return `
+      return `${renderMargeFinaleMois()}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
         <!-- Heures actives -->
         <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;">
