@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "06/11 · v147 (marge totale avec commissions artisans/dépôt)";
+const APP_VERSION = "06/11 · v148 (transfert par tailles ou référence entière)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -8074,7 +8074,7 @@ window.ouvrirTransfertBoutique = (prodId) => {
   if(!p) return;
   const autres = BOUTIQUES.filter(b=>b.id!==BOUTIQUE_ID_ACTUEL);
   STATE.transfertForm = {
-    prodId, qty:1, taille:"", couleur:"",
+    prodId, qty:1, taille:"", couleur:"", lignes:{},
     boutiqueDestId: autres[0]?.id||"",
     clientRecherche:"", clientChoisi:null,
     note:"",
@@ -8083,6 +8083,20 @@ window.ouvrirTransfertBoutique = (prodId) => {
   render();
 };
 
+// Variantes taille/couleur en stock d'un article (pour transférer plusieurs tailles d'un coup)
+function variantesEnStock(p) {
+  const T = (p.tailles||[]).length ? p.tailles : [null], C = (p.couleurs||[]).length ? p.couleurs : [null];
+  if(T[0]===null && C[0]===null) return [];
+  const sv = p.stockVariantes||{}, out = [];
+  T.forEach(t => C.forEach(c => { const k = (t||'_')+'_'+(c||'_'); const n = parseInt(sv[k])||0; if(n>0) out.push({k, t, c, n}); }));
+  return out;
+}
+window.transfertTout = () => {
+  const f = STATE.transfertForm, p = STATE.products.find(x=>x.id===f.prodId); if(!p) return;
+  const vs = variantesEnStock(p);
+  if(vs.length) { f.lignes = {}; vs.forEach(v=>f.lignes[v.k]=v.n); } else f.qty = p.stock||0;
+  render();
+};
 function renderTransfertBoutiqueModal() {
   const f = STATE.transfertForm;
   const p = STATE.products.find(x=>x.id===f.prodId);
@@ -8104,11 +8118,23 @@ function renderTransfertBoutiqueModal() {
           <div style="font-size:11px;color:#888;">Réf. ${p.ref} · Stock actuel ici : ${p.stock||0}</div>
         </div>
 
+        ${(()=>{ const vs = variantesEnStock(p); const tot = vs.length ? Object.values(f.lignes||{}).reduce((s,n)=>s+(parseInt(n)||0),0) : (f.qty||0);
+          return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <span style="font-size:13px;font-weight:500;">À transférer : ${tot} article${tot>1?"s":""}</span>
+            <button onclick="transfertTout()" class="btn-ghost" style="font-size:12px;">📦 Toute la référence (${p.stock||0})</button>
+          </div>` + (vs.length ? `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(105px,1fr));gap:6px;margin-bottom:10px;">
+            ${vs.map(v=>`<div style="background:#f9f6f8;border-radius:8px;padding:6px 8px;">
+              <div style="font-size:12px;font-weight:500;">${[v.t,v.c].filter(Boolean).join(" · ")}</div>
+              <div style="font-size:10px;color:#888;margin-bottom:3px;">en stock : ${v.n}</div>
+              <input type="number" min="0" max="${v.n}" value="${(f.lignes||{})[v.k]||0}" oninput="STATE.transfertForm.lignes['${v.k}']=Math.min(${v.n},Math.max(0,parseInt(this.value)||0))" onchange="render()" style="width:100%;box-sizing:border-box;"/>
+            </div>`).join("")}
+          </div>` : "");
+        })()}
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
-          <div>
+          ${variantesEnStock(p).length ? "<div></div>" : `<div>
             <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Quantité</label>
             <input type="number" min="1" max="${p.stock||1}" value="${f.qty}" oninput="STATE.transfertForm.qty=parseInt(this.value)||1" style="width:100%;box-sizing:border-box;"/>
-          </div>
+          </div>`}
           <div>
             <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Vers quelle boutique</label>
             <select onchange="STATE.transfertForm.boutiqueDestId=this.value" style="width:100%;box-sizing:border-box;">
@@ -8117,7 +8143,7 @@ function renderTransfertBoutiqueModal() {
           </div>
         </div>
 
-        ${(p.tailles?.length||p.couleurs?.length)?`
+        ${(p.tailles?.length||p.couleurs?.length) && !variantesEnStock(p).length?`
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
           ${p.tailles?.length?`<div><label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Taille</label><select onchange="STATE.transfertForm.taille=this.value"><option value="">—</option>${p.tailles.map(t=>`<option value="${t}">${t}</option>`).join("")}</select></div>`:""}
           ${p.couleurs?.length?`<div><label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Couleur</label><select onchange="STATE.transfertForm.couleur=this.value"><option value="">—</option>${p.couleurs.map(c=>`<option value="${c}">${c}</option>`).join("")}</select></div>`:""}
@@ -8155,13 +8181,21 @@ window.validerTransfertBoutique = async () => {
   const p = STATE.products.find(x=>x.id===f.prodId);
   const bDest = BOUTIQUES.find(b=>b.id===f.boutiqueDestId);
   if(!p || !bDest) return;
-  if(f.qty<=0 || f.qty>(p.stock||0)) { alert("⚠️ Quantité invalide par rapport au stock disponible."); return; }
+  // Lignes à transférer : une par taille/couleur cochée, sinon une seule ligne (quantité simple)
+  const vs = variantesEnStock(p);
+  const lignes = vs.length
+    ? vs.map(v=>({t:v.t, c:v.c, q:Math.min(v.n, parseInt((f.lignes||{})[v.k])||0)})).filter(l=>l.q>0)
+    : [{t:f.taille||null, c:f.couleur||null, q:parseInt(f.qty)||0}];
+  const total = lignes.reduce((s,l)=>s+l.q,0);
+  if(!lignes.length || total<=0 || total>(p.stock||0)) { alert("⚠️ Choisis au moins un article à transférer (dans la limite du stock)."); return; }
   if(!_fbDb) { alert("⚠️ Pas de connexion au cloud, impossible de transférer."); return; }
-  if(!confirm(`Transférer ${f.qty}× "${p.name}" vers "${bDest.nom}" ?${f.clientChoisi?`\n\nUne réservation sera créée là-bas pour ${f.clientChoisi.prenom} ${f.clientChoisi.nom}.`:""}`)) return;
+  const detail = lignes.map(l=>l.q+"× "+([l.t,l.c].filter(Boolean).join(" · ")||"sans taille")).join(", ");
+  if(!confirm(`Transférer ${total} × "${p.name}" vers "${bDest.nom}" ?\n\n${detail}${f.clientChoisi?`\n\nUne réservation sera créée là-bas pour ${f.clientChoisi.prenom} ${f.clientChoisi.nom}.`:""}`)) return;
+  f.qty = total;
 
   try {
     // 1. Retirer du stock ICI (boutique actuelle)
-    STATE.products = ajusterStock(STATE.products, p.id, -f.qty, f.taille||null, f.couleur||null);
+    lignes.forEach(l => { STATE.products = ajusterStock(STATE.products, p.id, -l.q, l.t, l.c); });
     lsSet("bj_products", STATE.products);
 
     // 2. Lire le stock de la boutique de destination, trouver/créer l'article (correspondance par référence), incrémenter
@@ -8180,7 +8214,8 @@ window.validerTransfertBoutique = async () => {
       if(p.photo) { try { await _fbDb.collection("bellejolie").doc("photo__"+bDest.id+"__"+idDest).set({value:p.photo, maj:new Date().toISOString(), device:DEVICE_ID}); } catch(e) { console.error("Photo non copiée", e); } }
     }
     // Ajout du stock (variante taille/couleur comprise) dans la boutique de destination
-    produitsDest = ajusterStock(produitsDest, idDest, f.qty, f.taille||null, f.couleur||null).map(x=>x.id===idDest?{...x, majLe:new Date().toISOString()}:x);
+    lignes.forEach(l => { produitsDest = ajusterStock(produitsDest, idDest, l.q, l.t, l.c); });
+    produitsDest = produitsDest.map(x=>x.id===idDest?{...x, majLe:new Date().toISOString()}:x);
     await _fbDb.collection("bellejolie").doc(cleProdDest).set({value:produitsDest, maj:new Date().toISOString(), device:DEVICE_ID});
 
     // 3. Créer la réservation là-bas si une cliente a été choisie
@@ -8194,7 +8229,7 @@ window.validerTransfertBoutique = async () => {
         id: uid("RSV"), date: now.toISOString(), expiration: expiration.toISOString(),
         clientId: f.clientChoisi.id, clientNom: f.clientChoisi.prenom+" "+f.clientChoisi.nom,
         clientEmail: f.clientChoisi.email||"", clientTel: f.clientChoisi.tel||"",
-        articles: [{id: idDest, name:p.name, price:p.price, qty:f.qty, taille:f.taille||null, couleur:f.couleur||null}],
+        articles: lignes.map(l=>({id: idDest, name:p.name, price:p.price, qty:l.q, taille:l.t, couleur:l.c})),
         note: "🔄 Transfert depuis "+boutiqueActuelle().nom+(f.note?" — "+f.note:""),
         statut: "active", rappelEnvoye: false, vendeur: STATE.vendeur.nom,
       };
@@ -8203,8 +8238,8 @@ window.validerTransfertBoutique = async () => {
 
     // 4. Historique partagé des transferts (visible des deux côtés)
     const nouveauTransfert = {
-      id: uid("TRF"), date: new Date().toISOString(), article: p.name, ref: p.ref, qty: f.qty,
-      taille: f.taille||null, couleur: f.couleur||null,
+      id: uid("TRF"), date: new Date().toISOString(), article: p.name, ref: p.ref, qty: total,
+      taille: lignes.length===1 ? lignes[0].t : lignes.map(l=>(l.t||"")+(l.q>1?"×"+l.q:"")).join(", "), couleur: lignes.length===1 ? lignes[0].c : null,
       boutiqueOrigine: boutiqueActuelle().nom, boutiqueDestination: bDest.nom,
       client: f.clientChoisi ? f.clientChoisi.prenom+" "+f.clientChoisi.nom : null,
       creePar: STATE.vendeur.nom,
@@ -8213,7 +8248,7 @@ window.validerTransfertBoutique = async () => {
     lsSet("bj_transferts", STATE.transferts);
 
     setState({showTransfertBoutique:false});
-    alert(`✅ Transfert effectué : ${f.qty}× "${p.name}" envoyé(s) vers ${bDest.nom}.`);
+    alert(`✅ Transfert effectué : ${total}× "${p.name}" (${detail}) envoyé(s) vers ${bDest.nom}.`);
   } catch(err) {
     console.error("Erreur transfert boutique:", err);
     alert("❌ Erreur pendant le transfert : "+(err.message||err)+"\n\nVérifie ta connexion et réessaie. Le stock d'ici n'a peut-être été retiré qu'en partie, vérifie avant de recommencer.");
