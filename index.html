@@ -95,10 +95,10 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "04/11 · v144 (pastille GT grande taille)";
+const APP_VERSION = "06/11 · v145 (2e boutique : Dreux, ouverture 25/11)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
-  { id: "boutique_2", nom: "Belle & Jolie — Maurepas" },
+  { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
 ];
 // Identifiant de la boutique de CET appareil : réglage 100% local, jamais synchronisé entre appareils.
 // Un paramètre d'URL (?boutique=boutique_2) permet d'ouvrir UN ONGLET précis sur une boutique
@@ -1355,55 +1355,52 @@ const OBJECTIFS_BOOST_CHARTRES = {
   11:29765,
 }; // Total annuel objectif secondaire : 210 834€
 
-// ── Objectifs de Maurepas (ouverture le 21/11/2026) ──
-// Base = prévisionnel réaliste (21 000 € TTC/mois en moyenne, saisonnalité + montée en charge), +10 % ;
-// objectif boost = objectif principal +17 % (même logique que Chartres).
-const MAUREPAS_OUVERTURE = new Date(2026, 10, 21);
-const MAUREPAS_PREVI_AN1 = { "2026-10":5729, "2026-11":26775, "2027-0":16958, "2027-1":14175, "2027-2":18952, "2027-3":19950,
-  "2027-4":22050, "2027-5":21000, "2027-6":21000, "2027-7":16800, "2027-8":18900, "2027-9":21000 };
-const MAUREPAS_SAISON = [0.95,0.75,0.95,1.0,1.05,1.0,1.0,0.8,0.9,1.0,1.1,1.5];
-const MAUREPAS_MAJ_OBJ = 1.10*1.06*0.975, MAUREPAS_MAJ_BOOST = 1.17; // prévisionnel +10 %, +6 %, puis −2,5 % (11/10/2026) ; boost = objectif +17 %
-function objectifMoisMaurepas(y, m) {
-  // Objectifs posés sur 1 an seulement (bail d'un an) : du 21/11/2026 au 31/10/2027, rien au-delà
-  const k = y+"-"+m;
-  return MAUREPAS_PREVI_AN1[k] !== undefined ? Math.round(MAUREPAS_PREVI_AN1[k]*MAUREPAS_MAJ_OBJ) : 0;
-}
-function anneeExerciceMaurepas(m) { // année du mois m dans l'exercice en cours (novembre → octobre)
-  const now = new Date(); let debut = now.getMonth() >= 10 ? now.getFullYear() : now.getFullYear()-1;
-  if(debut < 2026) debut = 2026;
-  return m >= 10 ? debut : debut+1;
-}
-const OBJECTIFS_MENSUEL = BOUTIQUE_ID_ACTUEL==="boutique_2"
-  ? Object.fromEntries([...Array(12).keys()].map(m=>[m, objectifMoisMaurepas(anneeExerciceMaurepas(m), m)]))
-  : OBJECTIFS_CHARTRES;
-const OBJECTIFS_BOOST = BOUTIQUE_ID_ACTUEL==="boutique_2"
-  ? Object.fromEntries(Object.entries(OBJECTIFS_MENSUEL).map(([m,v])=>[m, Math.round(v*MAUREPAS_MAJ_BOOST)]))
-  : OBJECTIFS_BOOST_CHARTRES;
-// Poids des jours à Maurepas (0=dim … 6=sam) et heures d'ouverture
-const MAUREPAS_POIDS_JOUR = {0:0, 1:0.8, 2:0.9, 3:1.0, 4:0.95, 5:1.05, 6:1.6};
-function maurepasJourOuvert(d) {
-  if(d.getDay()===0) return false;
-  if(d < MAUREPAS_OUVERTURE) return false;
+// ── Objectifs de Dreux (ouverture le 25/11/2026) ──
+// Objectif = celui de Chartres −5 % (même saisonnalité, août fermé) ; boost = boost de Chartres −5 %.
+// Fermé le dimanche ET le lundi ; mardi et jeudi fermés de 13 h à 14 h (poids réduit ces jours-là).
+const DREUX_OUVERTURE = new Date(2026, 10, 25);
+const DREUX_COEFF = 0.95;
+const DREUX_POIDS_JOUR = {0:0, 1:0, 2:11*0.92, 3:18, 4:13*0.92, 5:18, 6:33}; // base Chartres, lundi fermé, pause midi mar/jeu
+function dreuxJourOuvert(d) {
+  const dow = d.getDay();
+  if(dow===0 || dow===1) return false;
+  const j = new Date(d); j.setHours(12,0,0,0);
+  if(j < DREUX_OUVERTURE) return false;
   if((d.getMonth()===11 && d.getDate()===25) || (d.getMonth()===0 && d.getDate()===1) || (d.getMonth()===4 && d.getDate()===1)) return false;
   return true;
 }
-// Poids commercial d'un jour à Maurepas : jour de la semaine × calendrier (paie, soldes, ventes privées, vacances zone C)
-function poidsJourMaurepas(d) {
-  if(!maurepasJourOuvert(d)) return 0;
+function poidsJourDreux(d, ignorerOuverture) {
   const dow = d.getDay();
-  let w = MAUREPAS_POIDS_JOUR[dow] * coeffPeriodeMois(d);
+  if(dow===0 || dow===1) return 0;
+  if((d.getMonth()===11 && d.getDate()===25) || (d.getMonth()===0 && d.getDate()===1) || (d.getMonth()===4 && d.getDate()===1)) return 0;
+  if(!ignorerOuverture && !dreuxJourOuvert(d)) return 0;
+  let w = DREUX_POIDS_JOUR[dow] * coeffPeriodeMois(d);
   if(isEnSoldes(d)) { w *= 1.15; if(dow===3||dow===6) w *= 1.10; }
   else if(isEnVentesPrivees(d)) { w *= 1.10; if(dow===6) w *= 1.05; }
   else { const vac = isEnVacances(d); if(vac && vac.type==="noel") w *= 1.15; else if(vac) w *= 0.85; }
   return w;
 }
-// Objectif du jour : l'objectif du mois réparti selon ces poids (le total du mois ne change pas)
-function objJourMaurepas(date) {
-  const w = poidsJourMaurepas(date); if(!w) return 0;
+// Objectif du mois à Dreux : Chartres −5 %, au prorata des jours ouverts le mois de l'ouverture
+function objectifMoisDreux(y, m, boost) {
+  const base = Math.round(((boost ? OBJECTIFS_BOOST_CHARTRES : OBJECTIFS_CHARTRES)[m]||0) * DREUX_COEFF);
+  if(!base) return 0;
+  const fin = new Date(y, m+1, 0);
+  if(fin < DREUX_OUVERTURE) return 0;
+  const nb = fin.getDate(); let tout = 0, ouverts = 0;
+  for(let j=1; j<=nb; j++) { const d = new Date(y, m, j); tout += poidsJourDreux(d, true); ouverts += poidsJourDreux(d); }
+  return tout>0 ? Math.round(base * ouverts / tout) : 0;
+}
+function anneeObjectifDreux(m) { const now = new Date(); return now.getFullYear() + (m < now.getMonth()-6 ? 1 : 0); }
+// Calcul paresseux (les calendriers vacances/soldes sont déclarés plus bas dans le fichier)
+function objectifsParesseux(boost) { const o = {}; for(let m=0;m<12;m++) Object.defineProperty(o, m, {enumerable:true, get:()=>objectifMoisDreux(anneeObjectifDreux(m), m, boost)}); return o; }
+const OBJECTIFS_MENSUEL = BOUTIQUE_ID_ACTUEL==="boutique_2" ? objectifsParesseux(false) : OBJECTIFS_CHARTRES;
+const OBJECTIFS_BOOST = BOUTIQUE_ID_ACTUEL==="boutique_2" ? objectifsParesseux(true) : OBJECTIFS_BOOST_CHARTRES;
+function objJourDreux(date) {
+  const w = poidsJourDreux(date); if(!w) return 0;
   const y = date.getFullYear(), m = date.getMonth();
-  const caM = objectifMoisMaurepas(y, m); if(!caM) return 0;
+  const caM = objectifMoisDreux(y, m); if(!caM) return 0;
   let somme = 0; const nb = new Date(y, m+1, 0).getDate();
-  for(let j=1; j<=nb; j++) somme += poidsJourMaurepas(new Date(y, m, j));
+  for(let j=1; j<=nb; j++) somme += poidsJourDreux(new Date(y, m, j));
   return somme>0 ? Math.round(caM * w / somme) : 0;
 }
 // % du CA hebdo par jour — samedi à 28%, semaine réduite en conséquence
@@ -1458,7 +1455,7 @@ const VACANCES_ZONE_B_DATES = {
   ],
 };
 
-// Vacances scolaires Zone C (Maurepas, Yvelines) — dates officielles 2026-2027 (arrêté du 22/10/2025)
+// Vacances scolaires Zone C (plus utilisées : Dreux est en zone B comme Chartres) — dates officielles 2026-2027 (arrêté du 22/10/2025)
 const VACANCES_ZONE_C_DATES = {
   2026: [
     {debut: new Date(2026,9,17), fin: new Date(2026,10,1), type:"toussaint"},
@@ -1471,7 +1468,7 @@ const VACANCES_ZONE_C_DATES = {
     {debut: new Date(2027,6,3),  fin: new Date(2027,7,31), type:"ete"},
   ],
 };
-function zoneVacances() { return BOUTIQUE_ID_ACTUEL==="boutique_2" ? "C" : "B"; }
+function zoneVacances() { return "B"; } // Chartres et Dreux (Eure-et-Loir) : zone B
 // Retourne le type de vacances si la date est en vacances, sinon null
 function isEnVacances(date) {
   const y = date.getFullYear();
@@ -1526,7 +1523,7 @@ function objSemCalc(dateQuelconque) {
 }
 
 function objJourCalc(date) {
-  if(BOUTIQUE_ID_ACTUEL==="boutique_2") return objJourMaurepas(date);
+  if(BOUTIQUE_ID_ACTUEL==="boutique_2") return objJourDreux(date);
   const m = date.getMonth();
   const dow = date.getDay(); // 0=dim, 1=lun, 2=mar, 3=mer, 4=jeu, 5=ven, 6=sam
   if(dow===0) return 0; // dimanche fermé
@@ -5667,7 +5664,7 @@ const CSS_CARTE_CADEAU = `
   .cc-qr img{width:13mm;height:13mm;display:block;border:0.2mm solid #eee;border-radius:1mm;margin-bottom:0.5mm}
   .cc-adr{font-size:2.4mm;color:#999;margin-top:2mm}
 `;
-function adresseCarteCadeau() { return BOUTIQUE_ID_ACTUEL==="boutique_2" ? "Centre Aushopping Maurepas-Pariwest, 78310 Maurepas" : BOUTIQUE_ADRESSE; }
+function adresseCarteCadeau() { return BOUTIQUE_ID_ACTUEL==="boutique_2" ? "Belle & Jolie — Dreux" : BOUTIQUE_ADRESSE; }
 function carteCadeauHTML(chq) {
   const qr = (url, nom) => `<div><img src="https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(url)}&margin=1" alt="${nom}"/>${nom}</div>`;
   return `<div class="cc"><div class="cc-in">
@@ -6812,9 +6809,9 @@ window.openPayModal = () => {
 };
 
 window.validerPaiement = () => {
-  // Garde-fou : Maurepas n'ouvre que le 21/11/2026 — une vente là-bas avant est presque sûrement une erreur de boutique
-  if(BOUTIQUE_ID_ACTUEL==="boutique_2" && new Date() < new Date("2026-11-21T00:00:00") && !window._okVenteMaurepas) {
-    if(!confirm("⚠️ Cette caisse est réglée sur MAUREPAS, qui n'est pas encore ouverte.\n\nLes ventes faites ici n'apparaîtront PAS dans le chiffre de Chartres.\n\nAnnuler (recommandé) puis repasser sur Chartres avec le bouton ⇄ en haut ?\n\nOK = encaisser quand même sur Maurepas")) return;
+  // Garde-fou : Dreux n'ouvre que le 25/11/2026 — une vente là-bas avant est presque sûrement une erreur de boutique
+  if(BOUTIQUE_ID_ACTUEL==="boutique_2" && new Date() < new Date("2026-11-25T00:00:00") && !window._okVenteMaurepas) {
+    if(!confirm("⚠️ Cette caisse est réglée sur DREUX, qui n'est pas encore ouverte.\n\nLes ventes faites ici n'apparaîtront PAS dans le chiffre de Chartres.\n\nAnnuler (recommandé) puis repasser sur Chartres avec le bouton ⇄ en haut ?\n\nOK = encaisser quand même sur Maurepas")) return;
     window._okVenteMaurepas = true;
   }
   // Garde-fou : aucun article « prix selon formule » ne doit partir sans prix choisi
