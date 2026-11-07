@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "07/11 · v154 (créer la fiche à Dreux sans stock)";
+const APP_VERSION = "07/11 · v155 (fiches et transferts groupés)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -19635,8 +19635,67 @@ function renderBoutonLotEtiq(nb) {
   return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">'    +'<button onclick="ouvrirModalLotEtiq()" style="padding:8px 14px;background:#185fa5;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">🏷️ Étiquettes lot ('+nb+')</button>'    +(cats.length>0?'<select onchange="if(this.value){imprimerEtiquettesCat(this.value);this.value=\'\'}" style="padding:8px 10px;border:1px solid #185fa5;border-radius:8px;font-size:12px;color:#185fa5;cursor:pointer;"><option value="">Par catégorie...</option>'+catsOptions+'</select>':'')
     +'</div>'
        + '<button onclick="ajouterToutStockSelection();ouvrirModalLotEtiq()" style="padding:8px 14px;background:#993556;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">📦 Tout le stock</button>'
+       + (STATE.vendeur?.id==="V1" && BOUTIQUES.length>1 ? (()=>{ const autre = BOUTIQUES.find(b=>b.id!==BOUTIQUE_ID_ACTUEL); const nomA = (autre?.nom||"").replace(/^Belle & Jolie — /,"");
+           return '<button onclick="copierFichesSelection()" style="padding:8px 12px;background:#fff;color:#185fa5;border:1px solid #b5d4f4;border-radius:8px;cursor:pointer;font-size:13px;">📋 Créer les fiches à '+nomA+' ('+nb+')</button>'
+             + '<button onclick="transfererStockSelection()" style="padding:8px 12px;background:#fff;color:#993556;border:1px solid #e8c4d3;border-radius:8px;cursor:pointer;font-size:13px;">📦↔️ Transférer tout leur stock à '+nomA+'</button>'; })() : "")
        + '<button onclick="STATE.etiqSelection={};STATE.etiqLignes=[];render()" style="padding:8px 10px;background:#f5f0f2;border:none;border-radius:8px;cursor:pointer;font-size:13px;color:#888;">✕ Tout décocher</button>';
 }
+// ── Actions groupées sur les articles cochés : fiches (stock 0) ou tout le stock vers l'autre boutique ──
+function articlesCoches() { const sel = STATE.etiqSelection||{}; return (STATE.products||[]).filter(p=>sel[p.id]>0); }
+async function ficheDestPour(p, produitsDest, bDest, maint) {
+  const ex = produitsDest.find(x => (p.ref && x.ref===p.ref) || (x.copieDe && x.copieDe.id===p.id));
+  if(ex) return {id: ex.id, cree: false};
+  const idDest = uid("PROD");
+  const sv0 = {}; Object.keys(p.stockVariantes||{}).forEach(k=>sv0[k]=0);
+  const { photo: _ph, ...pSansPhoto } = p;
+  produitsDest.push({...pSansPhoto, id:idDest, stock:0, stockVariantes:sv0, reserveQty:0, aPhoto:!!p.photo, copieDe:{boutique:BOUTIQUE_ID_ACTUEL, id:p.id}, majLe:maint});
+  if(p.photo) { try { await _fbDb.collection("bellejolie").doc("photo__"+bDest.id+"__"+idDest).set({value:p.photo, maj:maint, device:DEVICE_ID}); } catch(e) { console.error("Photo non copiée", e); } }
+  return {id: idDest, cree: true};
+}
+window.copierFichesSelection = async () => {
+  const liste = articlesCoches(), bDest = BOUTIQUES.find(b=>b.id!==BOUTIQUE_ID_ACTUEL);
+  if(!liste.length || !bDest) return;
+  if(!_fbDb) { alert("⚠️ Pas de connexion au cloud."); return; }
+  if(!confirm("Créer les fiches de "+liste.length+" article(s) à "+bDest.nom+", avec un stock à 0 ?\n\nLe stock d'ici ne change pas. Les articles qui existent déjà là-bas sont ignorés.")) return;
+  try {
+    const cle = cleFirestorePour(bDest.id, "bj_products"), maint = new Date().toISOString();
+    const doc = await _fbDb.collection("bellejolie").doc(cle).get();
+    const produitsDest = doc.exists ? [...(doc.data().value||[])] : [];
+    let crees = 0;
+    for(const p of liste) { const r = await ficheDestPour(p, produitsDest, bDest, maint); if(r.cree) crees++; }
+    if(crees) await _fbDb.collection("bellejolie").doc(cle).set({value:produitsDest, maj:maint, device:DEVICE_ID});
+    alert("✅ "+crees+" fiche(s) créée(s) à "+bDest.nom+" (stock 0)."+(liste.length-crees?"\n"+(liste.length-crees)+" existai(en)t déjà là-bas.":""));
+  } catch(err) { console.error(err); alert("❌ Erreur : "+(err.message||err)); }
+};
+window.transfererStockSelection = async () => {
+  const liste = articlesCoches().filter(p=>(p.stock||0)>0), bDest = BOUTIQUES.find(b=>b.id!==BOUTIQUE_ID_ACTUEL);
+  if(!bDest) return;
+  if(!liste.length) { alert("Aucun article coché n'a de stock à transférer."); return; }
+  if(!_fbDb) { alert("⚠️ Pas de connexion au cloud."); return; }
+  const total = liste.reduce((s,p)=>s+(p.stock||0),0);
+  if(!confirm("Transférer TOUT le stock de "+liste.length+" article(s) ("+total+" pièces) vers "+bDest.nom+" ?\n\nIls passeront à 0 ici.")) return;
+  try {
+    const cle = cleFirestorePour(bDest.id, "bj_products"), maint = new Date().toISOString();
+    const doc = await _fbDb.collection("bellejolie").doc(cle).get();
+    let produitsDest = doc.exists ? [...(doc.data().value||[])] : [];
+    const transf = [];
+    for(const p of liste) {
+      const vs = variantesEnStock(p);
+      const lignes = vs.length ? vs.map(v=>({t:v.t, c:v.c, q:v.n})) : [{t:null, c:null, q:p.stock||0}];
+      const r = await ficheDestPour(p, produitsDest, bDest, maint);
+      lignes.forEach(l => { produitsDest = ajusterStock(produitsDest, r.id, l.q, l.t, l.c); STATE.products = ajusterStock(STATE.products, p.id, -l.q, l.t, l.c); });
+      produitsDest = produitsDest.map(x=>x.id===r.id?{...x, majLe:maint}:x);
+      transf.push({id: uid("TRF"), date: maint, article: p.name, ref: p.ref, qty: lignes.reduce((s,l)=>s+l.q,0),
+        taille: lignes.length===1 ? lignes[0].t : lignes.map(l=>(l.t||"")+(l.q>1?"×"+l.q:"")).join(", "), couleur: null,
+        boutiqueOrigine: boutiqueActuelle().nom, boutiqueDestination: bDest.nom, client: null, creePar: STATE.vendeur.nom});
+    }
+    await _fbDb.collection("bellejolie").doc(cle).set({value:produitsDest, maj:maint, device:DEVICE_ID});
+    lsSet("bj_products", STATE.products);
+    STATE.transferts = [...(STATE.transferts||[]), ...transf]; lsSet("bj_transferts", STATE.transferts);
+    STATE.etiqSelection = {}; render();
+    alert("✅ "+total+" pièce(s) de "+liste.length+" article(s) transférée(s) vers "+bDest.nom+".");
+  } catch(err) { console.error(err); alert("❌ Erreur pendant le transfert : "+(err.message||err)+"\nVérifie le stock des deux boutiques avant de recommencer."); }
+};
 
 // Ajoute toutes les variantes+stock de tous les articles cochés
 window.ajouterToutStockSelection = () => {
