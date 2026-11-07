@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "07/11 · v149 (statut artisan suit la fiche article)";
+const APP_VERSION = "07/11 · v150 (marge : bons offerts déduits)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -11250,12 +11250,16 @@ function renderMargeFinaleMois() {
   const now = new Date(), off = STATE.statOffsetMois||0;
   const d0 = new Date(now.getFullYear(), now.getMonth()+off, 1), d1 = new Date(d0.getFullYear(), d0.getMonth()+1, 0, 23,59,59,999);
   const prodMap = {}; (STATE.products||[]).forEach(p=>prodMap[p.id]=p);
-  let caHT = 0, caEtiqHT = 0, cout = 0, qte = 0, sansPA = 0, caSansPA = 0, caArtDep = 0, caDepot = 0;
+  let caHT = 0, caEtiqHT = 0, cout = 0, qte = 0, sansPA = 0, caSansPA = 0, caArtDep = 0, caDepot = 0, bonsOfferts = 0;
+  const avoirMap = {}; (STATE.avoirs||[]).forEach(a=>avoirMap[a.id]=a);
   (STATE.ventes||[]).forEach(v => {
     if(v.test || v.annulee) return;
     const d = new Date(v.date); if(d < d0 || d > d1) return;
     (v.panier||[]).forEach(i => {
-      if(i.avoirId || i.isChequeCadeau || estArticleSac(i) || i.id==="correction_manuelle") return;
+      // Bons OFFERTS (bienvenue, anniversaire) = vraie remise → déduits de la marge.
+      // Les autres bons (avoir de retour, chèque cadeau, bon dépôt-vente) ont déjà été encaissés : ce n'est pas une perte.
+      if(i.avoirId) { const a = avoirMap[i.avoirId]; if(a && (a.typeAvoir==="bienvenue" || a.typeAvoir==="anniversaire")) bonsOfferts += (i.price||0)*(i.qty||1); return; }
+      if(i.isChequeCadeau || estArticleSac(i) || i.id==="correction_manuelle") return;
       const p = prodMap[i.prodIdOriginal||i.id] || {};
       const signe = i.retour ? -1 : 1, q = (i.qty||1) * signe;
       let paye = 0; try { paye = calculerPrixPayeReel(v, i); } catch { paye = i.price||0; }
@@ -11266,6 +11270,7 @@ function renderMargeFinaleMois() {
       caHT += paye*q/1.20; caEtiqHT += (i.price||0)*q/1.20; cout += pa*q; qte += q;
     });
   });
+  caHT -= bonsOfferts/1.20;
   const marge = caHT - cout;
   const pct = caHT > 0 ? Math.round(marge/caHT*100) : null;
   // Artisans et dépôt-vente : la boutique ne garde que sa commission (TVA déduite)
@@ -11293,7 +11298,7 @@ function renderMargeFinaleMois() {
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;">
       ${tuile("Marge finale", pct!==null?pct+" %":"—", pctEtiq!==null?"au prix étiquette : "+pctEtiq+" %":"", coul)}
       ${tuile("Marge finale en €", eur(marge), qte+" article"+(qte>1?"s":"")+" vendus (retours déduits)", coul)}
-      ${tuile("CA HT encaissé", eur(caHT), "remises comprises")}
+      ${tuile("CA HT encaissé", eur(caHT), "remises comprises"+(bonsOfferts?" · bons offerts déduits : "+eur(bonsOfferts)+" TTC":""))}
       ${tuile("Coût d'achat HT", eur(cout), "prix d'achat des articles vendus")}
     </div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-top:8px;">
@@ -11301,7 +11306,7 @@ function renderMargeFinaleMois() {
       ${tuile("Commission dépôt-vente", eur(comDepot), DEPOT_COMMISSION_PCT+" % de "+eur(caDepot)+" TTC vendus")}
       ${tuile("✅ Marge totale du mois (HT)", eur(margeTotale), "marge articles + commissions HT", "#993556")}
     </div>
-    <div style="font-size:10px;color:#aaa;margin-top:8px;line-height:1.5;">Calcul sur les articles de la boutique, avec le prix réellement payé par la cliente (remises article, remise globale, fidélité, réseaux…). Les ventes des artisans et du dépôt-vente ne sont pas à toi : seule ta commission compte, dans la marge totale. Sacs et chèques cadeaux exclus.${sansPA?` ⚠️ ${sansPA} article(s) vendus sans prix d'achat (${eur(caSansPA)} TTC) ne sont pas comptés : renseigne leur prix d'achat dans le stock.`:""}</div>
+    <div style="font-size:10px;color:#aaa;margin-top:8px;line-height:1.5;">Calcul sur les articles de la boutique, avec le prix réellement payé par la cliente (remises article, remise globale, fidélité −15 %, réseaux…) et en déduisant les bons offerts (bienvenue, anniversaire). Les avoirs de retour, chèques cadeaux et bons dépôt-vente ne sont pas déduits : cet argent a déjà été encaissé. Les ventes des artisans et du dépôt-vente ne sont pas à toi : seule ta commission compte, dans la marge totale. Sacs et chèques cadeaux exclus.${sansPA?` ⚠️ ${sansPA} article(s) vendus sans prix d'achat (${eur(caSansPA)} TTC) ne sont pas comptés : renseigne leur prix d'achat dans le stock.`:""}</div>
   </div>`;
 }
 function renderStats() {
