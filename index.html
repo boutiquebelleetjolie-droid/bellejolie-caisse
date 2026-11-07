@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "07/11 · v158 (Stock beaucoup plus rapide)";
+const APP_VERSION = "07/11 · v159 (échanges jusqu'au 5 janvier 2027)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -4892,7 +4892,7 @@ function renderCaisse() {
                 const retournables = artsAvecStatut.filter(x=>x.retournable);
                 return "<div style='background:#faf8f9;border:1px solid #f0ebee;border-radius:8px;padding:8px;margin-bottom:6px;'>"
                   +"<div style='display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:4px;'>"
-                  +"<span style='font-size:11px;color:#888;white-space:nowrap;'>"+new Date(v.date).toLocaleDateString("fr-FR")+((now30-new Date(v.date))>30*864e5?" <span style='font-size:10px;color:#b07a00;'>+30 j</span>":"")+(v._boutique?" · <b style='color:#185fa5;'>"+nomBoutiqueCourt(v._boutique)+"</b>":"")+"</span>"
+                  +"<span style='font-size:11px;color:#888;white-space:nowrap;'>"+new Date(v.date).toLocaleDateString("fr-FR")+(now30>dateLimiteEchange(v.date)?" <span style='font-size:10px;color:#b07a00;'>délai d'échange dépassé</span>":"")+(v._boutique?" · <b style='color:#185fa5;'>"+nomBoutiqueCourt(v._boutique)+"</b>":"")+"</span>"
                   +"<span style='font-size:11px;background:#e6f1fb;color:#185fa5;padding:1px 6px;border-radius:8px;'>"+( mLc[v.payMode]||v.payMode)+"</span>"
                   +"<span style='font-size:12px;font-weight:600;color:#993556;flex:1;text-align:right;'>"+eur(v.total)+"</span>"
                   +"<button data-vid='"+v.id+"' onclick='voirTicketHistorique(this.dataset.vid)' style='background:none;border:1px solid #ddd;border-radius:6px;padding:2px 7px;cursor:pointer;font-size:12px;color:#993556;'>🧾</button>"
@@ -5791,7 +5791,7 @@ window.imprimerTicketCadeau = () => {
       <div style="border-top:1px solid #333;margin-top:10px;"></div>
       <div class="center" style="font-size:10px;color:#888;margin-top:14px;">📍 ${BOUTIQUE_ADRESSE}<br>🕐 ${BOUTIQUE_HORAIRES}</div>
       <div class="center" style="font-size:10px;color:#888;margin-top:10px;">Merci pour votre confiance !<br>Belle&Jolie vous dit à bientôt ✿</div>
-      <div class="center" style="font-size:9px;color:#aaa;margin-top:10px;">Article échangeable sous 30 jours sur présentation de ce ticket.<br>Non porté, non lavé, sans odeur, étiquette intacte.</div>
+      <div class="center" style="font-size:9px;color:#aaa;margin-top:10px;">Article échangeable ${delaiEchange(v?.date)} sur présentation de ce ticket.<br>Non porté, non lavé, sans odeur, étiquette intacte.</div>
     </body></html>
   `);
   win.document.close();
@@ -5828,7 +5828,7 @@ window.envoyerTicketCadeauMail = async () => {
     ${deLaPart && deLaPart.trim() ? `<div style="font-family:Georgia,serif;font-style:italic;font-size:17px;color:#555;text-align:center;margin-bottom:16px;">${esc(deLaPart.trim())}</div>` : ""}
     <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">${lignes}</table>
     <div style="background:#fbf3e6;border-radius:10px;padding:14px 16px;font-size:13px;color:#854f0b;line-height:1.7;margin-top:18px;">
-      🔄 Article(s) <strong>échangeable(s) sous 30 jours</strong> en boutique, sur présentation de ce mail (montrez-le simplement sur votre téléphone).<br/>
+      🔄 Article(s) <strong>échangeable(s) ${delaiEchange(v?.date)}</strong> en boutique, sur présentation de ce mail (montrez-le simplement sur votre téléphone).<br/>
       Non porté, non lavé, sans odeur, étiquette intacte.
     </div>
   </td></tr>
@@ -5838,7 +5838,7 @@ window.envoyerTicketCadeauMail = async () => {
     <div style="font-size:11px;color:#ccc;margin-top:4px;">⚠️ Merci de ne pas répondre à cet email. Contact : boutiquebelleetjolie@gmail.com</div>
   </td></tr>
 </table></td></tr></table></body></html>`;
-  const texte = "TICKET CADEAU Belle&Jolie — achat du "+date+" (n° "+num+")\n\n"+(deLaPart&&deLaPart.trim()?deLaPart.trim()+"\n\n":"")+articles.map(a=>"- "+(a.qty||1)+" × "+a.name+(a.taille?" · T."+a.taille:"")).join("\n")+"\n\nÉchangeable sous 30 jours en boutique sur présentation de ce mail.";
+  const texte = "TICKET CADEAU Belle&Jolie — achat du "+date+" (n° "+num+")\n\n"+(deLaPart&&deLaPart.trim()?deLaPart.trim()+"\n\n":"")+articles.map(a=>"- "+(a.qty||1)+" × "+a.name+(a.taille?" · T."+a.taille:"")).join("\n")+"\n\nÉchangeable "+delaiEchange(v?.date)+" en boutique sur présentation de ce mail.";
   try {
     await emailjs.init(STATE.emailjsPublicKey);
     await emailjs.send(STATE.emailjsServiceId, STATE.emailjsTemplateId, {
@@ -5884,6 +5884,17 @@ function varianteTicket(i) {
 function nomTicket(i) {
   const n = String(i.name||"");
   return (i.taille||i.couleur) ? n.replace(/\s*\([^()]*\)\s*$/,"") : n;
+}
+// Délai d'échange : 30 jours, prolongé jusqu'au 5 janvier 2027 pour les achats des fêtes (à partir du 7 novembre 2026)
+const ECHANGE_FETES = { debut: new Date(2026, 10, 7), fin: new Date(2027, 0, 5, 23, 59, 59) };
+function dateLimiteEchange(d) {
+  const dv = d ? new Date(d) : new Date();
+  const base = new Date(dv.getTime() + 30*864e5);
+  return (dv >= ECHANGE_FETES.debut && dv <= ECHANGE_FETES.fin && base < ECHANGE_FETES.fin) ? ECHANGE_FETES.fin : base;
+}
+function delaiEchange(d) {
+  const lim = dateLimiteEchange(d), dv = d ? new Date(d) : new Date();
+  return lim.getTime() === ECHANGE_FETES.fin.getTime() && dv >= ECHANGE_FETES.debut ? "jusqu'au 5 janvier 2027 (spécial fêtes)" : "sous 30 jours";
 }
 function renderTicketModal() {
   const v = STATE.showTicket;
@@ -6184,7 +6195,7 @@ function renderTicketModal() {
               </div>
             </div>
             <div style="font-size:10px;color:#888;margin-top:4px;">Merci pour votre confiance !<br>Belle&Jolie vous dit à bientôt ✿</div>
-            <div style="font-size:9px;color:#aaa;margin-top:6px;">Article échangeable sous 30 jours sur présentation du ticket.<br>Non porté, non lavé, sans odeur, étiquette intacte. Aucun remboursement.</div>
+            <div style="font-size:9px;color:#aaa;margin-top:6px;">Article échangeable ${delaiEchange(v?.date)} sur présentation du ticket.<br>Non porté, non lavé, sans odeur, étiquette intacte. Aucun remboursement.</div>
           </div>
         </div>
         <button onclick="imprimerZone('ticket-print-area');setTimeout(()=>setState({showTicket:null}),300)" class="btn-primary" style="margin-bottom:8px;">🖨️ Imprimer le ticket</button>
@@ -15309,7 +15320,7 @@ function buildMsgEmail(v) {
   const avoirUtilise=(v?.panier||[]).find(x=>x.avoirId);
   const avoirRefTxt = avoirUtilise ? (STATE.avoirs||[]).find(a=>a.id===avoirUtilise.avoirId) : null;
   const avoirDetail=avoirUtilise?`\n${labelTypeAvoir(avoirRefTxt?.typeAvoir, avoirRefTxt?.source)} utilisé : ${eur(avoirUtilise.price)}`:"";
-  return `Bonjour ${prenom||"Madame"},\n\nVotre ticket Belle&Jolie du ${date} :\n\n${articles}${v?.remiseFid>0?`\nRemise fidélité -20% : -${eur(v.remiseFid)}`:""}${v?.remise>0?`\n${labelRemiseGlobale(v)} : -${eur(v.remise)}`:""}${totalRemisesTxt>0.001?`\nTotal remises : -${eur(totalRemisesTxt)}`:""}${avoirDetail}\n\nTotal : ${eur(v?.total||0)}\nRèglement : ${paiement}\n\nMerci de votre confiance !\nBelle&Jolie — Mode & Élégance\nArticle échangeable sous 30 jours sur présentation du ticket de caisse ou d'un compte fidélité. Non porté, non lavé, sans odeur, étiquette intacte et dans le même état qu'à l'achat. Aucun remboursement.\n\n⚠️ Ne pas répondre. Contact : boutiquebelleetjolie@gmail.com`;
+  return `Bonjour ${prenom||"Madame"},\n\nVotre ticket Belle&Jolie du ${date} :\n\n${articles}${v?.remiseFid>0?`\nRemise fidélité -20% : -${eur(v.remiseFid)}`:""}${v?.remise>0?`\n${labelRemiseGlobale(v)} : -${eur(v.remise)}`:""}${totalRemisesTxt>0.001?`\nTotal remises : -${eur(totalRemisesTxt)}`:""}${avoirDetail}\n\nTotal : ${eur(v?.total||0)}\nRèglement : ${paiement}\n\nMerci de votre confiance !\nBelle&Jolie — Mode & Élégance\nArticle échangeable ${delaiEchange(v?.date)} sur présentation du ticket de caisse ou d'un compte fidélité. Non porté, non lavé, sans odeur, étiquette intacte et dans le même état qu'à l'achat. Aucun remboursement.\n\n⚠️ Ne pas répondre. Contact : boutiquebelleetjolie@gmail.com`;
 }
 
 function buildTicketEmailHTML(v) {
@@ -15396,7 +15407,7 @@ function buildTicketEmailHTML(v) {
     ${reliquatHtml}
     ${fideliteHtml}
     <p style="font-size:11px;color:#aaa;line-height:1.6;margin:20px 0 0;padding-top:16px;border-top:1px solid #f5f0f2;">
-      Article échangeable sous 30 jours sur présentation du ticket. Non porté, non lavé, sans odeur, étiquette intacte.<br>Aucun remboursement.
+      Article échangeable ${delaiEchange(v?.date)} sur présentation du ticket. Non porté, non lavé, sans odeur, étiquette intacte.<br>Aucun remboursement.
     </p>
   </td></tr>
 
@@ -15566,7 +15577,7 @@ function buildMsgEmailHTML(v) {
       }
       return "";
     })()
-    +"Article échangeable sous 30 jours sur présentation du ticket de caisse ou d'un compte fidélité. Non porté, non lavé, sans odeur, étiquette intacte et dans le même état qu'à l'achat. Aucun remboursement.\n\n"
+    +"Article échangeable "+delaiEchange(v?.date)+" sur présentation du ticket de caisse ou d'un compte fidélité. Non porté, non lavé, sans odeur, étiquette intacte et dans le même état qu'à l'achat. Aucun remboursement.\n\n"
     +sep+"\nMerci de votre confiance !\n"
     +"⚠️ Ne pas répondre — Contact : boutiquebelleetjolie@gmail.com";
 }
@@ -20347,7 +20358,7 @@ function buildTicketHTML(v) {
             <div style="font-size:6px;color:#993556;font-weight:700;margin-top:2px;">TIKTOK</div>
           </div>
         </div>
-        <div style="font-size:8px;color:#aaa;">Article échangeable sous 30 jours sur présentation du ticket.<br>Non porté, non lavé, sans odeur, étiquette intacte. Aucun remboursement.</div>
+        <div style="font-size:8px;color:#aaa;">Article échangeable ${delaiEchange(v?.date)} sur présentation du ticket.<br>Non porté, non lavé, sans odeur, étiquette intacte. Aucun remboursement.</div>
       </div>
       <div class="footer small">Belle&Jolie — boutiquebelleetjolie@gmail.com</div>
     </div>
