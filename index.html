@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "07/11 · v151 (liste des articles sans prix d'achat)";
+const APP_VERSION = "07/11 · v152 (impression plus fiable sur tous les ordinateurs)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -12137,8 +12137,12 @@ window.imprimerZone = (idZone) => {
   let dejaImprime = false; // un seul lancement d'impression (avant : images chargées + filet de sécurité = ticket en double)
   const lancer = () => {
     if(dejaImprime) return; dejaImprime = true;
+    // On ne retire la zone d'impression qu'APRÈS l'impression : sur certains navigateurs/ordinateurs la fenêtre
+    // d'impression ne bloque pas, et la retirer au bout de 2 s annulait l'impression (page blanche ou rien)
+    let retire = false; const retirer = () => { if(retire) return; retire = true; try { iframe.remove(); } catch{} };
+    try { iframe.contentWindow.addEventListener("afterprint", () => setTimeout(retirer, 500)); } catch{}
     try { iframe.contentWindow.focus(); iframe.contentWindow.print(); } catch(e) { window.print(); }
-    setTimeout(() => iframe.remove(), 2000);
+    setTimeout(retirer, 120000);
   };
   // laisser le temps aux images (logo, code-barres) de se charger
   const imgs = [...doc.images];
