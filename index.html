@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "06/11 · v148 (transfert par tailles ou référence entière)";
+const APP_VERSION = "07/11 · v149 (statut artisan suit la fiche article)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -11260,7 +11260,7 @@ function renderMargeFinaleMois() {
       const signe = i.retour ? -1 : 1, q = (i.qty||1) * signe;
       let paye = 0; try { paye = calculerPrixPayeReel(v, i); } catch { paye = i.price||0; }
       if(i.depotVente || p.depotVente) { caDepot += paye*q; caArtDep += paye*q; return; }
-      if(i.artisanat || p.artisanat) { caArtDep += paye*q; return; }
+      if(estLigneArtisan(i, p)) { caArtDep += paye*q; return; }
       const pa = parseFloat(p.prixAchat ?? i.prixAchat) || 0;
       if(!(pa > 0)) { sansPA += q; caSansPA += paye*q; return; }
       caHT += paye*q/1.20; caEtiqHT += (i.price||0)*q/1.20; cout += pa*q; qte += q;
@@ -12314,6 +12314,9 @@ function nomArtisanCanon(nom) {
   }
   return window._canonArtisans[cle];
 }
+// Une ligne de vente est « artisan » selon la fiche ACTUELLE de l'article (si on corrige la fiche, les ventes suivent).
+// Le marquage enregistré sur la ligne ne sert que si l'article n'existe plus dans le stock.
+function estLigneArtisan(i, p) { return (p && p.id) ? !!p.artisanat : !!(i && i.artisanat); }
 function lignesArtisanVente(v, prodMap) {
   const restants = {...(v.articlesRetournes||{})};
   const out = [];
@@ -12321,7 +12324,7 @@ function lignesArtisanVente(v, prodMap) {
     if(i.retour || i.avoirId) return;
     const pid = i.prodIdOriginal || i.id;
     const p = prodMap[pid] || {};
-    if(!(p.artisanat || i.artisanat)) return;
+    if(!estLigneArtisan(i, p)) return;
     const q = i.qty||1, r = Math.min(q, restants[pid]||0);
     if(r) restants[pid] -= r;
     const net = q - r; if(net<=0) return;
@@ -12333,7 +12336,7 @@ function retoursArtisanSansTicket(v, prodMap, idsVentes) {
   return (v.panier||[]).filter(i => i.retour && !i.avoirId).map(i => {
     const pid = i.prodIdOriginal || String(i.id||"").replace("R_","");
     const p = prodMap[pid] || {};
-    if(!(p.artisanat || i.artisanat)) return null;
+    if(!estLigneArtisan(i, p)) return null;
     if(i.retourVenteId && idsVentes.has(i.retourVenteId)) return null; // neutralisé sur la vente d'origine
     const q = i.qty||1;
     const rem = i.remiseType==="pct"?i.price*(parseFloat(i.remise||0)/100):i.remiseType==="eur"?parseFloat(i.remise||0)/q:0;
