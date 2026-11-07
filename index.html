@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "07/11 · v155 (fiches et transferts groupés)";
+const APP_VERSION = "07/11 · v156 (articles d'Isaline retirés)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -6325,6 +6325,7 @@ window.searchProdInput = v => {
     // peu importe l'ordre) plutôt qu'une seule phrase exacte — et la marque est maintenant prise en compte.
     const mots = normStr(v).split(/\s+/).filter(Boolean);
     const matches = STATE.products.filter(p=>{
+      if(p.retire) return false; // article retiré (partenariat arrêté…)
       const texte = normStr(p.name+" "+p.ref+" "+(p.marque||"")+" "+(p.barcode||"")+(p.depotVente?" depot "+(p.depotClientPrenom||"")+" "+(p.depotClientNom||""):""));
       return mots.every(m=>texte.includes(m));
     }).sort((a,b)=>(b.stock>0)-(a.stock>0)).slice(0,12);
@@ -8660,6 +8661,7 @@ function renderStock() {
   const filtreDateStock = STATE.dateEtiqFiltreActif ? (STATE.dateEtiq||"") : "";
   const motsStock = q.split(/\s+/).filter(Boolean);
   let filtered = STATE.products.filter(p=>{
+    if(p.retire) return false; // article retiré de la vente (fiche gardée pour l'historique des ventes)
     if(p.isChequeCadeau || p.isService) return false; // pas de vrai stock (chèques cadeaux, retouches)
     const texte = normStr(p.name+" "+p.ref+" "+(p.marque||"")+(p.depotVente?" depot "+(p.depotClientPrenom||"")+" "+(p.depotClientNom||""):""));
     return motsStock.every(m=>texte.includes(m));
@@ -15927,6 +15929,7 @@ function getArticlesEnRuptureLongue() {
   const deuxMoisAvant = new Date(Math.max(new Date(now).setMonth(now.getMonth()-2), DATE_REOUVERTURE));
 
   return STATE.products.filter(p => {
+    if(p.retire) return false;
     if(categorieExclue(p.category)) return false;
     if((p.stock||0) > 0) return false; // en stock → pas concerné
 
@@ -15956,6 +15959,7 @@ function getArticlesAReassortir() {
   const deuxMoisAvant = new Date(Math.max(new Date(now).setMonth(now.getMonth()-2), DATE_REOUVERTURE));
 
   return STATE.products.filter(p => {
+    if(p.retire) return false;
     if(categorieExclue(p.category)) return false;
     if((p.stock||0) === 0) return false;
 
@@ -18681,6 +18685,24 @@ function marquerEmailsIntrouvables1110() {
   } catch(err) { console.error(err); return true; }
 }
 setTimeout(function tenter(){ if(!marquerEmailsIntrouvables1110()) setTimeout(tenter, 5000); }, 8000);
+// 07/11/2026 : fin du partenariat avec Isaline — ses articles sont retirés de la vente (stock 0, masqués partout).
+// Les fiches sont GARDÉES (marquées « retire ») pour que l'historique des ventes et ses commissions restent justes.
+// Les articles de la boutique liés à ses pampilles (créoles « avec pampilles ») perdent ce lien.
+setTimeout(() => {
+  try {
+    if(localStorage.getItem("bj_retrait_isaline")==="ok") return;
+    const maint = new Date().toISOString(); const ids = new Set(); let n = 0;
+    STATE.products = (STATE.products||[]).map(p => {
+      if(!p.artisanat || !/isaline/i.test(normStr(p.nomArtisan||""))) return p;
+      ids.add(p.id); if(p.retire && !(p.stock>0)) return p; n++;
+      const sv = {}; Object.keys(p.stockVariantes||{}).forEach(k=>sv[k]=0);
+      return {...p, retire:true, retireLe:maint, stock:0, stockVariantes:sv, majLe:maint};
+    }).map(p => p.produitLieId && ids.has(p.produitLieId) ? (n++, {...p, produitLieId:null, majLe:maint}) : p);
+    STATE.panier = (STATE.panier||[]).filter(i => !ids.has(i.prodIdOriginal||i.id));
+    localStorage.setItem("bj_retrait_isaline", "ok");
+    if(n) { lsSet("bj_products", STATE.products); render(); console.log("Articles d'Isaline retirés :", n); }
+  } catch(e) { console.error("Retrait Isaline :", e); }
+}, 9000);
 // 13/10/2026 : commission fixe de 1 € par pampille sur les articles d'Isaline, sur toutes les ventes (rétroactif)
 setTimeout(() => {
   try {
@@ -20505,6 +20527,7 @@ function renderModalReservation() {
     return normStr(c.prenom+" "+c.nom+" "+c.tel).includes(q);
   });
   const produits = STATE.products.filter(p=>{
+    if(p.retire) return false;
     if(!STATE.resaProdSearch) return false;
     const q = normStr(STATE.resaProdSearch);
     return p.stock>0 && normStr(p.name+p.ref+p.category).includes(q);
