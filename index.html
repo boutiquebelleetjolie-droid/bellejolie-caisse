@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "07/11 · v152 (impression plus fiable sur tous les ordinateurs)";
+const APP_VERSION = "07/11 · v153 (total accessoires & bijoux)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -12438,7 +12438,7 @@ function renderBilanFamilles(mois, annee, type) {
   const fmtT = t => Object.entries(t||{}).filter(([,q])=>q).sort((a,b)=>String(a[0]).localeCompare(String(b[0]),"fr",{numeric:true})).map(([tl,q])=>`${tl}${q>1?" ×"+q:""}`).join(" · ");
   return `
   <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;margin-bottom:16px;">
-    <div style="display:flex;justify-content:space-between;align-items:baseline;font-weight:600;font-size:14px;margin-bottom:10px;">${chaus?"👟 Chaussures vendues":"👜 Accessoires & bijoux vendus"}${chaus?`<span style="font-size:12px;font-weight:500;color:#993556;">${totQ} paire${Math.abs(totQ)>1?"s":""} · ${eur(totCA)}</span>`:""}</div>
+    <div style="display:flex;justify-content:space-between;align-items:baseline;font-weight:600;font-size:14px;margin-bottom:10px;">${chaus?"👟 Chaussures vendues":"👜 Accessoires & bijoux vendus"}<span style="font-size:12px;font-weight:500;color:#993556;">${totQ} ${chaus?"paire"+(Math.abs(totQ)>1?"s":""):"article"+(Math.abs(totQ)>1?"s":"")} · ${eur(totCA)}</span></div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px;">
       ${visibles.map(([k,l])=>`<div onclick="STATE.${cle}=STATE.${cle}==='${k}'?null:'${k}';render()" style="cursor:pointer;background:${ouvert===k?'#993556':'#fbeaf0'};border-radius:9px;padding:9px 10px;">
         <div style="font-size:11px;color:${ouvert===k?'#fff':'#993556'};">${l}</div>
