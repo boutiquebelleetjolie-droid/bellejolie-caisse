@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "07/11 · v157 (bijoux rangés dans « Bijoux »)";
+const APP_VERSION = "07/11 · v158 (Stock beaucoup plus rapide)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -15922,6 +15922,35 @@ function categorieExclue(cat) {
   return CATS_EXCLUES_REASSORT.some(ex => c.includes(ex));
 }
 
+// Index des ventes par article (dernière vente, quantités sur 2 et 6 mois), calculé UNE fois puis réutilisé.
+// Avant, chaque article relisait toutes les ventes (2 500 articles × 6 000 tickets) : le Stock mettait jusqu'à 10 s à s'afficher.
+let _idxVA = null;
+function idxVentesArticle(pid) {
+  const ventes = STATE.ventes||[];
+  const cleI = ventes.length+"|"+(ventes[ventes.length-1]?.id||"")+"|"+new Date().toDateString();
+  if(!_idxVA || _idxVA.ventes!==ventes || _idxVA.cle!==cleI) {
+    const now = new Date();
+    const d2 = new Date(Math.max(new Date(now).setMonth(now.getMonth()-2), DATE_REOUVERTURE));
+    const d6 = new Date(Math.max(new Date(now).setMonth(now.getMonth()-6), DATE_REOUVERTURE));
+    const m = new Map();
+    ventes.forEach(v => {
+      if(!v || v.test || v.annulee) return;
+      const dv = new Date(v.date);
+      (v.panier||[]).forEach(i => {
+        if(i.retour) return;
+        const id = i.prodIdOriginal||i.id; let e = m.get(id);
+        if(!e) { e = {derniere:null, q2m:0, q6m:0}; m.set(id, e); }
+        if(!e.derniere || new Date(e.derniere.date) < dv) e.derniere = v;
+        const q = i.qty||1;
+        if(dv >= d2) e.q2m += q;
+        if(dv >= d6) e.q6m += q;
+      });
+    });
+    _idxVA = {ventes, cle:cleI, m};
+  }
+  return _idxVA.m.get(pid) || {derniere:null, q2m:0, q6m:0};
+}
+
 function getArticlesEnRuptureLongue() {
   // Articles avec stock=0 depuis plus de 2 mois
   // On détecte la rupture via la dernière vente + date de dernière diminution de stock
@@ -15934,9 +15963,7 @@ function getArticlesEnRuptureLongue() {
     if((p.stock||0) > 0) return false; // en stock → pas concerné
 
     // Dernière vente de cet article (pour estimer quand le stock s'est épuisé)
-    const derniereVente = (STATE.ventes||[])
-      .filter(v => !v.test && !v.annulee && (v.panier||[]).some(i => (i.prodIdOriginal||i.id)===p.id && !i.retour))
-      .sort((a,b) => new Date(b.date)-new Date(a.date))[0];
+    const derniereVente = idxVentesArticle(p.id).derniere;
 
     // Si pas de vente, utiliser la date d'ajout (jamais avant la réouverture de la boutique)
     const dateRef = derniereVente ? new Date(derniereVente.date)
@@ -15945,9 +15972,7 @@ function getArticlesEnRuptureLongue() {
     if(!dateRef) return false;
     return dateRef < deuxMoisAvant;
   }).map(p => {
-    const derniereVente = (STATE.ventes||[])
-      .filter(v => !v.test && !v.annulee && (v.panier||[]).some(i => (i.prodIdOriginal||i.id)===p.id && !i.retour))
-      .sort((a,b) => new Date(b.date)-new Date(a.date))[0];
+    const derniereVente = idxVentesArticle(p.id).derniere;
     const dateRef = derniereVente ? new Date(derniereVente.date) : new Date(Math.max(new Date(p.dateAjout||now), DATE_REOUVERTURE));
     const joursEcart = Math.floor((now-dateRef)/86400000);
     return {...p, derniereVente: derniereVente?dateRef:null, joursEcart};
@@ -15964,14 +15989,10 @@ function getArticlesAReassortir() {
     if((p.stock||0) === 0) return false;
 
     // Dernière vente
-    const derniereVente = (STATE.ventes||[])
-      .filter(v => !v.test && !v.annulee && (v.panier||[]).some(i => (i.prodIdOriginal||i.id)===p.id && !i.retour))
-      .sort((a,b) => new Date(b.date)-new Date(a.date))[0];
+    const derniereVente = idxVentesArticle(p.id).derniere;
 
     // Quantité vendue sur les 2 derniers mois
-    const qte2m = (STATE.ventes||[])
-      .filter(v => !v.test && !v.annulee && new Date(v.date) >= deuxMoisAvant)
-      .reduce((s,v) => s + (v.panier||[]).filter(i=>(i.prodIdOriginal||i.id)===p.id&&!i.retour).reduce((ss,i)=>ss+(i.qty||1),0), 0);
+    const qte2m = idxVentesArticle(p.id).q2m;
 
     // Catégorie 1 : jamais vendu depuis + 2 mois en stock (jamais avant la réouverture de la boutique)
     if(!derniereVente) {
@@ -15989,20 +16010,14 @@ function getArticlesAReassortir() {
 
     return sansVente || (peuVendu && sansReassort);
   }).map(p => {
-    const ventesArt = (STATE.ventes||[])
-      .filter(v => !v.test && !v.annulee && (v.panier||[]).some(i => (i.prodIdOriginal||i.id)===p.id&&!i.retour))
-      .sort((a,b) => new Date(b.date)-new Date(a.date));
+    const ventesArt = idxVentesArticle(p.id).derniere ? [idxVentesArticle(p.id).derniere] : [];
     const derniereVente = ventesArt[0];
     const dateDV = derniereVente ? new Date(derniereVente.date) : new Date(Math.max(new Date(p.dateAjout||now), DATE_REOUVERTURE));
     const joursEcart = Math.floor((now - dateDV)/86400000);
 
-    const qte2m = (STATE.ventes||[])
-      .filter(v => !v.test && !v.annulee && new Date(v.date) >= deuxMoisAvant)
-      .reduce((s,v) => s + (v.panier||[]).filter(i=>(i.prodIdOriginal||i.id)===p.id&&!i.retour).reduce((ss,i)=>ss+(i.qty||1),0), 0);
+    const qte2m = idxVentesArticle(p.id).q2m;
 
-    const qte6m = (STATE.ventes||[])
-      .filter(v => { const d=new Date(Math.max(new Date(now).setMonth(now.getMonth()-6), DATE_REOUVERTURE)); return !v.test&&!v.annulee&&new Date(v.date)>=d; })
-      .reduce((s,v) => s + (v.panier||[]).filter(i=>(i.prodIdOriginal||i.id)===p.id&&!i.retour).reduce((ss,i)=>ss+(i.qty||1),0), 0);
+    const qte6m = idxVentesArticle(p.id).q6m;
 
     const jamaisVendu = !derniereVente;
     const sansVente2m = derniereVente && new Date(derniereVente.date) < deuxMoisAvant;
