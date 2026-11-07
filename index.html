@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "07/11 · v150 (marge : bons offerts déduits)";
+const APP_VERSION = "07/11 · v151 (liste des articles sans prix d'achat)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -11252,6 +11252,7 @@ function renderMargeFinaleMois() {
   const prodMap = {}; (STATE.products||[]).forEach(p=>prodMap[p.id]=p);
   let caHT = 0, caEtiqHT = 0, cout = 0, qte = 0, sansPA = 0, caSansPA = 0, caArtDep = 0, caDepot = 0, bonsOfferts = 0;
   const avoirMap = {}; (STATE.avoirs||[]).forEach(a=>avoirMap[a.id]=a);
+  const listeSansPA = {};
   (STATE.ventes||[]).forEach(v => {
     if(v.test || v.annulee) return;
     const d = new Date(v.date); if(d < d0 || d > d1) return;
@@ -11266,7 +11267,9 @@ function renderMargeFinaleMois() {
       if(i.depotVente || p.depotVente) { caDepot += paye*q; caArtDep += paye*q; return; }
       if(estLigneArtisan(i, p)) { caArtDep += paye*q; return; }
       const pa = parseFloat(p.prixAchat ?? i.prixAchat) || 0;
-      if(!(pa > 0)) { sansPA += q; caSansPA += paye*q; return; }
+      if(!(pa > 0)) { sansPA += q; caSansPA += paye*q;
+        const pid = i.prodIdOriginal||i.id, e = listeSansPA[pid] = listeSansPA[pid] || {pid, name: p.name||i.name, ref: p.ref||i.ref||"", q:0, ca:0, existe: !!p.id};
+        e.q += q; e.ca += paye*q; return; }
       caHT += paye*q/1.20; caEtiqHT += (i.price||0)*q/1.20; cout += pa*q; qte += q;
     });
   });
@@ -11306,7 +11309,16 @@ function renderMargeFinaleMois() {
       ${tuile("Commission dépôt-vente", eur(comDepot), DEPOT_COMMISSION_PCT+" % de "+eur(caDepot)+" TTC vendus")}
       ${tuile("✅ Marge totale du mois (HT)", eur(margeTotale), "marge articles + commissions HT", "#993556")}
     </div>
-    <div style="font-size:10px;color:#aaa;margin-top:8px;line-height:1.5;">Calcul sur les articles de la boutique, avec le prix réellement payé par la cliente (remises article, remise globale, fidélité −15 %, réseaux…) et en déduisant les bons offerts (bienvenue, anniversaire). Les avoirs de retour, chèques cadeaux et bons dépôt-vente ne sont pas déduits : cet argent a déjà été encaissé. Les ventes des artisans et du dépôt-vente ne sont pas à toi : seule ta commission compte, dans la marge totale. Sacs et chèques cadeaux exclus.${sansPA?` ⚠️ ${sansPA} article(s) vendus sans prix d'achat (${eur(caSansPA)} TTC) ne sont pas comptés : renseigne leur prix d'achat dans le stock.`:""}</div>
+    <div style="font-size:10px;color:#aaa;margin-top:8px;line-height:1.5;">Calcul sur les articles de la boutique, avec le prix réellement payé par la cliente (remises article, remise globale, fidélité −15 %, réseaux…) et en déduisant les bons offerts (bienvenue, anniversaire). Les avoirs de retour, chèques cadeaux et bons dépôt-vente ne sont pas déduits : cet argent a déjà été encaissé. Les ventes des artisans et du dépôt-vente ne sont pas à toi : seule ta commission compte, dans la marge totale. Sacs et chèques cadeaux exclus.</div>
+    ${sansPA?`<div style="margin-top:8px;">
+      <button onclick="STATE._voirSansPA=!STATE._voirSansPA;render()" style="background:#fff3e8;color:#854f0b;border:1px solid #f0d9bf;border-radius:8px;padding:6px 10px;font-size:12px;cursor:pointer;text-align:left;width:100%;">⚠️ ${sansPA} article(s) vendus sans prix d'achat (${eur(caSansPA)} TTC), non comptés dans la marge — ${STATE._voirSansPA?"▲ masquer":"▼ voir la liste"}</button>
+      ${STATE._voirSansPA?`<div style="border:1px solid #f0d9bf;border-top:none;border-radius:0 0 8px 8px;max-height:320px;overflow:auto;">
+        ${Object.values(listeSansPA).filter(e=>e.q!==0).sort((a,b)=>b.ca-a.ca).map(e=>`<div ${e.existe?`onclick="openProdModal('${e.pid}')" style="cursor:pointer;`:`style="`}display:flex;justify-content:space-between;gap:8px;padding:7px 10px;border-bottom:0.5px solid #f5ede4;font-size:12px;">
+          <span><strong>${e.name}</strong>${e.ref?` <span style="color:#999;font-family:monospace;">${e.ref}</span>`:""}${e.existe?` <span style="color:#993556;">✏️ renseigner</span>`:` <span style="color:#aaa;">(article supprimé du stock)</span>`}</span>
+          <span style="white-space:nowrap;color:#666;">${e.q} vendu${e.q>1?"s":""} · ${eur(e.ca)}</span>
+        </div>`).join("")}
+      </div>`:""}
+    </div>`:""}
   </div>`;
 }
 function renderStats() {
