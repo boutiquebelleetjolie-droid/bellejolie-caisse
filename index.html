@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "07/11 · v156 (articles d'Isaline retirés)";
+const APP_VERSION = "07/11 · v157 (bijoux rangés dans « Bijoux »)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -12416,7 +12416,7 @@ function familleArticle(nom, categorie) {
   if(/collier|sautoir|pendentif|ras de cou|choker|\bchaines?\b|medaille/.test(t)) return "colliers";
   if(/bracelet|jonc|manchette|gourmette/.test(t)) return "bracelets";
   if(/\bbagues?\b|chevaliere|anneau|alliance|solitaire|\bring\b/.test(t)) return "bagues";
-  if(/boucle d.?oreille|creole|pampille|puce|\bbo\b/.test(t) || (c==="bijoux" && /boucle/.test(t))) return "boucles";
+  if(/boucles? d.?.?oreilles?|creole|pampille|puce|\bbo\b/.test(t) || (c==="bijoux" && /boucle/.test(t))) return "boucles";
   return null;
 }
 function ventesParFamille(mois, annee, familles, classer) {
@@ -18685,6 +18685,23 @@ function marquerEmailsIntrouvables1110() {
   } catch(err) { console.error(err); return true; }
 }
 setTimeout(function tenter(){ if(!marquerEmailsIntrouvables1110()) setTimeout(tenter, 5000); }, 8000);
+// 07/11/2026 : colliers, bracelets, bagues et boucles d'oreilles rangés dans la catégorie « Bijoux »
+// (uniquement s'ils sont dans une catégorie non vêtement : Accessoires, Décoration, vide…)
+setTimeout(() => {
+  try {
+    if(localStorage.getItem("bj_cat_bijoux")==="ok") return;
+    const maint = new Date().toISOString(), proteges = [...CATEGORIES_VETEMENTS, "Chaussures", "Sacs", "Chaussettes", "Bijoux"];
+    let n = 0;
+    STATE.products = (STATE.products||[]).map(p => {
+      if(p.depotVente || p.isChequeCadeau || p.isService || proteges.includes(p.category)) return p;
+      const f = familleArticle(p.name, p.category);
+      if(!["colliers","bracelets","bagues","boucles"].includes(f)) return p;
+      n++; return {...p, category:"Bijoux", majLe:maint};
+    });
+    localStorage.setItem("bj_cat_bijoux", "ok");
+    if(n) { lsSet("bj_products", STATE.products); render(); console.log("Articles passés en Bijoux :", n); }
+  } catch(e) { console.error("Catégorie Bijoux :", e); }
+}, 11000);
 // 07/11/2026 : fin du partenariat avec Isaline — ses articles sont retirés de la vente (stock 0, masqués partout).
 // Les fiches sont GARDÉES (marquées « retire ») pour que l'historique des ventes et ses commissions restent justes.
 // Les articles de la boutique liés à ses pampilles (créoles « avec pampilles ») perdent ce lien.
