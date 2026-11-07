@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "07/11 · v153 (total accessoires & bijoux)";
+const APP_VERSION = "07/11 · v154 (créer la fiche à Dreux sans stock)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -8171,11 +8171,37 @@ function renderTransfertBoutiqueModal() {
         </div>
 
         <button onclick="validerTransfertBoutique()" class="btn-primary" style="width:100%;">📦 Confirmer le transfert</button>
+        <button onclick="copierFicheVersBoutique()" class="btn-ghost" style="width:100%;margin-top:8px;">📋 Créer seulement la fiche dans l'autre boutique (stock à 0, rien ne bouge ici)</button>
       </div>
     </div>
   </div>`;
 }
 
+// Créer la fiche de l'article dans l'autre boutique, avec un stock à 0 (le stock d'ici ne bouge pas)
+window.copierFicheVersBoutique = async () => {
+  const f = STATE.transfertForm;
+  const p = STATE.products.find(x=>x.id===f.prodId);
+  const bDest = BOUTIQUES.find(b=>b.id===f.boutiqueDestId);
+  if(!p || !bDest) return;
+  if(!_fbDb) { alert("⚠️ Pas de connexion au cloud."); return; }
+  try {
+    const cleProdDest = cleFirestorePour(bDest.id, "bj_products");
+    const docProdDest = await _fbDb.collection("bellejolie").doc(cleProdDest).get();
+    const produitsDest = docProdDest.exists ? (docProdDest.data().value||[]) : [];
+    const existe = produitsDest.find(x => (p.ref && x.ref===p.ref) || (x.copieDe && x.copieDe.id===p.id));
+    if(existe) { alert("ℹ️ « "+p.name+" » existe déjà à "+bDest.nom+" (stock là-bas : "+(existe.stock||0)+")."); return; }
+    if(!confirm("Créer la fiche « "+p.name+" »"+(p.ref?" (réf. "+p.ref+")":"")+" à "+bDest.nom+" avec un stock à 0 ?\n\nLe stock d'ici ne change pas.")) return;
+    const idDest = uid("PROD");
+    const sv0 = {}; Object.keys(p.stockVariantes||{}).forEach(k=>sv0[k]=0);
+    const { photo: _ph, ...pSansPhoto } = p;
+    const maint = new Date().toISOString();
+    const fiche = {...pSansPhoto, id:idDest, stock:0, stockVariantes:sv0, reserveQty:0, aPhoto:!!p.photo, copieDe:{boutique:BOUTIQUE_ID_ACTUEL, id:p.id}, majLe:maint};
+    if(p.photo) { try { await _fbDb.collection("bellejolie").doc("photo__"+bDest.id+"__"+idDest).set({value:p.photo, maj:maint, device:DEVICE_ID}); } catch(e) { console.error("Photo non copiée", e); } }
+    await _fbDb.collection("bellejolie").doc(cleProdDest).set({value:[...produitsDest, fiche], maj:maint, device:DEVICE_ID});
+    setState({showTransfertBoutique:false});
+    alert("✅ Fiche « "+p.name+" » créée à "+bDest.nom+" (stock 0).");
+  } catch(err) { console.error("Copie de fiche :", err); alert("❌ Erreur : "+(err.message||err)); }
+};
 window.validerTransfertBoutique = async () => {
   const f = STATE.transfertForm;
   const p = STATE.products.find(x=>x.id===f.prodId);
