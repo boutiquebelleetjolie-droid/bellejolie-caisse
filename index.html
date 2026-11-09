@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "07/11 · v159 (échanges jusqu'au 5 janvier 2027)";
+const APP_VERSION = "09/11 · v160 (Sabrina : boutiques, fiches et transferts)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -2911,7 +2911,7 @@ function renderApp() {
       <div style="font-size:12px;color:#888;">${STATE.vendeur.nom}</div>
       ${STATE.vendeur.id==="V1"?`<button onclick="showVendeurSettings()" style="background:none;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px;color:#666;">⚙️ PIN</button>`:""}
       ${STATE.vendeur.id==="V1"?`<button onclick="setState({showRegistrePersonnel:true})" style="background:none;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px;color:#666;">👥 Personnel</button>`:""}
-      ${STATE.vendeur.id==="V1"&&BOUTIQUES.length>1
+      ${peutGererBoutiques()&&BOUTIQUES.length>1
         ? `<span style="background:${BOUTIQUE_ID_ACTUEL==="boutique_1"?"#993556":"#185fa5"};color:#fff;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;">📍 ${boutiqueActuelle().nom.replace("Belle & Jolie — ","").toUpperCase()}</span>
            <button onclick="basculerBoutique()" title="Passer sur l'autre boutique" style="background:none;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px;color:#666;cursor:pointer;">⇄ ${(BOUTIQUES.find(b=>b.id!==BOUTIQUE_ID_ACTUEL)||{nom:""}).nom.replace("Belle & Jolie — ","")}</button>`
         : (BOUTIQUE_ID_ACTUEL!=="boutique_1"?`<span style="background:#fbeaf0;color:#993556;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:600;">🏬 ${boutiqueActuelle().nom}</span>`:"")}
@@ -8397,7 +8397,7 @@ function renderStockAutreBoutiqueModal() {
           : data==="erreur" ? `<div style="text-align:center;color:#a32d2d;padding:20px 0;">⚠️ Erreur de chargement. Vérifie ta connexion et réessaie.</div>`
           : !data ? "" : data.map(b=>{
             const liste = (b.products||[]).filter(p=>!q || normStr(p.name+" "+p.ref+" "+(p.marque||"")).includes(q));
-            const peutCopier = STATE.vendeur?.id==="V1";
+            const peutCopier = peutGererBoutiques();
             const refsIci = new Set((STATE.products||[]).map(x=>String(x.ref||"").trim().toLowerCase()).filter(Boolean));
             const sel = new Set(STATE._copieSel||[]);
             return `
@@ -8558,7 +8558,7 @@ prods.forEach(p=>{
   t += '<td style="padding:9px 6px;font-weight:500;color:'+stockColor+';">'+stockLabel+'</td>';
   t += '<td style="padding:9px 6px;"><div style="display:flex;gap:4px;">';
   t += '<button onclick="openStkModal(\''+p.id+'\')" class="btn-ghost">Stock</button>';
-  if(isV1 && BOUTIQUES.length>1) t += '<button onclick="ouvrirTransfertBoutique(\''+p.id+'\')" class="btn-ghost" title="Transférer vers une autre boutique">📦↔️</button>';
+  if(peutGererBoutiques() && BOUTIQUES.length>1) t += '<button onclick="ouvrirTransfertBoutique(\''+p.id+'\')" class="btn-ghost" title="Transférer vers une autre boutique">📦↔️</button>';
   t += '<button onclick="openBCModal(\''+p.id+'\')" class="btn-ghost">Étiquette</button>';
   // Bouton lot stock : uniquement si l'article a des variantes avec stock
   const svLot = p.stockVariantes||{};
@@ -9194,6 +9194,8 @@ window.saveProd = () => {
 window.supprimerPhotoProd = () => { STATE.prodForm.photo=""; render(); };
 // Vendeuses autorisées à créer et modifier les produits d'artisans (en plus de la gérante)
 const GESTION_ARTISANS_IDS = ["V1","V3"]; // V3 = Sabrina
+// Changer de boutique, créer les fiches dans l'autre boutique et transférer du stock : Élodie et Sabrina
+function peutGererBoutiques() { return !!STATE.vendeur && ["V1","V3"].includes(STATE.vendeur.id); }
 function peutGererArtisans() { return !!STATE.vendeur && GESTION_ARTISANS_IDS.includes(STATE.vendeur.id); }
 
 window.openProdModal = id => {
@@ -19700,7 +19702,7 @@ function renderBoutonLotEtiq(nb) {
   return '<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">'    +'<button onclick="ouvrirModalLotEtiq()" style="padding:8px 14px;background:#185fa5;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">🏷️ Étiquettes lot ('+nb+')</button>'    +(cats.length>0?'<select onchange="if(this.value){imprimerEtiquettesCat(this.value);this.value=\'\'}" style="padding:8px 10px;border:1px solid #185fa5;border-radius:8px;font-size:12px;color:#185fa5;cursor:pointer;"><option value="">Par catégorie...</option>'+catsOptions+'</select>':'')
     +'</div>'
        + '<button onclick="ajouterToutStockSelection();ouvrirModalLotEtiq()" style="padding:8px 14px;background:#993556;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">📦 Tout le stock</button>'
-       + (STATE.vendeur?.id==="V1" && BOUTIQUES.length>1 ? (()=>{ const autre = BOUTIQUES.find(b=>b.id!==BOUTIQUE_ID_ACTUEL); const nomA = (autre?.nom||"").replace(/^Belle & Jolie — /,"");
+       + (peutGererBoutiques() && BOUTIQUES.length>1 ? (()=>{ const autre = BOUTIQUES.find(b=>b.id!==BOUTIQUE_ID_ACTUEL); const nomA = (autre?.nom||"").replace(/^Belle & Jolie — /,"");
            return '<button onclick="copierFichesSelection()" style="padding:8px 12px;background:#fff;color:#185fa5;border:1px solid #b5d4f4;border-radius:8px;cursor:pointer;font-size:13px;">📋 Créer les fiches à '+nomA+' ('+nb+')</button>'
              + '<button onclick="transfererStockSelection()" style="padding:8px 12px;background:#fff;color:#993556;border:1px solid #e8c4d3;border-radius:8px;cursor:pointer;font-size:13px;">📦↔️ Transférer tout leur stock à '+nomA+'</button>'; })() : "")
        + '<button onclick="STATE.etiqSelection={};STATE.etiqLignes=[];render()" style="padding:8px 10px;background:#f5f0f2;border:none;border-radius:8px;cursor:pointer;font-size:13px;color:#888;">✕ Tout décocher</button>';
