@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "09/11 · v160 (Sabrina : boutiques, fiches et transferts)";
+const APP_VERSION = "09/11 · v161 (Vérifier récupère aussi les fiches articles)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -3757,6 +3757,23 @@ window.verifierMAJCloud = async () => {
       derniereVente: (STATE.ventes||[]).reduce((m,v)=>(v && v.date && (!m || v.date>m)) ? v.date : m, null) }), 10000, "écriture de l'état"); }
     catch(e) { ecritureKO = "\n\n⚠️ Cet appareil n'arrive pas à ÉCRIRE dans le cloud : "+explicationErreurSync(e?.code||"", String(e?.message||e)); }
     // Z de caisse : fusion avec le cloud (journée par journée) puis renvoi, pour que la clôture apparaisse partout
+    // Articles : fusion avec le cloud dans les deux sens (récupère les fiches créées ailleurs, envoie celles d'ici)
+    let artRapport = "";
+    try {
+      const refP = _fbDb.collection("bellejolie").doc(cleFirestore("bj_products"));
+      const docP = await avecDelai(refP.get(), 15000, "lecture des articles");
+      const serveur = docP.exists ? attacherPhotosLocales(docP.data().value||[]) : [];
+      const idsIci = new Set((STATE.products||[]).map(p=>p.id)), idsCloud = new Set(serveur.map(p=>p.id));
+      const fusion = fusionnerProduits(serveur, STATE.products||[]);
+      const recus = fusion.filter(p=>!idsIci.has(p.id)).length, envoyes = fusion.filter(p=>!idsCloud.has(p.id)).length;
+      if(signatureListeProduits(fusion)!==signatureListeProduits(STATE.products||[])) {
+        STATE.products = fusion; memoriserSignaturesProduits(fusion);
+        try { localStorage.setItem(cleFirestore("bj_products"), JSON.stringify(fusion)); } catch{}
+      }
+      if(signatureListeProduits(fusion)!==signatureListeProduits(serveur))
+        await avecDelai(refP.set({ value: produitsSansPhotos(fusion), maj: new Date().toISOString(), device: DEVICE_ID }), 15000, "envoi des articles");
+      if(recus || envoyes) artRapport = "\n\n📦 Articles : "+(recus?recus+" fiche(s) récupérée(s) du cloud":"")+(recus&&envoyes?", ":"")+(envoyes?envoyes+" fiche(s) envoyée(s) au cloud":"")+".";
+    } catch(e) { artRapport = "\n\n📦 Articles : "+explicationErreurSync(e?.code||"", String(e?.message||e)); }
     let zRapport = "";
     try {
       const refZ = _fbDb.collection("bellejolie").doc(cleFirestore("bj_caisse_jour"));
@@ -3797,7 +3814,7 @@ window.verifierMAJCloud = async () => {
       ? "✅ "+nouvelles.length+" ticket(s) récupéré(s) depuis les autres appareils :\n\n"+nouvelles.slice(-12).map(v=>"• "+new Date(v.date).toLocaleString("fr-FR",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})+" — "+eur(v.total)+(v.vendeur?.nom?" ("+v.vendeur.nom+")":"")).join("\n")
       : "✅ Cet appareil est à jour : "+journal.length+" tickets des "+JOURS_VERIF+" derniers jours dans le cloud, tous présents ici.\n\nSi des ventes manquent encore, l'appareil de la boutique ne les a pas envoyées.")
       + (secours.recuperees.length ? "\n\n🛟 "+secours.recuperees.length+" vente(s) récupérée(s) DIRECTEMENT auprès des autres caisses ("+secours.parAppareil.join(", ")+") : elles n'étaient pas dans le journal du cloud." : "")
-      + envoiRapport + zRapport + resume + ecritureKO + cptTxt + autres + (etats ? "\n\n📡 État des appareils :\n"+etats : "\n\n📡 Les autres appareils n'ont pas encore donné de nouvelles (ils le feront après leur mise à jour)."));
+      + envoiRapport + artRapport + zRapport + resume + ecritureKO + cptTxt + autres + (etats ? "\n\n📡 État des appareils :\n"+etats : "\n\n📡 Les autres appareils n'ont pas encore donné de nouvelles (ils le feront après leur mise à jour)."));
   } catch(err) {
     console.error("Erreur vérification cloud:", err);
     alert("❌ Synchronisation impossible : "+explicationErreurSync(err?.code||"", String(err?.message||err)));
