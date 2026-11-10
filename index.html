@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "10/11 · v164 (transfert partiel de plusieurs références)";
+const APP_VERSION = "10/11 · v165 (transferts visibles sur le même appareil)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -1071,7 +1071,9 @@ function demarrerSyncTempsReel() {
     _fbDb.collection("bellejolie").doc(cleFirestore(storageKey)).onSnapshot(doc => {
       if(!doc.exists) return;
       const data = doc.data();
-      if(!data || data.device === DEVICE_ID) return; // c'est notre propre écriture, on ignore
+      // c'est notre propre écriture, on ignore — sauf pour les articles, fusionnés sans risque (un transfert fait depuis
+      // l'autre boutique sur ce même appareil doit apparaître quand on revient sur cette boutique)
+      if(!data || (data.device === DEVICE_ID && storageKey!=="bj_products")) return;
       if(doc.metadata.hasPendingWrites) return; // écriture locale pas encore confirmée par le serveur, on ignore
       if(CLES_SYNC_PROTEGEES.has(stateKey) && !data.value && STATE[stateKey]) return; // ne pas écraser un réglage configuré par du vide venu d'ailleurs
       // Articles : la liste du cloud n'a pas les photos, on rattache celles déjà présentes ici
@@ -1091,6 +1093,7 @@ function demarrerSyncTempsReel() {
         try {
           const recus = attacherPhotosLocales(data.value||[]);
           const fusion = fusionnerProduits(STATE.products||[], recus);
+          if(data.device === DEVICE_ID && signatureListeProduits(fusion)===signatureListeProduits(STATE.products||[])) return; // notre propre écriture, rien de nouveau
           STATE.products = fusion; memoriserSignaturesProduits(fusion);
           localStorage.setItem(cleFirestore(storageKey), JSON.stringify(fusion));
           if(signatureListeProduits(fusion)!==signatureListeProduits(recus)) firestorePush("bj_products", fusion);
@@ -8232,7 +8235,7 @@ window.copierFicheVersBoutique = async () => {
     const maint = new Date().toISOString();
     const fiche = {...pSansPhoto, id:idDest, stock:0, stockVariantes:sv0, reserveQty:0, aPhoto:!!p.photo, copieDe:{boutique:BOUTIQUE_ID_ACTUEL, id:p.id}, majLe:maint};
     if(p.photo) { try { await _fbDb.collection("bellejolie").doc("photo__"+bDest.id+"__"+idDest).set({value:p.photo, maj:maint, device:DEVICE_ID}); } catch(e) { console.error("Photo non copiée", e); } }
-    await _fbDb.collection("bellejolie").doc(cleProdDest).set({value:[...produitsDest, fiche], maj:maint, device:DEVICE_ID});
+    await _fbDb.collection("bellejolie").doc(cleProdDest).set({value:[...produitsDest, fiche], maj:maint, device: DEVICE_ID+"@"+BOUTIQUE_ID_ACTUEL});
     setState({showTransfertBoutique:false});
     alert("✅ Fiche « "+p.name+" » créée à "+bDest.nom+" (stock 0).");
   } catch(err) { console.error("Copie de fiche :", err); alert("❌ Erreur : "+(err.message||err)); }
@@ -8277,7 +8280,7 @@ window.validerTransfertBoutique = async () => {
     // Ajout du stock (variante taille/couleur comprise) dans la boutique de destination
     lignes.forEach(l => { produitsDest = ajusterStock(produitsDest, idDest, l.q, l.t, l.c); });
     produitsDest = produitsDest.map(x=>x.id===idDest?{...x, majLe:new Date().toISOString()}:x);
-    await _fbDb.collection("bellejolie").doc(cleProdDest).set({value:produitsDest, maj:new Date().toISOString(), device:DEVICE_ID});
+    await _fbDb.collection("bellejolie").doc(cleProdDest).set({value:produitsDest, maj:new Date().toISOString(), device: DEVICE_ID+"@"+BOUTIQUE_ID_ACTUEL});
 
     // 3. Créer la réservation là-bas si une cliente a été choisie
     if(f.clientChoisi) {
@@ -8294,7 +8297,7 @@ window.validerTransfertBoutique = async () => {
         note: "🔄 Transfert depuis "+boutiqueActuelle().nom+(f.note?" — "+f.note:""),
         statut: "active", rappelEnvoye: false, vendeur: STATE.vendeur.nom,
       };
-      await _fbDb.collection("bellejolie").doc(cleResaDest).set({value:[...resasDest, nouvelleResa], maj:new Date().toISOString(), device:DEVICE_ID});
+      await _fbDb.collection("bellejolie").doc(cleResaDest).set({value:[...resasDest, nouvelleResa], maj:new Date().toISOString(), device: DEVICE_ID+"@"+BOUTIQUE_ID_ACTUEL});
     }
 
     // 4. Historique partagé des transferts (visible des deux côtés)
@@ -19754,7 +19757,7 @@ window.copierFichesSelection = async () => {
     const produitsDest = doc.exists ? [...(doc.data().value||[])] : [];
     let crees = 0;
     for(const p of liste) { const r = await ficheDestPour(p, produitsDest, bDest, maint); if(r.cree) crees++; }
-    if(crees) await _fbDb.collection("bellejolie").doc(cle).set({value:produitsDest, maj:maint, device:DEVICE_ID});
+    if(crees) await _fbDb.collection("bellejolie").doc(cle).set({value:produitsDest, maj:maint, device: DEVICE_ID+"@"+BOUTIQUE_ID_ACTUEL});
     alert("✅ "+crees+" fiche(s) créée(s) à "+bDest.nom+" (stock 0)."+(liste.length-crees?"\n"+(liste.length-crees)+" existai(en)t déjà là-bas.":""));
   } catch(err) { console.error(err); alert("❌ Erreur : "+(err.message||err)); }
 };
@@ -19834,7 +19837,7 @@ window.validerTransfertGroupe = async () => {
         taille: lignes.length===1 ? lignes[0].t : lignes.map(l=>(l.t||"")+(l.q>1?"×"+l.q:"")).join(", "), couleur: null,
         boutiqueOrigine: boutiqueActuelle().nom, boutiqueDestination: bDest.nom, client: null, creePar: STATE.vendeur.nom});
     }
-    await _fbDb.collection("bellejolie").doc(cle).set({value:produitsDest, maj:maint, device:DEVICE_ID});
+    await _fbDb.collection("bellejolie").doc(cle).set({value:produitsDest, maj:maint, device: DEVICE_ID+"@"+BOUTIQUE_ID_ACTUEL});
     lsSet("bj_products", STATE.products);
     STATE.transferts = [...(STATE.transferts||[]), ...transf]; lsSet("bj_transferts", STATE.transferts);
     STATE.etiqSelection = {}; STATE.showTransfertGroupe = null; render();
@@ -19863,7 +19866,7 @@ window.transfererStockSelection = async () => {
         taille: lignes.length===1 ? lignes[0].t : lignes.map(l=>(l.t||"")+(l.q>1?"×"+l.q:"")).join(", "), couleur: null,
         boutiqueOrigine: boutiqueActuelle().nom, boutiqueDestination: bDest.nom, client: null, creePar: STATE.vendeur.nom});
     }
-    await _fbDb.collection("bellejolie").doc(cle).set({value:produitsDest, maj:maint, device:DEVICE_ID});
+    await _fbDb.collection("bellejolie").doc(cle).set({value:produitsDest, maj:maint, device: DEVICE_ID+"@"+BOUTIQUE_ID_ACTUEL});
     lsSet("bj_products", STATE.products);
     STATE.transferts = [...(STATE.transferts||[]), ...transf]; lsSet("bj_transferts", STATE.transferts);
     STATE.etiqSelection = {}; render();
