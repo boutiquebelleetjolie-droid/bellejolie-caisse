@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "09/11 · v161 (Vérifier récupère aussi les fiches articles)";
+const APP_VERSION = "10/11 · v162 (profil Stagiaire)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -1261,6 +1261,7 @@ const VENDEURS = [
   { id:"V2", nom:"Noémie", prenom:"", code:"0000", role:"vendeur", color:"#5566aa" }, // anciennement Noëllyne (changé le 13/10/2026)
   { id:"V3", nom:"Sabrina",      prenom:"",     code:"2222", role:"vendeur",  color:"#2a8a5a" },
   { id:"V4", nom:"Mode Test",    prenom:"",     code:"0000", role:"apprenti", color:"#e07c00" },
+  { id:"V5", nom:"Stagiaire",     prenom:"",     code:"5555", role:"stagiaire", color:"#8a6d3b" }, // encaisse pour de vrai, accès limité
 ];
 
 const INITIAL_PRODUCTS = [];
@@ -2194,7 +2195,7 @@ function renderLogin() {
             </div>
             <div>
               <div style="font-weight:500;font-size:14px;">${v.nom}</div>
-              <div style="font-size:12px;color:#888;">${v.role==="admin"?"Administrateur":v.role==="apprenti"?"Mode test / Apprenti":"Vendeur"}</div>
+              <div style="font-size:12px;color:#888;">${v.role==="admin"?"Administrateur":v.role==="apprenti"?"Mode test / Apprenti":v.role==="stagiaire"?"Stagiaire (encaissement)":"Vendeur"}</div>
             </div>
             ${STATE.loginSelected===v.id?`<div style="margin-left:auto;color:${v.color};font-size:18px;">✓</div>`:localStorage.getItem("bj_webauthn_"+v.id)?`<button onclick="event.stopPropagation();connexionEmpreinteDigitale('${v.id}')" title="Connexion biométrique" style="margin-left:auto;background:#f5f0f2;border:none;border-radius:8px;width:36px;height:36px;font-size:16px;cursor:pointer;">👆</button>`:""}
           </div>
@@ -2870,7 +2871,11 @@ function renderNouveauDepotModal() {
 
 
 function renderApp() {
-  const tabs = [
+  const tabs = STATE.vendeur.role==="stagiaire" ? [
+    {key:"caisse",    label:"Caisse",       emoji:"🛒"},
+    {key:"crm",       label:"Clients",      emoji:"👥"},
+    {key:"reservations",label:"Réservations", emoji:"📌"},
+  ] : [
     {key:"caisse",    label:"Caisse",       emoji:"🛒"},
     {key:"stock",     label:"Stock",        emoji:"📦"},
 
@@ -2988,7 +2993,7 @@ function renderApp() {
   `;
 }
 
-window.setTab = t => setState({tab:t});
+window.setTab = t => { if(STATE.vendeur?.role==="stagiaire" && !["caisse","crm","reservations"].includes(t)) t = "caisse"; setState({tab:t}); };
 window.fermerInfoModal = () => {
   const m = document.getElementById('info-art-modal');
   if(m) m.remove();
@@ -3434,7 +3439,7 @@ function renderVendeurSettings() {
           <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:8px;align-items:center;">
             <input value="${v.nom}" oninput="STATE.vendeurForm[${i}].nom=this.value" placeholder="Nom du vendeur" style="font-size:13px;"/>
             <input value="${v.code}" oninput="STATE.vendeurForm[${i}].code=this.value" placeholder="Code PIN" type="password" style="font-size:13px;"/>
-            <span style="font-size:11px;color:#aaa;">${v.role==="admin"?"Gérante":v.role==="apprenti"?"Mode test":"Vendeur"}</span>
+            <span style="font-size:11px;color:#aaa;">${v.role==="admin"?"Gérante":v.role==="apprenti"?"Mode test":v.role==="stagiaire"?"Stagiaire":"Vendeur"}</span>
           </div>
         `).join("")}
         <button onclick="saveVendeurs()" class="btn-primary" style="margin-bottom:16px;">Enregistrer les modifications</button>
@@ -4941,8 +4946,8 @@ function renderCaisse() {
         `}
       </div>
 
-      <!-- Retour produit -->
-      ${STATE._retourOuvert ? `
+      <!-- Retour produit (pas pour les stagiaires) -->
+      ${STATE.vendeur.role==="stagiaire" ? "" : STATE._retourOuvert ? `
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
           <span style="font-weight:500;font-size:13px;">↩️ Retour produit</span>
@@ -4993,14 +4998,14 @@ function renderCaisse() {
           style="width:100%;padding:8px;margin-bottom:8px;background:#fbeaf0;color:#993556;border:1px solid #f0c0cc;border-radius:8px;cursor:pointer;font-size:12px;font-weight:500;display:flex;align-items:center;justify-content:center;gap:6px;">
           📱 -5€ Réseaux sociaux ${STATE.remVal==="5"&&STATE.remType==="eur"?'<span style="color:#3b6d11;">✅ Appliqué</span>':''}
         </button>
-        <div style="display:flex;gap:6px;">
+        ${STATE.vendeur.role==="stagiaire" ? `<div style="font-size:11px;color:#888;">Pour toute autre remise, demande à une vendeuse.</div>` : `<div style="display:flex;gap:6px;">
           <select onchange="setState({remType:this.value})" style="width:65px;">
             <option value="pct" ${STATE.remType==="pct"?"selected":""}>%</option>
             <option value="eur" ${STATE.remType==="eur"?"selected":""}>€</option>
           </select>
           <input type="number" min="0" value="${STATE.remVal}" oninput="STATE.remVal=this.value;clearTimeout(window._remTimer);window._remTimer=setTimeout(render,200)" onblur="validerRemGlobal()" placeholder="${STATE.remType==="pct"?"ex: 10":"ex: 5"}" style="flex:1;"/>
           ${STATE.remVal?`<button onclick="setState({remVal:'',remGlobalMotif:''})" class="btn-ghost">×</button>`:""}
-        </div>
+        </div>`}
       </div>
 
       <!-- Totaux -->
