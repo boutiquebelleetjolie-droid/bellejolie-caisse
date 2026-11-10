@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "10/11 · v162 (profil Stagiaire)";
+const APP_VERSION = "10/11 · v163 (choix de taille visible pendant une réservation)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -15803,7 +15803,7 @@ function renderVarianteModal() {
   const p = STATE.products.find(x=>x.id===vm.prodId);
   if(!p) return "";
   return `
-  <div class="modal-bg" onclick="if(event.target===this)setState({showVarianteModal:null})">
+  <div class="modal-bg" style="z-index:10050;" onclick="if(event.target===this)setState({showVarianteModal:null})">
     <div class="modal" style="max-width:360px;">
       <div class="modal-header">
         <span style="font-weight:500;">Choisir la variante — ${p.name}</span>
