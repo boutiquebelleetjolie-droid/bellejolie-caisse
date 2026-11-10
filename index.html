@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "10/11 · v163 (choix de taille visible pendant une réservation)";
+const APP_VERSION = "10/11 · v164 (transfert partiel de plusieurs références)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -2960,6 +2960,7 @@ function renderApp() {
   ${STATE.showVueBoutiques ? renderVueBoutiquesModal() : ""}
   ${STATE.showStockAutreBoutique ? renderStockAutreBoutiqueModal() : ""}
   ${STATE.showTransfertBoutique ? renderTransfertBoutiqueModal() : ""}
+  ${STATE.showTransfertGroupe ? renderTransfertGroupeModal() : ""}
   ${STATE.showHistoriqueTransferts ? renderHistoriqueTransfertsModal() : ""}
   ${STATE.showRetoucheForm ? renderRetoucheFormModal() : ""}
   ${STATE.choixPrixLibre ? renderChoixPrixLibre() : ""}
@@ -19726,6 +19727,7 @@ function renderBoutonLotEtiq(nb) {
        + '<button onclick="ajouterToutStockSelection();ouvrirModalLotEtiq()" style="padding:8px 14px;background:#993556;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;">📦 Tout le stock</button>'
        + (peutGererBoutiques() && BOUTIQUES.length>1 ? (()=>{ const autre = BOUTIQUES.find(b=>b.id!==BOUTIQUE_ID_ACTUEL); const nomA = (autre?.nom||"").replace(/^Belle & Jolie — /,"");
            return '<button onclick="copierFichesSelection()" style="padding:8px 12px;background:#fff;color:#185fa5;border:1px solid #b5d4f4;border-radius:8px;cursor:pointer;font-size:13px;">📋 Créer les fiches à '+nomA+' ('+nb+')</button>'
+             + '<button onclick="ouvrirTransfertGroupe()" style="padding:8px 12px;background:#fff;color:#993556;border:1px solid #e8c4d3;border-radius:8px;cursor:pointer;font-size:13px;">📦↔️ Transfert partiel vers '+nomA+' ('+nb+')</button>'
              + '<button onclick="transfererStockSelection()" style="padding:8px 12px;background:#fff;color:#993556;border:1px solid #e8c4d3;border-radius:8px;cursor:pointer;font-size:13px;">📦↔️ Transférer tout leur stock à '+nomA+'</button>'; })() : "")
        + '<button onclick="STATE.etiqSelection={};STATE.etiqLignes=[];render()" style="padding:8px 10px;background:#f5f0f2;border:none;border-radius:8px;cursor:pointer;font-size:13px;color:#888;">✕ Tout décocher</button>';
 }
@@ -19755,6 +19757,89 @@ window.copierFichesSelection = async () => {
     if(crees) await _fbDb.collection("bellejolie").doc(cle).set({value:produitsDest, maj:maint, device:DEVICE_ID});
     alert("✅ "+crees+" fiche(s) créée(s) à "+bDest.nom+" (stock 0)."+(liste.length-crees?"\n"+(liste.length-crees)+" existai(en)t déjà là-bas.":""));
   } catch(err) { console.error(err); alert("❌ Erreur : "+(err.message||err)); }
+};
+// ── Transfert PARTIEL de plusieurs références d'un coup : quantité par taille pour chaque article coché ──
+window.ouvrirTransfertGroupe = () => {
+  const liste = articlesCoches().filter(p=>(p.stock||0)>0);
+  if(!liste.length) { alert("Aucun article coché n'a de stock à transférer."); return; }
+  const lignes = {}; liste.forEach(p => { lignes[p.id] = {}; });
+  setState({showTransfertGroupe: {ids: liste.map(p=>p.id), lignes}});
+};
+window.tgRemplir = (mode) => {
+  const t = STATE.showTransfertGroupe; if(!t) return;
+  t.ids.forEach(pid => { const p = STATE.products.find(x=>x.id===pid); if(!p) return;
+    const vs = variantesEnStock(p), L = t.lignes[pid] = {};
+    const qte = n => mode==="tout" ? n : mode==="moitie" ? Math.floor(n/2) : mode==="un" ? Math.min(1,n) : 0;
+    if(vs.length) vs.forEach(v => { L[v.k] = qte(v.n); }); else L["_"] = qte(p.stock||0);
+  });
+  render();
+};
+function renderTransfertGroupeModal() {
+  const t = STATE.showTransfertGroupe, bDest = BOUTIQUES.find(b=>b.id!==BOUTIQUE_ID_ACTUEL);
+  let total = 0;
+  const blocs = t.ids.map(pid => {
+    const p = STATE.products.find(x=>x.id===pid); if(!p) return "";
+    const vs = variantesEnStock(p), L = t.lignes[pid]||{};
+    const champs = (vs.length ? vs : [{k:"_", t:null, c:null, n:p.stock||0}]).map(v => {
+      const q = Math.min(v.n, parseInt(L[v.k])||0); total += q;
+      return `<div style="background:#f9f6f8;border-radius:6px;padding:4px 6px;min-width:70px;">
+        <div style="font-size:11px;font-weight:500;">${[v.t,v.c].filter(Boolean).join(" · ")||"Quantité"} <span style="color:#999;font-weight:400;">/ ${v.n}</span></div>
+        <input type="number" min="0" max="${v.n}" value="${q}" oninput="STATE.showTransfertGroupe.lignes['${pid}']['${v.k}']=Math.min(${v.n},Math.max(0,parseInt(this.value)||0))" onchange="render()" style="width:60px;padding:3px 5px;"/>
+      </div>`; }).join("");
+    return `<div style="border-bottom:0.5px solid #eee;padding:8px 0;">
+      <div style="font-size:13px;font-weight:500;margin-bottom:5px;">${p.name} <span style="color:#999;font-family:monospace;font-size:11px;">${p.ref||""}</span> <span style="color:#888;font-size:11px;">· stock ${p.stock||0}</span></div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">${champs}</div></div>`;
+  }).join("");
+  return `<div class="modal-bg" onclick="if(event.target===this)setState({showTransfertGroupe:null})">
+    <div class="modal" style="max-width:640px;">
+      <div class="modal-header"><span style="font-weight:500;">📦↔️ Transfert partiel vers ${bDest?.nom||""}</span>
+        <button onclick="setState({showTransfertGroupe:null})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button></div>
+      <div class="modal-body">
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">
+          <span style="font-size:12px;color:#888;align-self:center;">Remplir :</span>
+          <button onclick="tgRemplir('un')" class="btn-ghost" style="font-size:12px;">1 par taille</button>
+          <button onclick="tgRemplir('moitie')" class="btn-ghost" style="font-size:12px;">La moitié</button>
+          <button onclick="tgRemplir('tout')" class="btn-ghost" style="font-size:12px;">Tout</button>
+          <button onclick="tgRemplir('zero')" class="btn-ghost" style="font-size:12px;">Remettre à 0</button>
+        </div>
+        <div style="max-height:52vh;overflow:auto;">${blocs}</div>
+        <div style="margin-top:10px;font-size:13px;font-weight:500;">Total à transférer : ${total} pièce${total>1?"s":""}</div>
+        <button onclick="validerTransfertGroupe()" class="btn-primary" style="width:100%;margin-top:10px;" ${total?"":"disabled"}>📦 Transférer ${total} pièce${total>1?"s":""} vers ${bDest?.nom||""}</button>
+      </div></div></div>`;
+}
+window.validerTransfertGroupe = async () => {
+  const t = STATE.showTransfertGroupe, bDest = BOUTIQUES.find(b=>b.id!==BOUTIQUE_ID_ACTUEL);
+  if(!t || !bDest) return;
+  if(!_fbDb) { alert("⚠️ Pas de connexion au cloud."); return; }
+  const plan = [];
+  t.ids.forEach(pid => { const p = STATE.products.find(x=>x.id===pid); if(!p) return;
+    const vs = variantesEnStock(p), L = t.lignes[pid]||{};
+    const lignes = vs.length ? vs.map(v=>({t:v.t, c:v.c, q:Math.min(v.n, parseInt(L[v.k])||0)})).filter(l=>l.q>0)
+                             : [{t:null, c:null, q:Math.min(p.stock||0, parseInt(L["_"])||0)}].filter(l=>l.q>0);
+    if(lignes.length) plan.push({p, lignes});
+  });
+  const total = plan.reduce((s,x)=>s+x.lignes.reduce((a,l)=>a+l.q,0),0);
+  if(!total) { alert("Indique au moins une quantité à transférer."); return; }
+  if(!confirm("Transférer "+total+" pièce(s) de "+plan.length+" article(s) vers "+bDest.nom+" ?")) return;
+  try {
+    const cle = cleFirestorePour(bDest.id, "bj_products"), maint = new Date().toISOString();
+    const doc = await _fbDb.collection("bellejolie").doc(cle).get();
+    let produitsDest = doc.exists ? [...(doc.data().value||[])] : [];
+    const transf = [];
+    for(const {p, lignes} of plan) {
+      const r = await ficheDestPour(p, produitsDest, bDest, maint);
+      lignes.forEach(l => { produitsDest = ajusterStock(produitsDest, r.id, l.q, l.t, l.c); STATE.products = ajusterStock(STATE.products, p.id, -l.q, l.t, l.c); });
+      produitsDest = produitsDest.map(x=>x.id===r.id?{...x, majLe:maint}:x);
+      transf.push({id: uid("TRF"), date: maint, article: p.name, ref: p.ref, qty: lignes.reduce((s,l)=>s+l.q,0),
+        taille: lignes.length===1 ? lignes[0].t : lignes.map(l=>(l.t||"")+(l.q>1?"×"+l.q:"")).join(", "), couleur: null,
+        boutiqueOrigine: boutiqueActuelle().nom, boutiqueDestination: bDest.nom, client: null, creePar: STATE.vendeur.nom});
+    }
+    await _fbDb.collection("bellejolie").doc(cle).set({value:produitsDest, maj:maint, device:DEVICE_ID});
+    lsSet("bj_products", STATE.products);
+    STATE.transferts = [...(STATE.transferts||[]), ...transf]; lsSet("bj_transferts", STATE.transferts);
+    STATE.etiqSelection = {}; STATE.showTransfertGroupe = null; render();
+    alert("✅ "+total+" pièce(s) transférée(s) vers "+bDest.nom+".");
+  } catch(err) { console.error(err); alert("❌ Erreur pendant le transfert : "+(err.message||err)+"\nVérifie le stock des deux boutiques avant de recommencer."); }
 };
 window.transfererStockSelection = async () => {
   const liste = articlesCoches().filter(p=>(p.stock||0)>0), bDest = BOUTIQUES.find(b=>b.id!==BOUTIQUE_ID_ACTUEL);
