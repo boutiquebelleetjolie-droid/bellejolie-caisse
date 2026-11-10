@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "10/11 · v165 (transferts visibles sur le même appareil)";
+const APP_VERSION = "10/11 · v166 (sac de caisse toujours en stock)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -3271,8 +3271,27 @@ window.ajouterSac = () => {
     STATE.products = [...STATE.products, sacProd];
     lsSet("bj_products", STATE.products);
   }
+  // Le sac de caisse ne doit jamais bloquer une vente : on le remet à 200 dès qu'il descend sous 20
+  if((sacProd.stock||0) < 20) {
+    const id = sacProd.id;
+    STATE.products = STATE.products.map(p => p.id===id ? {...p, stock:200, majLe:new Date().toISOString()} : p);
+    lsSet("bj_products", STATE.products);
+  }
   addToCart(sacProd.id);
 };
+// 10/11/2026 : sac de caisse à 0,20 € remis en stock (200) dans chaque boutique, créé s'il n'existe pas
+setTimeout(() => {
+  try {
+    const cle = "bj_sac_restock_"+BOUTIQUE_ID_ACTUEL;
+    if(localStorage.getItem(cle)==="ok") return;
+    const maint = new Date().toISOString();
+    const sac = (STATE.products||[]).find(p => p.ref==="SAC-CAISSE" || (String(p.name||"").toLowerCase()==="sac" && p.price<=0.5));
+    if(sac) STATE.products = STATE.products.map(p => p.id===sac.id ? {...p, retire:false, stock:Math.max(200, p.stock||0), majLe:maint} : p);
+    else STATE.products = [...(STATE.products||[]), {id:"SAC_"+Date.now(), name:"Sac", ref:"SAC-CAISSE", price:0.20, category:"Accessoires", stock:200, tailles:[], couleurs:[], grandeTaille:false, majLe:maint}];
+    lsSet("bj_products", STATE.products);
+    localStorage.setItem(cle, "ok"); render();
+  } catch(e) { console.error("Sac de caisse :", e); }
+}, 13000);
 
 // ─── Article sans référence (prix saisi à la main) — gérante et Sabrina uniquement ───
 window.ajouterArticleSansRef = () => {
