@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "10/11 · v166 (sac de caisse toujours en stock)";
+const APP_VERSION = "11/11 · v167 (Isaline retirée de la liste des artisans)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -8737,7 +8737,7 @@ function renderStock() {
   html += '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;position:sticky;top:52px;z-index:50;background:#f5f0f2;padding:8px 0 8px 0;border-radius:0 0 8px 8px;">';
   html += '<input value="'+(STATE.searchProd||"")+'" id="stock-search" oninput="STATE.searchProd=this.value;clearTimeout(window._spTimer);window._spTimer=setTimeout(renderStockOnly,300)" placeholder="Rechercher..." style="flex:1;min-width:160px;"/>';
   if(nbEtiq>0) html += renderBoutonLotEtiq(nbEtiq);
-  { const nbArt = STATE.products.filter(p=>p.artisanat).length;
+  { const nbArt = STATE.products.filter(p=>p.artisanat && !p.retire).length;
     html += '<button onclick="STATE.filtreArtisans=!STATE.filtreArtisans;STATE.filtreOctobreRose=false;render()" class="btn-ghost" style="white-space:nowrap;'+(STATE.filtreArtisans?'background:#6a3d9a;color:#fff;border-color:#6a3d9a;':'color:#6a3d9a;border-color:#d9c2ee;')+'">🎨 Artisans ('+nbArt+')</button>'; }
   { const nbOR = STATE.products.filter(estOR).length;
     html += '<button onclick="STATE.filtreOctobreRose=!STATE.filtreOctobreRose;STATE.filtreArtisans=false;render()" class="btn-ghost" style="white-space:nowrap;'+(STATE.filtreOctobreRose?'background:#c2185b;color:#fff;border-color:#c2185b;':'color:#c2185b;border-color:#f3a6c3;')+'">🎀 Octobre Rose ('+nbOR+')</button>'; }
@@ -12684,12 +12684,13 @@ function renderBilanArtisans() {
   const lignes = ventesArtisans(debut, fin);
   const parA = {};
   lignes.forEach(l => { const a = parA[l.artisan] = parA[l.artisan] || {qty:0, ca:0, com:0}; a.qty += l.qty; a.ca += l.montant; a.com += (l.com||0); });
-  (STATE.products||[]).filter(p=>p.artisanat).forEach(p => { const n = nomArtisanCanon(p.nomArtisan); if(!parA[n]) parA[n] = {qty:0, ca:0, com:0}; });
+  // Artisans actifs (articles non retirés) ; un artisan arrêté n'apparaît plus que s'il a des ventes sur la période
+  (STATE.products||[]).filter(p=>p.artisanat && !p.retire).forEach(p => { const n = nomArtisanCanon(p.nomArtisan); if(!parA[n]) parA[n] = {qty:0, ca:0, com:0}; });
   // Articles de chaque artisan, avec les quantités vendues sur la période
   const vendusParArticle = {};
   lignes.forEach(l => { vendusParArticle[l.article] = (vendusParArticle[l.article]||0) + l.qty; });
-  const articlesDe = n => (STATE.products||[]).filter(p=>p.artisanat && nomArtisanCanon(p.nomArtisan)===n);
-  const sansNom = (STATE.products||[]).filter(p=>p.artisanat && !String(p.nomArtisan||"").trim());
+  const articlesDe = n => (STATE.products||[]).filter(p=>p.artisanat && !p.retire && nomArtisanCanon(p.nomArtisan)===n);
+  const sansNom = (STATE.products||[]).filter(p=>p.artisanat && !p.retire && !String(p.nomArtisan||"").trim());
   const artisans = Object.entries(parA).sort((a,b)=>b[1].ca-a[1].ca);
   const tot = artisans.reduce((s,[,a])=>({qty:s.qty+a.qty, ca:s.ca+a.ca, com:s.com+(a.com||0)}), {qty:0, ca:0, com:0});
   const btn = (k,l) => `<button onclick="STATE.artPeriode='${k}';render()" style="padding:5px 12px;border-radius:7px;border:none;cursor:pointer;font-size:12px;background:${per===k?'#6a3d9a':'#f3e8fc'};color:${per===k?'#fff':'#6a3d9a'};">${l}</button>`;
