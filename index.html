@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "11/11 · v167 (Isaline retirée de la liste des artisans)";
+const APP_VERSION = "12/11 · v168 (bilan dépôt-vente sur une période au choix)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -2644,6 +2644,13 @@ window.genererBonAchatDepot = (lotId) => {
 // ── Bilan détaillé du dépôt-vente (par mois ou depuis le début) ──
 window.decalerMoisBilanDepot = (sens) => {
   if(sens===0) { STATE._bilanDepotMois = STATE._bilanDepotMois==="tout" ? null : "tout"; render(); return; }
+  if(sens==="perso") {
+    if(STATE._bilanDepotMois==="perso") { STATE._bilanDepotMois = null; render(); return; }
+    const n = new Date(), d0 = new Date(n.getFullYear(), n.getMonth()-1, 1);
+    STATE._bilanDepotDu = STATE._bilanDepotDu || dateLocaleStr(d0); STATE._bilanDepotAu = STATE._bilanDepotAu || dateLocaleStr(n);
+    STATE._bilanDepotMois = "perso"; render(); return;
+  }
+  if(STATE._bilanDepotMois==="perso") STATE._bilanDepotMois = null;
   const base = (!STATE._bilanDepotMois || STATE._bilanDepotMois==="tout") ? new Date() : new Date(STATE._bilanDepotMois+"-15T12:00:00");
   const d = new Date(base.getFullYear(), base.getMonth()+sens, 15);
   STATE._bilanDepotMois = d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0"); render();
@@ -2653,10 +2660,11 @@ function renderBilanDepotVente() {
   const lots = (STATE.depotsVente||[]).filter(l=>!l.supprime);
   if(!lots.length) return "";
   const ouvert = STATE._bilanDepotOuvert!==false;
-  const tout = STATE._bilanDepotMois==="tout";
-  const ref = tout ? null : (STATE._bilanDepotMois ? new Date(STATE._bilanDepotMois+"-15T12:00:00") : new Date());
-  const dansPeriode = d => tout || (d && new Date(d).getFullYear()===ref.getFullYear() && new Date(d).getMonth()===ref.getMonth());
-  const libelle = tout ? "Depuis le début" : ref.toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
+  const tout = STATE._bilanDepotMois==="tout", perso = STATE._bilanDepotMois==="perso";
+  const ref = (tout||perso) ? null : (STATE._bilanDepotMois ? new Date(STATE._bilanDepotMois+"-15T12:00:00") : new Date());
+  const pDu = perso ? new Date((STATE._bilanDepotDu||"2000-01-01")+"T00:00:00") : null, pAu = perso ? new Date((STATE._bilanDepotAu||"2100-01-01")+"T23:59:59") : null;
+  const dansPeriode = d => tout || (perso ? (d && new Date(d)>=pDu && new Date(d)<=pAu) : (d && new Date(d).getFullYear()===ref.getFullYear() && new Date(d).getMonth()===ref.getMonth()));
+  const libelle = tout ? "Depuis le début" : perso ? "Du "+pDu.toLocaleDateString("fr-FR")+" au "+pAu.toLocaleDateString("fr-FR") : ref.toLocaleDateString("fr-FR",{month:"long",year:"numeric"});
   const pct = 100-DEPOT_COMMISSION_PCT;
   // Tous les articles connus (y compris retirés : on garde leur identifiant dans le lot)
   const parDeposante = {}, parVendeuse = {}, ventes = [];
@@ -2697,7 +2705,15 @@ function renderBilanDepotVente() {
         <span style="font-size:13px;font-weight:600;color:#993556;min-width:120px;text-align:center;text-transform:capitalize;">${libelle}</span>
         <button onclick="decalerMoisBilanDepot(1)" style="background:#f5f0f2;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;">▶</button>
         <button onclick="decalerMoisBilanDepot(0)" style="background:${tout?"#993556":"#fff"};color:${tout?"#fff":"#993556"};border:1px solid #e8c4d3;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;">${tout?"Par mois":"Tout"}</button>
+        <button onclick="decalerMoisBilanDepot('perso')" style="background:${perso?"#993556":"#fff"};color:${perso?"#fff":"#993556"};border:1px solid #e8c4d3;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;">${perso?"Par mois":"📅 Période…"}</button>
       </div>`:""}
+    </div>
+    ${ouvert&&perso?`<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;font-size:12px;color:#666;">
+      Du <input type="date" value="${STATE._bilanDepotDu||""}" onchange="STATE._bilanDepotDu=this.value;render()" style="width:auto;padding:4px 6px;"/>
+      au <input type="date" value="${STATE._bilanDepotAu||""}" onchange="STATE._bilanDepotAu=this.value;render()" style="width:auto;padding:4px 6px;"/>
+      <span style="color:#aaa;">(dépôts faits et articles vendus entre ces deux dates)</span>
+    </div>`:""}
+    <div>
     </div>
     ${ouvert?`
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(115px,1fr));gap:8px;margin:12px 0;">
