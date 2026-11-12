@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "12/11 · v168 (bilan dépôt-vente sur une période au choix)";
+const APP_VERSION = "12/11 · v169 (plusieurs bons d'achat par dépôt)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -1048,7 +1048,7 @@ function fusionnerMemos(a, b) {
 }
 // Dépôts-vente : fusion lot par lot (jamais de remplacement en bloc), articles réunis
 function sigDepotsVente(l) {
-  return (l||[]).filter(x=>x&&x.id).map(x => [x.id, [...new Set(x.articleIds||[])].sort().join(","), x.bonGenereId||"", x.montantBonGenere||"", x.clientEmail||"", x.recapEnvoyeLe||"", x.articlesPerdus||0, x.reconstruit?1:0, x.clientId||"", x.clientTel||"", x.supprime?1:0].join("~")).sort().join("|");
+  return (l||[]).filter(x=>x&&x.id).map(x => [x.id, [...new Set(x.articleIds||[])].sort().join(","), x.bonGenereId||"", x.montantBonGenere||"", x.clientEmail||"", x.recapEnvoyeLe||"", x.articlesPerdus||0, x.reconstruit?1:0, x.clientId||"", x.clientTel||"", x.supprime?1:0, (x.bons||[]).map(b=>b.id).sort().join("+")].join("~")).sort().join("|");
 }
 function fusionnerDepotsVente(locaux, recus) {
   const m = new Map((locaux||[]).filter(l=>l&&l.id).map(l=>[l.id, l]));
@@ -1060,6 +1060,9 @@ function fusionnerDepotsVente(locaux, recus) {
     if(l.recapEnvoyeLe && r.recapEnvoyeLe) f.recapEnvoyeLe = l.recapEnvoyeLe > r.recapEnvoyeLe ? l.recapEnvoyeLe : r.recapEnvoyeLe;
     f.articlesPerdus = Math.min(l.articlesPerdus||0, r.articlesPerdus||0);
     if(l.supprime || r.supprime) { f.supprime = true; f.supprimeLe = l.supprimeLe || r.supprimeLe; f.supprimePar = l.supprimePar || r.supprimePar; }
+    if((l.bons||[]).length || (r.bons||[]).length) { const mb = new Map(); [...(l.bons||[]), ...(r.bons||[])].forEach(b=>{ if(b&&b.id) mb.set(b.id, b); });
+      f.bons = [...mb.values()].sort((a,b)=>String(a.date).localeCompare(String(b.date)));
+      f.montantBonGenere = +f.bons.reduce((s,b)=>s+(b.montant||0),0).toFixed(2); f.bonGenereId = f.bons[f.bons.length-1].id; }
     m.set(r.id, f); });
   return [...m.values()];
 }
@@ -2578,7 +2581,8 @@ window.supprimerDepot = (lotId) => {
   if(!confirm("Supprimer le dépôt de "+nom+" ?\n\n"
     + (enVente.length ? "• "+enVente.length+" article(s) encore en vente seront RETIRÉS du stock.\n" : "")
     + (vendus.length ? "• "+vendus.length+" article(s) déjà vendu(s) : les ventes restent dans le chiffre d'affaires et les tickets.\n" : "")
-    + (lot.bonGenereId ? "• Le bon d'achat déjà généré reste valable.\n" : (vendus.length ? "⚠️ Aucun bon n'a été généré pour ses articles vendus.\n" : ""))
+    + (bonsDuLot(lot).length ? "• Les bons d'achat déjà générés restent valables.\n" : "")
+    + (ventesAPayerDuLot(lot).length ? "⚠️ "+ventesAPayerDuLot(lot).length+" article(s) vendu(s) n'ont pas encore de bon d'achat.\n" : "")
     + "\nCette action ne peut pas être annulée.")) return;
   if(enVente.length) { const s = new Set(enVente); STATE.products = STATE.products.filter(p=>!s.has(p.id)); lsSet("bj_products", STATE.products); }
   STATE.depotsVente = (STATE.depotsVente||[]).map(l => l.id!==lotId ? l : {...l, supprime:true, supprimeLe:new Date().toISOString(), supprimePar:STATE.vendeur?.nom||""});
@@ -2606,15 +2610,27 @@ window.renouvelerArticleDepot = (prodId) => {
   render();
 };
 
+// Bons d'achat déjà générés pour un dépôt (plusieurs possibles : un bon par « vague » de ventes)
+function bonsDuLot(lot) {
+  if((lot.bons||[]).length) return lot.bons;
+  if(!lot.bonGenereId) return [];
+  // Ancien format (un seul bon) : il couvrait les articles vendus jusqu'à la date du bon
+  const av = (STATE.avoirs||[]).find(a=>a.id===lot.bonGenereId);
+  const dBon = av?.date ? new Date(av.date) : null;
+  const ids = [...new Set(lot.articleIds||[])].filter(pid => { const i = getVenteInfoArticleDepot(pid); return i.vendu && (!dBon || new Date(i.date) <= dBon); });
+  return [{id: lot.bonGenereId, montant: lot.montantBonGenere||0, articleIds: ids, date: av?.date || lot.dateDepot}];
+}
+function articlesPayesDuLot(lot) { const s = new Set(); bonsDuLot(lot).forEach(b => (b.articleIds||[]).forEach(id=>s.add(id))); return s; }
+function ventesAPayerDuLot(lot) {
+  const payes = articlesPayesDuLot(lot);
+  return [...new Set(lot.articleIds||[])].map(pid => ({pid, info:getVenteInfoArticleDepot(pid)})).filter(x => x.info.vendu && !payes.has(x.pid));
+}
 window.genererBonAchatDepot = (lotId) => {
   const lot = (STATE.depotsVente||[]).find(l=>l.id===lotId);
   if(!lot) return;
-  let totalVentes = 0, nbVendus = 0;
-  lot.articleIds.forEach(pid => {
-    const info = getVenteInfoArticleDepot(pid);
-    if(info.vendu) { totalVentes += info.montant; nbVendus++; }
-  });
-  if(nbVendus===0) { alert("Aucun article vendu pour l'instant dans ce dépôt — rien à générer."); return; }
+  const aPayer = ventesAPayerDuLot(lot);
+  const totalVentes = aPayer.reduce((s,x)=>s+x.info.montant,0), nbVendus = aPayer.length;
+  if(nbVendus===0) { alert("Aucune nouvelle vente depuis le dernier bon — rien à générer."); return; }
   const montantBon = +(totalVentes*(1-DEPOT_COMMISSION_PCT/100)).toFixed(2);
   if(!confirm("Générer un bon d'achat de "+eur(montantBon)+" pour "+lot.clientPrenom+" "+lot.clientNom+" ?\n\n("+nbVendus+" article(s) vendu(s) pour "+eur(totalVentes)+" au total, dont "+DEPOT_COMMISSION_PCT+"% de commission boutique)\n\nCette action est irréversible.")) return;
 
@@ -2626,7 +2642,7 @@ window.genererBonAchatDepot = (lotId) => {
     client: lot.clientId ? undefined : {nom:lot.clientNom, prenom:lot.clientPrenom},
     clientId: lot.clientId || null,
     typeAvoir: "depotVente", source: "depotVente",
-    label: "Bon d'achat dépôt-vente — "+nbVendus+" article(s) vendu(s)",
+    label: "Bon d'achat dépôt-vente — "+nbVendus+" article(s) vendu(s)"+(bonsDuLot(lot).length?" (complément)":""),
   };
   STATE.avoirs = [...(STATE.avoirs||[]), bon];
   lsSet("bj_avoirs", STATE.avoirs);
@@ -2634,7 +2650,8 @@ window.genererBonAchatDepot = (lotId) => {
     STATE.clients = STATE.clients.map(c=>c.id===lot.clientId?{...c, avoirs:[...(c.avoirs||[]),bon.id]}:c);
     lsSet("bj_clients", STATE.clients);
   }
-  STATE.depotsVente = STATE.depotsVente.map(l=>l.id===lotId?{...l, bonGenereId:bon.id, montantBonGenere:montantBon}:l);
+  const bons = [...bonsDuLot(lot), {id:bon.id, montant:montantBon, articleIds:aPayer.map(x=>x.pid), date:bon.date}];
+  STATE.depotsVente = STATE.depotsVente.map(l=>l.id===lotId?{...l, bons, bonGenereId:bon.id, montantBonGenere:+bons.reduce((s,b)=>s+(b.montant||0),0).toFixed(2)}:l);
   lsSet("bj_depots_vente", STATE.depotsVente);
   render();
   alert("✅ Bon d'achat de "+eur(montantBon)+" généré (code "+bon.code+", valable 3 mois).");
@@ -2677,7 +2694,7 @@ function renderBilanDepotVente() {
     const lotDansPeriode = dansPeriode(lot.dateDepot+"T12:00:00");
     if(lotDansPeriode) { dp.lots++; dp.deposes += ids.length; deposes += ids.length;
       if(lot.creePar) { const vp = parVendeuse[lot.creePar] = parVendeuse[lot.creePar] || {nb:0, ca:0}; vp.lotsPris = (vp.lotsPris||0)+1; vp.articlesPris = (vp.articlesPris||0)+ids.length; } }
-    if(lot.bonGenereId && dansPeriode((STATE.avoirs||[]).find(a=>a.id===lot.bonGenereId)?.date)) dp.bons += lot.montantBonGenere||0;
+    bonsDuLot(lot).forEach(b => { if(dansPeriode(b.date)) dp.bons += b.montant||0; });
     ids.forEach(pid => {
       const p = STATE.products.find(x=>x.id===pid);
       const info = getVenteInfoArticleDepot(pid);
@@ -2771,7 +2788,7 @@ function renderDepotVente() {
         </div>
         <div style="text-align:right;">
           ${echeanceAtteinte && enVente.length>0 ? `<span style="background:#faeeda;color:#854f0b;font-size:11px;padding:4px 9px;border-radius:8px;font-weight:600;">⏰ Échéance atteinte</span>` : ""}
-          ${lot.bonGenereId ? `<div style="font-size:11px;color:#3b6d11;margin-top:4px;">✅ Bon d'achat généré : ${eur(lot.montantBonGenere)}</div>` : ""}
+          ${bonsDuLot(lot).map(b=>`<div style="font-size:11px;color:#3b6d11;margin-top:4px;">✅ Bon généré le ${new Date(b.date).toLocaleDateString("fr-FR")} : ${eur(b.montant)} (${(b.articleIds||[]).length} art.)</div>`).join("")}
         </div>
       </div>
 
@@ -2785,7 +2802,7 @@ function renderDepotVente() {
           if(!a.p) return `<div style="font-size:12px;color:#bbb;padding:4px 0;text-decoration:line-through;">Article retiré</div>`;
           if(a.venteInfo?.vendu) {
             return `<div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0;color:#3b6d11;">
-              <span>✅ ${a.p.name}${marqueDepot(a.p)?" <i style='color:#888;'>("+marqueDepot(a.p)+")</i>":""} — vendu le ${new Date(a.venteInfo.date).toLocaleDateString("fr-FR")} par ${a.venteInfo.vendeur}${a.venteInfo.prixAffiche>a.venteInfo.montant+0.009?` <span style="color:#888;">(au lieu de ${eur(a.venteInfo.prixAffiche)})</span>`:""}</span>
+              <span>✅ ${a.p.name}${marqueDepot(a.p)?" <i style='color:#888;'>("+marqueDepot(a.p)+")</i>":""}${articlesPayesDuLot(lot).has(a.pid)?" <span style='background:#eaf3de;color:#3b6d11;font-size:10px;padding:1px 6px;border-radius:6px;'>bon fait</span>":" <span style='background:#fff3e8;color:#854f0b;font-size:10px;padding:1px 6px;border-radius:6px;'>à payer</span>"} — vendu le ${new Date(a.venteInfo.date).toLocaleDateString("fr-FR")} par ${a.venteInfo.vendeur}${a.venteInfo.prixAffiche>a.venteInfo.montant+0.009?` <span style="color:#888;">(au lieu de ${eur(a.venteInfo.prixAffiche)})</span>`:""}</span>
               <strong style="text-align:right;">${eur(a.venteInfo.montant)}${a.venteInfo.paye!=null&&a.venteInfo.paye<a.venteInfo.montant-0.009?`<div style="font-size:10px;font-weight:400;color:#888;">encaissé ${eur(a.venteInfo.paye)}</div>`:""}</strong>
             </div>`;
           }
@@ -2801,11 +2818,11 @@ function renderDepotVente() {
       </div>
 
       <button onclick="envoyerRecapDepot('${lot.id}')" style="width:100%;margin-top:10px;padding:8px;background:#fff;color:#993556;border:1px solid #e8c4d3;border-radius:8px;cursor:pointer;font-size:12px;">✉️ ${lot.recapEnvoyeLe?"Renvoyer le récapitulatif (envoyé le "+new Date(lot.recapEnvoyeLe).toLocaleDateString("fr-FR")+(lot.recapNbArticles?", "+lot.recapNbArticles+" art.":"")+")":"Envoyer le récapitulatif par mail"}${emailLotDepot(lot)?" · "+emailLotDepot(lot):""}</button>
-      ${!lot.bonGenereId ? `<button onclick="ouvrirAjoutDepot('${lot.id}')" style="width:100%;margin-top:10px;padding:8px;background:#f5f0f2;color:#555;border:1px dashed #d8c8d0;border-radius:8px;cursor:pointer;font-size:12px;">➕ Ajouter des articles à ce dépôt</button>`:""}
-      ${vendus.length>0 && !lot.bonGenereId ? `
-        <button onclick="genererBonAchatDepot('${lot.id}')" style="width:100%;margin-top:12px;padding:10px;background:#993556;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;">
-          💰 Générer le bon d'achat (${eur(totalVentesLot*(1-DEPOT_COMMISSION_PCT/100))} — ${DEPOT_COMMISSION_PCT}% de commission déduite)
-        </button>` : ""}
+      ${true ? `<button onclick="ouvrirAjoutDepot('${lot.id}')" style="width:100%;margin-top:10px;padding:8px;background:#f5f0f2;color:#555;border:1px dashed #d8c8d0;border-radius:8px;cursor:pointer;font-size:12px;">➕ Ajouter des articles à ce dépôt</button>`:""}
+      ${(()=>{ const ap = ventesAPayerDuLot(lot); const t = ap.reduce((s,x)=>s+x.info.montant,0); const deja = bonsDuLot(lot).length;
+        return ap.length ? `<button onclick="genererBonAchatDepot('${lot.id}')" style="width:100%;margin-top:12px;padding:10px;background:#993556;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;font-size:13px;">
+          💰 ${deja?"Générer le bon des nouvelles ventes":"Générer le bon d'achat"} (${ap.length} article${ap.length>1?"s":""} · ${eur(t*(1-DEPOT_COMMISSION_PCT/100))} — ${DEPOT_COMMISSION_PCT}% de commission déduite)
+        </button>` : ""; })()}
       ${peutGererArtisans() ? `<button onclick="supprimerDepot('${lot.id}')" style="width:100%;margin-top:10px;padding:7px;background:#fff;color:#a32d2d;border:1px solid #f0c8c8;border-radius:8px;cursor:pointer;font-size:12px;">🗑️ Supprimer ce dépôt (cette personne)</button>` : ""}
     </div>`;
   });
