@@ -95,7 +95,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "12/11 · v169 (plusieurs bons d'achat par dépôt)";
+const APP_VERSION = "13/11 · v170 (rappel d'échéance aux déposantes)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -2512,6 +2512,101 @@ window.envoyerRecapDepot = async (lotId) => {
   }
 };
 
+// ── Rappel d'échéance : mail aux déposantes (1 mois de dépôt) avec le bon déjà gagné et la question « renouveler ou récupérer » ──
+const RAPPEL_EXCLUS_DEFAUT = ["elodie couespel", "sophie lallet"];
+function finDepot(lot) { const f = new Date(lot.dateDepot+"T12:00:00"); f.setDate(f.getDate()+DEPOT_DUREE_JOURS); return f; }
+function infosRappelLot(lot) {
+  const ids = [...new Set(lot.articleIds||[])];
+  const vendus = [], enVente = [];
+  ids.forEach(pid => { const p = STATE.products.find(x=>x.id===pid); const i = getVenteInfoArticleDepot(pid);
+    if(i.vendu) vendus.push({p, i}); else if(p) enVente.push(p); });
+  const pct = (100-DEPOT_COMMISSION_PCT)/100;
+  const gagne = +vendus.reduce((s,x)=>s+x.i.montant*pct,0).toFixed(2);
+  const dejaBons = +bonsDuLot(lot).reduce((s,b)=>s+(b.montant||0),0).toFixed(2);
+  return {vendus, enVente, gagne, dejaBons, reste: Math.max(0, +(gagne-dejaBons).toFixed(2))};
+}
+window.ouvrirRappelsDepot = () => {
+  const demain = new Date(); demain.setDate(demain.getDate()+1);
+  const jourStr = d => dateLocaleStr(d);
+  const sel = {};
+  (STATE.depotsVente||[]).filter(l=>!l.supprime).forEach(l => {
+    const nom = normStr((l.clientPrenom||"")+" "+(l.clientNom||"")), nomInv = normStr((l.clientNom||"")+" "+(l.clientPrenom||""));
+    const exclu = RAPPEL_EXCLUS_DEFAUT.some(x => nom===x || nomInv===x);
+    sel[l.id] = !exclu && jourStr(finDepot(l))===jourStr(demain) && !!emailLotDepot(l);
+  });
+  setState({showRappelsDepot:{sel}});
+};
+function renderRappelsDepotModal() {
+  const st = STATE.showRappelsDepot;
+  const lots = (STATE.depotsVente||[]).filter(l=>!l.supprime).sort((a,b)=>finDepot(a)-finDepot(b));
+  const nb = lots.filter(l=>st.sel[l.id]).length;
+  return `<div class="modal-bg" onclick="if(event.target===this)setState({showRappelsDepot:null})"><div class="modal" style="max-width:620px;">
+    <div class="modal-header"><span style="font-weight:500;">✉️ Rappel d'échéance aux déposantes</span><button onclick="setState({showRappelsDepot:null})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button></div>
+    <div class="modal-body">
+      <div style="font-size:12px;color:#888;margin-bottom:8px;">Cochées d'office : les dépôts qui ont 1 mois <strong>demain</strong> (sauf Élodie Couespel et Sophie Lallet). Le mail rappelle l'échéance, le bon d'achat déjà gagné, les articles encore en vente, et demande si elles veulent renouveler ou récupérer.</div>
+      <div style="max-height:50vh;overflow:auto;border:0.5px solid #eee;border-radius:8px;">
+      ${lots.map(l => { const inf = infosRappelLot(l), em = emailLotDepot(l);
+        return `<label style="display:flex;gap:8px;align-items:flex-start;padding:8px 10px;border-bottom:0.5px solid #f0ebee;cursor:${em?"pointer":"default"};${em?"":"opacity:.55;"}">
+          <input type="checkbox" ${st.sel[l.id]?"checked":""} ${em?"":"disabled"} onchange="STATE.showRappelsDepot.sel['${l.id}']=this.checked;render()" style="width:auto;margin-top:3px;"/>
+          <span style="flex:1;font-size:13px;"><strong>${l.clientPrenom||""} ${l.clientNom||""}</strong> <span style="color:#888;font-size:11px;">· fin le ${finDepot(l).toLocaleDateString("fr-FR")}${l.rappelEcheanceLe?" · rappel déjà envoyé le "+new Date(l.rappelEcheanceLe).toLocaleDateString("fr-FR"):""}</span>
+            <div style="font-size:11px;color:#666;">${inf.vendus.length} vendu(s) · ${inf.enVente.length} en vente · bon gagné ${eur(inf.gagne)} · ${em||"<span style='color:#a32d2d;'>pas d'email</span>"}</div></span>
+        </label>`; }).join("")}
+      </div>
+      <button onclick="envoyerRappelsDepot()" class="btn-primary" style="width:100%;margin-top:12px;" ${nb?"":"disabled"}>✉️ Envoyer ${nb} mail${nb>1?"s":""}</button>
+    </div></div></div>`;
+}
+function htmlRappelDepot(lot) {
+  const inf = infosRappelLot(lot);
+  const esc = t => String(t||"").replace(/&/g,"&amp;").replace(/</g,"&lt;");
+  const fmt = d => new Date(d).toLocaleDateString("fr-FR",{weekday:"long",day:"numeric",month:"long"});
+  const ligne = (n, droite) => `<tr><td style="padding:7px 8px;border-bottom:1px solid #f0e6ea;font-size:14px;color:#333;">${n}</td><td style="padding:7px 8px;border-bottom:1px solid #f0e6ea;font-size:14px;color:#993556;font-weight:700;text-align:right;white-space:nowrap;">${droite}</td></tr>`;
+  const bloc = (titre, rows) => rows ? `<div style="font-size:13px;font-weight:700;color:#993556;margin:16px 0 4px;">${titre}</div><table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">${rows}</table>` : "";
+  const corps = `Bonjour ${esc(lot.clientPrenom)},<br/><br/>Votre dépôt-vente chez Belle&amp;Jolie arrive à son terme : <strong>${fmt(finDepot(lot))}</strong>, cela fera un mois que vos articles sont en boutique.`;
+  const bon = inf.gagne>0 ? `<div style="background:#eaf3de;border-radius:10px;padding:14px 16px;margin-top:16px;font-size:14px;color:#3b6d11;line-height:1.6;">💝 <strong>Bon d'achat déjà gagné : ${eur(inf.gagne)}</strong><br/><span style="font-size:12px;">${100-DEPOT_COMMISSION_PCT} % du prix de vos ${inf.vendus.length} article${inf.vendus.length>1?"s":""} vendu${inf.vendus.length>1?"s":""}, crédité sur votre compte fidélité (valable 3 mois).</span></div>` : `<div style="background:#fbf3f6;border-radius:10px;padding:14px 16px;margin-top:16px;font-size:14px;color:#555;">Aucun article n'a encore trouvé preneuse, mais le mois de décembre est idéal pour leur laisser une nouvelle chance !</div>`;
+  const question = inf.enVente.length ? `<div style="background:#fbf3f6;border-radius:10px;padding:14px 16px;margin-top:16px;font-size:14px;color:#444;line-height:1.7;">
+      <strong>Il vous reste ${inf.enVente.length} article${inf.enVente.length>1?"s":""} en vente.</strong> Que souhaitez-vous faire ?<br/>
+      🔄 <strong>Renouveler</strong> votre dépôt pour un mois de plus,<br/>👜 ou <strong>récupérer</strong> vos articles en boutique.<br/><br/>
+      Répondez-nous simplement par email à <strong>boutiquebelleetjolie@gmail.com</strong>, sur nos réseaux ou directement en boutique.</div>` : `<div style="font-size:14px;color:#444;margin-top:16px;">Tous vos articles ont été vendus, bravo ! 🎉 Vous pouvez venir profiter de votre bon d'achat quand vous le souhaitez.</div>`;
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:0;background:#f5f0f2;font-family:Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f0f2;padding:20px 10px;"><tr><td align="center"><table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;width:100%;">
+  <tr><td style="background:#fff;border-radius:16px 16px 0 0;padding:20px;text-align:center;border-bottom:3px solid #993556;">
+    <img src="${LOGO_TICKET_B64}" width="90" height="90" alt="Belle&Jolie" style="border-radius:50%;"/>
+    <div style="font-size:21px;font-weight:700;color:#993556;font-family:Georgia,serif;margin-top:6px;">Votre dépôt-vente : 1 mois déjà !</div></td></tr>
+  <tr><td style="background:#fff;padding:22px;"><div style="font-size:15px;color:#444;line-height:1.6;">${corps}</div>${bon}
+    ${bloc("✅ Vos articles vendus", inf.vendus.map(x=>ligne(esc(x.p?.name||"Article"), eur(x.i.montant))).join(""))}
+    ${bloc("🕐 Encore en vente", inf.enVente.map(p=>ligne(esc(p.name)+(marqueDepot(p)?` <span style="color:#999;font-size:12px;">(${esc(marqueDepot(p))})</span>`:""), eur(p.price))).join(""))}
+    ${question}
+    <div style="font-size:14px;color:#555;margin-top:18px;">À très vite en boutique !<br/>Élodie et l'équipe Belle&amp;Jolie 🌸</div></td></tr>
+  <tr><td style="background:#f9f6f8;padding:14px 22px;text-align:center;border-radius:0 0 16px 16px;border-top:0.5px solid #e8e0e4;">
+    <div style="font-size:12px;color:#aaa;">Belle&amp;Jolie · ${adresseCarteCadeau()}</div><div style="font-size:11px;color:#bbb;margin-top:2px;">🕐 ${BOUTIQUE_HORAIRES}</div></td></tr>
+</table></td></tr></table></body></html>`;
+  const texte = "Bonjour "+lot.clientPrenom+", votre dépôt-vente aura un mois le "+fmt(finDepot(lot))+". Bon d'achat déjà gagné : "+eur(inf.gagne)+". "+(inf.enVente.length?"Il vous reste "+inf.enVente.length+" article(s) en vente : souhaitez-vous renouveler ou les récupérer ? Répondez à boutiquebelleetjolie@gmail.com.":"Tous vos articles ont été vendus !");
+  return {html, texte, inf};
+}
+window.envoyerRappelsDepot = async () => {
+  const st = STATE.showRappelsDepot; if(!st) return;
+  if(!STATE.emailjsServiceId || !STATE.emailjsTemplateId || !STATE.emailjsPublicKey) { alert("⚠️ L'envoi d'emails n'est pas configuré (EmailJS)."); return; }
+  const lots = (STATE.depotsVente||[]).filter(l=>!l.supprime && st.sel[l.id] && emailLotDepot(l));
+  if(!lots.length) return;
+  if(!confirm("Envoyer le rappel d'échéance à "+lots.length+" déposante(s) ?\n\n"+lots.map(l=>"• "+l.clientPrenom+" "+l.clientNom+" ("+emailLotDepot(l)+")").join("\n"))) return;
+  let ok = 0; const echecs = [];
+  try { await emailjs.init(STATE.emailjsPublicKey); } catch{}
+  for(const lot of lots) {
+    const {html, texte, inf} = htmlRappelDepot(lot);
+    try {
+      await emailjs.send(STATE.emailjsServiceId, STATE.emailjsTemplateId, {
+        to_email: emailLotDepot(lot), to_name: lot.clientPrenom, subject: "Votre dépôt-vente Belle&Jolie : 1 mois déjà !",
+        message: html, articles: texte, total: eur(inf.gagne), paiement: "", vendeur: "Belle&Jolie" });
+      ok++; try { incrementerEnvoisJour(1); } catch{}
+      STATE.depotsVente = STATE.depotsVente.map(l => l.id!==lot.id ? l : {...l, rappelEcheanceLe: new Date().toISOString()});
+      await new Promise(r=>setTimeout(r, 1200));
+    } catch(e) { console.error("Rappel dépôt :", e); echecs.push(lot.clientPrenom+" "+lot.clientNom); }
+  }
+  lsSet("bj_depots_vente", STATE.depotsVente);
+  STATE.showRappelsDepot = null; render();
+  alert("✅ "+ok+" mail(s) envoyé(s)."+(echecs.length?"\n❌ Échec pour : "+echecs.join(", "):""));
+};
+
 // Dépôts dont les articles sont arrivés sur cet appareil mais pas la fiche : on la reconstitue à partir des articles
 setTimeout(() => {
   try {
@@ -2760,8 +2855,11 @@ function renderDepotVente() {
       <div style="font-weight:600;font-size:16px;">🔄 Dépôt-vente</div>
       <div style="font-size:12px;color:#888;">Portant seconde main — commission boutique ${DEPOT_COMMISSION_PCT}%, cycle de ${DEPOT_DUREE_JOURS} jours</div>
     </div>
-    <button onclick="ouvrirNouveauDepot()" class="btn-primary" style="width:auto;padding:10px 18px;">➕ Nouveau dépôt</button>
-  </div>${bandeauDepotsPause()}${renderBilanDepotVente()}`;
+    <div style="display:flex;gap:8px;flex-wrap:wrap;">
+      ${peutGererArtisans()?`<button onclick="ouvrirRappelsDepot()" class="btn-ghost" style="width:auto;padding:10px 14px;">✉️ Rappel d'échéance</button>`:""}
+      <button onclick="ouvrirNouveauDepot()" class="btn-primary" style="width:auto;padding:10px 18px;">➕ Nouveau dépôt</button>
+    </div>
+  </div>${bandeauDepotsPause()}${renderBilanDepotVente()}${STATE.showRappelsDepot?renderRappelsDepotModal():""}`;
 
   if(lots.length===0) {
     html += `<div style="text-align:center;color:#aaa;padding:50px 20px;">Aucun dépôt enregistré pour le moment.</div>`;
