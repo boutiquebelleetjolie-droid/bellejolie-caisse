@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "14/11 · v175 (alerte dépôt-vente / artisan à l'annulation d'un ticket)";
+const APP_VERSION = "14/11 · v176 (dépôt-vente : prolonger un dépôt et changer les prix)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -1057,7 +1057,7 @@ function fusionnerMemos(a, b) {
 }
 // Dépôts-vente : fusion lot par lot (jamais de remplacement en bloc), articles réunis
 function sigDepotsVente(l) {
-  return (l||[]).filter(x=>x&&x.id).map(x => [x.id, [...new Set(x.articleIds||[])].sort().join(","), x.bonGenereId||"", x.montantBonGenere||"", x.clientEmail||"", x.recapEnvoyeLe||"", x.articlesPerdus||0, x.reconstruit?1:0, x.clientId||"", x.clientTel||"", x.supprime?1:0, (x.bons||[]).map(b=>b.id).sort().join("+")].join("~")).sort().join("|");
+  return (l||[]).filter(x=>x&&x.id).map(x => [x.id, [...new Set(x.articleIds||[])].sort().join(","), x.bonGenereId||"", x.montantBonGenere||"", x.clientEmail||"", x.recapEnvoyeLe||"", x.articlesPerdus||0, x.reconstruit?1:0, x.clientId||"", x.clientTel||"", x.supprime?1:0, (x.bons||[]).map(b=>b.id).sort().join("+"), x.dateFin||"", (x.prolongations||[]).length].join("~")).sort().join("|");
 }
 function fusionnerDepotsVente(locaux, recus) {
   const m = new Map((locaux||[]).filter(l=>l&&l.id).map(l=>[l.id, l]));
@@ -1068,6 +1068,8 @@ function fusionnerDepotsVente(locaux, recus) {
     ["bonGenereId","montantBonGenere","clientEmail","recapEnvoyeLe","recapNbArticles","clientId"].forEach(k => { if(f[k]==null || f[k]==="") f[k] = l[k] ?? r[k]; });
     if(l.recapEnvoyeLe && r.recapEnvoyeLe) f.recapEnvoyeLe = l.recapEnvoyeLe > r.recapEnvoyeLe ? l.recapEnvoyeLe : r.recapEnvoyeLe;
     f.articlesPerdus = Math.min(l.articlesPerdus||0, r.articlesPerdus||0);
+    if(l.dateFin || r.dateFin) f.dateFin = String(l.dateFin||"") > String(r.dateFin||"") ? l.dateFin : r.dateFin;
+    if((l.prolongations||[]).length || (r.prolongations||[]).length) { const mp = new Map(); [...(l.prolongations||[]), ...(r.prolongations||[])].forEach(x=>{ if(x&&x.le) mp.set(x.le, x); }); f.prolongations = [...mp.values()].sort((a,b)=>String(a.le).localeCompare(String(b.le))); }
     if(l.supprime || r.supprime) { f.supprime = true; f.supprimeLe = l.supprimeLe || r.supprimeLe; f.supprimePar = l.supprimePar || r.supprimePar; }
     if((l.bons||[]).length || (r.bons||[]).length) { const mb = new Map(); [...(l.bons||[]), ...(r.bons||[])].forEach(b=>{ if(b&&b.id) mb.set(b.id, b); });
       f.bons = [...mb.values()].sort((a,b)=>String(a.date).localeCompare(String(b.date)));
@@ -2523,7 +2525,51 @@ window.envoyerRecapDepot = async (lotId) => {
 
 // ── Rappel d'échéance : mail aux déposantes (1 mois de dépôt) avec le bon déjà gagné et la question « renouveler ou récupérer » ──
 const RAPPEL_EXCLUS_DEFAUT = ["elodie couespel", "sophie lallet"];
-function finDepot(lot) { const f = new Date(lot.dateDepot+"T12:00:00"); f.setDate(f.getDate()+DEPOT_DUREE_JOURS); return f; }
+function finDepot(lot) { if(lot.dateFin) return new Date(lot.dateFin+"T12:00:00"); const f = new Date(lot.dateDepot+"T12:00:00"); f.setDate(f.getDate()+DEPOT_DUREE_JOURS); return f; }
+// Prolonger un dépôt (et/ou changer le prix des articles encore en vente)
+window.ouvrirProlongDepot = (lotId) => {
+  const lot = (STATE.depotsVente||[]).find(l=>l.id===lotId); if(!lot) return;
+  const prix = {};
+  [...new Set(lot.articleIds||[])].forEach(pid => { const p = STATE.products.find(x=>x.id===pid); if(p && !getVenteInfoArticleDepot(pid).vendu) prix[pid] = p.price; });
+  if(!Object.keys(prix).length) { alert("Tous les articles de ce dépôt sont vendus : rien à prolonger."); return; }
+  setState({showProlongDepot:{lotId, prix, prolonger:true}});
+};
+function nouvelleFinProlong(lot) { const auj = new Date(); auj.setHours(12,0,0,0); const base = finDepot(lot) > auj ? finDepot(lot) : auj; const f = new Date(base); f.setDate(f.getDate()+DEPOT_DUREE_JOURS); return f; }
+function renderProlongDepotModal() {
+  const st = STATE.showProlongDepot, lot = (STATE.depotsVente||[]).find(l=>l.id===st.lotId); if(!lot) return "";
+  const nf = nouvelleFinProlong(lot), nbP = (lot.prolongations||[]).length;
+  return `<div class="modal-bg" onclick="if(event.target===this)setState({showProlongDepot:null})"><div class="modal" style="max-width:520px;">
+    <div class="modal-header"><span style="font-weight:500;">🔄 Dépôt de ${lot.clientPrenom||""} ${lot.clientNom||""}</span><button onclick="setState({showProlongDepot:null})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button></div>
+    <div class="modal-body">
+      <label style="display:flex;gap:8px;align-items:flex-start;background:#eef4fd;border-radius:8px;padding:10px;cursor:pointer;font-size:13px;">
+        <input type="checkbox" ${st.prolonger?"checked":""} onchange="STATE.showProlongDepot.prolonger=this.checked;render()" style="width:auto;margin-top:2px;"/>
+        <span><strong>Prolonger d'un mois</strong> : fin actuelle le ${finDepot(lot).toLocaleDateString("fr-FR")} → <strong>nouvelle fin le ${nf.toLocaleDateString("fr-FR")}</strong>
+        ${nbP?`<div style="color:#a32d2d;font-size:11px;margin-top:3px;">⚠️ Déjà prolongé ${nbP} fois (le règlement prévoit un seul renouvellement).</div>`:""}</span>
+      </label>
+      <div style="font-size:12px;color:#888;margin:12px 0 6px;">Prix des articles encore en vente (modifie si besoin) :</div>
+      ${Object.keys(st.prix).map(pid => { const p = STATE.products.find(x=>x.id===pid); if(!p) return "";
+        return `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:5px 0;border-bottom:0.5px solid #f0ebee;font-size:13px;">
+          <span style="flex:1;">${p.name}${p.price!==st.prix[pid]?` <span style="color:#888;font-size:11px;text-decoration:line-through;">${eur(p.price)}</span>`:""}</span>
+          <input type="number" step="0.5" min="0" value="${st.prix[pid]}" onchange="STATE.showProlongDepot.prix['${pid}']=parseFloat(this.value)||0;render()" style="width:80px;text-align:right;"/> €</div>`; }).join("")}
+      <button onclick="validerProlongDepot()" class="btn-primary" style="width:100%;margin-top:14px;">✅ ${st.prolonger?"Prolonger jusqu'au "+nf.toLocaleDateString("fr-FR"):"Enregistrer les prix"}</button>
+    </div></div></div>`;
+}
+window.validerProlongDepot = () => {
+  const st = STATE.showProlongDepot; if(!st) return;
+  const lot = (STATE.depotsVente||[]).find(l=>l.id===st.lotId); if(!lot) return;
+  const maint = new Date().toISOString(), nf = dateLocaleStr(nouvelleFinProlong(lot));
+  let nbPrix = 0;
+  STATE.products = STATE.products.map(p => { if(!(p.id in st.prix)) return p; const np = +st.prix[p.id];
+    const chg = Math.abs(np-(p.price||0))>0.009; if(chg) nbPrix++;
+    return (!chg && !st.prolonger) ? p : {...p, price: np, prixAchat:null, depotReverse: +(np*(1-DEPOT_COMMISSION_PCT/100)).toFixed(2), ...(st.prolonger?{dateFinDepot:nf}:{}), majLe: maint}; });
+  lsSet("bj_products", STATE.products);
+  if(st.prolonger) {
+    STATE.depotsVente = STATE.depotsVente.map(l => l.id!==lot.id ? l : {...l, dateFin: nf, prolongations:[...(l.prolongations||[]), {le: maint, par: STATE.vendeur?.nom||"", jusquau: nf}]});
+    lsSet("bj_depots_vente", STATE.depotsVente);
+  }
+  STATE.showProlongDepot = null; render();
+  alert("✅ "+(st.prolonger?"Dépôt prolongé jusqu'au "+new Date(nf+"T12:00:00").toLocaleDateString("fr-FR")+". ":"")+(nbPrix?nbPrix+" prix modifié(s).":"Prix inchangés."));
+};
 function infosRappelLot(lot) {
   const ids = [...new Set(lot.articleIds||[])];
   const vendus = [], enVente = [];
@@ -2945,7 +2991,7 @@ function renderDepotVente() {
       ${peutGererArtisans()?`<button onclick="ouvrirRappelsDepot()" class="btn-ghost" style="width:auto;padding:10px 14px;">✉️ Rappel d'échéance</button>`:""}
       <button onclick="ouvrirNouveauDepot()" class="btn-primary" style="width:auto;padding:10px 18px;">➕ Nouveau dépôt</button>
     </div>
-  </div>${bandeauDepotsPause()}${renderBilanDepotVente()}${STATE.showRappelsDepot?renderRappelsDepotModal():""}`;
+  </div>${bandeauDepotsPause()}${renderBilanDepotVente()}${STATE.showRappelsDepot?renderRappelsDepotModal():""}${STATE.showProlongDepot?renderProlongDepotModal():""}`;
 
   if(lots.length===0) {
     html += `<div style="text-align:center;color:#aaa;padding:50px 20px;">Aucun dépôt enregistré pour le moment.</div>`;
@@ -2953,7 +2999,7 @@ function renderDepotVente() {
 
   lots.forEach(lot => {
     const joursEcoules = Math.floor((now - new Date(lot.dateDepot+"T00:00:00")) / 86400000);
-    const echeanceAtteinte = joursEcoules >= DEPOT_DUREE_JOURS;
+    const echeanceAtteinte = now >= finDepot(lot);
     const articles = [...new Set(lot.articleIds||[])].map(pid => {
       const p = STATE.products.find(x=>x.id===pid);
       const venteInfo = p ? getVenteInfoArticleDepot(pid) : null;
@@ -2968,7 +3014,7 @@ function renderDepotVente() {
       <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
         <div>
           <div style="font-weight:600;font-size:14px;">${lot.clientPrenom} ${lot.clientNom} ${lot.clientId?'<span style="background:#eaf3de;color:#3b6d11;font-size:10px;padding:2px 7px;border-radius:8px;margin-left:4px;">🔗 Compte fidélité</span>':''}</div>
-          <div style="font-size:12px;color:#888;">📞 ${lot.clientTel} · Déposé le ${new Date(lot.dateDepot).toLocaleDateString("fr-FR")} (${joursEcoules}j)</div>
+          <div style="font-size:12px;color:#888;">📞 ${lot.clientTel} · Déposé le ${new Date(lot.dateDepot).toLocaleDateString("fr-FR")} (${joursEcoules}j) · fin le ${finDepot(lot).toLocaleDateString("fr-FR")}${(lot.prolongations||[]).length?` <span style="background:#eef4fd;color:#185fa5;font-size:10px;padding:1px 6px;border-radius:6px;">🔄 prolongé</span>`:""}</div>
         </div>
         <div style="text-align:right;">
           ${echeanceAtteinte && enVente.length>0 ? `<span style="background:#faeeda;color:#854f0b;font-size:11px;padding:4px 9px;border-radius:8px;font-weight:600;">⏰ Échéance atteinte</span>` : ""}
@@ -3001,6 +3047,7 @@ function renderDepotVente() {
         }).join("")}
       </div>
 
+      ${enVente.length?`<button onclick="ouvrirProlongDepot('${lot.id}')" style="width:100%;margin-top:10px;padding:8px;background:#eef4fd;color:#185fa5;border:1px solid #b8d4f5;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;">🔄 Prolonger le dépôt / changer les prix</button>`:""}
       <button onclick="envoyerRecapDepot('${lot.id}')" style="width:100%;margin-top:10px;padding:8px;background:#fff;color:#993556;border:1px solid #e8c4d3;border-radius:8px;cursor:pointer;font-size:12px;">✉️ ${lot.recapEnvoyeLe?"Renvoyer le récapitulatif (envoyé le "+new Date(lot.recapEnvoyeLe).toLocaleDateString("fr-FR")+(lot.recapNbArticles?", "+lot.recapNbArticles+" art.":"")+")":"Envoyer le récapitulatif par mail"}${emailLotDepot(lot)?" · "+emailLotDepot(lot):""}</button>
       ${true ? `<button onclick="ouvrirAjoutDepot('${lot.id}')" style="width:100%;margin-top:10px;padding:8px;background:#f5f0f2;color:#555;border:1px dashed #d8c8d0;border-radius:8px;cursor:pointer;font-size:12px;">➕ Ajouter des articles à ce dépôt</button>`:""}
       ${(()=>{ const ap = ventesAPayerDuLot(lot); const t = ap.reduce((s,x)=>s+x.info.montant,0); const deja = bonsDuLot(lot).length;
