@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "14/11 · v173 (dépôt : retrouver une vente passée sous un autre article)";
+const APP_VERSION = "14/11 · v174 (dépôt : plus de « peut-être vendu », restaurer un ticket annulé)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -2721,9 +2721,9 @@ function indicesVenteDepot(p) {
 function htmlIndicesVenteDepot(p) {
   const r = indicesVenteDepot(p); if(!r) return "";
   const d = x => new Date(x).toLocaleDateString("fr-FR")+" "+new Date(x).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
-  let h = r.annules.map(v => `<div style="font-size:11px;color:#a32d2d;">⚠️ Passé en caisse le ${d(v.date)} (${v.vendeur?.nom||"—"}), mais ce ticket a été <strong>annulé</strong>${v.dateAnnulation?" le "+d(v.dateAnnulation):""}${v.annuleePar?" par "+v.annuleePar:""}. <a href="#" onclick="voirTicketVenteId('${v.id}');return false;">voir</a></div>`).join("");
-  h += r.cands.map(c => `<div style="font-size:11px;color:#854f0b;">🔎 Peut-être vendu sous un autre article : « ${c.l.name} » ${eur(c.l.price||0)} le ${d(c.v.date)} (${c.v.vendeur?.nom||"—"}) <a href="#" onclick="voirTicketVenteId('${c.v.id}');return false;">voir</a>
-      ${STATE.vendeur?.id==="V1"?`<button onclick="rattacherVenteDepot('${c.v.id}',${c.i},'${p.id}')" style="background:#faeeda;color:#854f0b;border:none;border-radius:6px;padding:1px 7px;cursor:pointer;font-size:11px;">🔗 C'était cet article</button>`:""}</div>`).join("");
+  let h = r.annules.map(v => `<div style="font-size:11px;color:#a32d2d;">⚠️ Passé en caisse le ${d(v.date)} (${v.vendeur?.nom||"—"}), mais ce ticket a été <strong>annulé</strong>${v.dateAnnulation?" le "+d(v.dateAnnulation):""}${v.annuleePar?" par "+v.annuleePar:""}. <a href="#" onclick="voirTicketVenteId('${v.id}');return false;">voir</a>
+      ${STATE.vendeur?.id==="V1"?`<button onclick="restaurerVenteAnnulee('${v.id}')" style="background:#eef4fd;color:#185fa5;border:none;border-radius:6px;padding:1px 7px;cursor:pointer;font-size:11px;">↩️ Restaurer la vente</button>`:""}</div>`).join("");
+
   if(!h && !(p.stock>0)) h = `<div style="font-size:11px;color:#888;">Stock à 0 mais aucun ticket trouvé sur cet appareil : la vente n'est peut-être pas encore arrivée ici → bouton « Vérifier ».</div>`;
   return h;
 }
