@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "14/11 · v176 (dépôt-vente : prolonger un dépôt et changer les prix)";
+const APP_VERSION = "14/11 · v177 (bordereau banque : jours déjà déposés retirés, synchro entre appareils)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -967,6 +967,17 @@ function firestorePush(key, val) {
     }).catch(err => console.error("Firestore push (mémos) error:", err));
     return;
   }
+  if(key==="bj_depots_banque" && Array.isArray(val)) {
+    const refB = _fbDb.collection("bellejolie").doc(cle);
+    refB.get().then(doc => {
+      const cloud = doc.exists ? (doc.data().value||[]) : [];
+      const fusion = fusionnerDepotsBanque(cloud, val);
+      if(sigDepotsBanque(fusion)!==sigDepotsBanque(val)) { STATE.depotsBanque = fusion; try { localStorage.setItem(cle, JSON.stringify(fusion)); } catch{} recalerReportDepot(); setTimeout(render, 0); }
+      if(doc.exists && sigDepotsBanque(cloud)===sigDepotsBanque(fusion)) return;
+      return refB.set({ value: fusion, maj: maintenant, device: DEVICE_ID });
+    }).catch(err => console.error("Firestore push (dépôts banque) error:", err));
+    return;
+  }
   if(key==="bj_depots_vente" && Array.isArray(val)) {
     const refD = _fbDb.collection("bellejolie").doc(cle);
     refD.get().then(doc => {
@@ -1044,6 +1055,7 @@ const CLES_SYNC_TEMPS_REEL = {
   bj_journal_emails: "journalEmails",
   bj_couturiere: "couturiere",
   bj_depots_vente: "depotsVente",
+  bj_depots_banque: "depotsBanque",
   bj_sorties_especes: "sortiesEspeces",
   bj_memos: "memos",
 };
@@ -1055,6 +1067,16 @@ function fusionnerMemos(a, b) {
     if(!c || String(x.updated||"") > String(c.updated||"")) m.set(x.jourKey, x); });
   return [...m.values()];
 }
+// Dépôts en banque : fusion dépôt par dépôt (un dépôt fait sur un appareil apparaît partout ; suppression = marque)
+function sigDepotsBanque(l) { return (l||[]).filter(x=>x&&x.id).map(x=>x.id+(x.supprime?"x":"")).sort().join("|"); }
+function fusionnerDepotsBanque(a, b) {
+  const m = new Map();
+  [...(a||[]), ...(b||[])].forEach(x => { if(!x||!x.id) return; const c = m.get(x.id); m.set(x.id, c ? {...c, ...x, supprime: !!(c.supprime||x.supprime)} : x); });
+  return [...m.values()];
+}
+function depotsBanqueActifs() { return (STATE.depotsBanque||[]).filter(d=>d && !d.supprime); }
+function recalerReportDepot() { const act = depotsBanqueActifs().filter(d=>!d.manuel).sort((a,b)=>String(a.creeLe||"").localeCompare(String(b.creeLe||"")));
+  if(act.length) { STATE.soldeDepotReporte = act[act.length-1].nouveauReporte||0; try { localStorage.setItem(cleFirestore("bj_solde_depot_reporte"), JSON.stringify(STATE.soldeDepotReporte)); } catch{} } }
 // Dépôts-vente : fusion lot par lot (jamais de remplacement en bloc), articles réunis
 function sigDepotsVente(l) {
   return (l||[]).filter(x=>x&&x.id).map(x => [x.id, [...new Set(x.articleIds||[])].sort().join(","), x.bonGenereId||"", x.montantBonGenere||"", x.clientEmail||"", x.recapEnvoyeLe||"", x.articlesPerdus||0, x.reconstruit?1:0, x.clientId||"", x.clientTel||"", x.supprime?1:0, (x.bons||[]).map(b=>b.id).sort().join("+"), x.dateFin||"", (x.prolongations||[]).length].join("~")).sort().join("|");
@@ -1137,6 +1159,19 @@ function demarrerSyncTempsReel() {
           if(sigMemos(fusion)!==sigMemos(recus)) firestorePush(storageKey, fusion);
           render();
         } catch(err) { console.error("Erreur fusion mémos:", err); }
+        return;
+      }
+      if(storageKey==="bj_depots_banque") {
+        try {
+          const recus = data.value||[];
+          const fusion = fusionnerDepotsBanque(STATE.depotsBanque||[], recus);
+          const change = sigDepotsBanque(fusion)!==sigDepotsBanque(STATE.depotsBanque||[]);
+          STATE.depotsBanque = fusion;
+          localStorage.setItem(cleFirestore(storageKey), JSON.stringify(fusion));
+          if(change) recalerReportDepot();
+          if(sigDepotsBanque(fusion)!==sigDepotsBanque(recus)) firestorePush(storageKey, fusion);
+          if(change) render();
+        } catch(err) { console.error("Erreur fusion dépôts banque:", err); }
         return;
       }
       if(storageKey==="bj_depots_vente") {
@@ -2686,6 +2721,8 @@ window.envoyerRappelsDepot = async () => {
   alert("✅ "+ok+" mail(s) envoyé(s)."+(echecs.length?"\n❌ Échec pour : "+echecs.join(", "):""));
 };
 
+// Dépôts en banque : on réunit une fois les dépôts de cet appareil avec ceux du cloud (fait sur un autre appareil)
+setTimeout(() => { try { if(_fbDb) firestorePush("bj_depots_banque", STATE.depotsBanque||[]); } catch(e) { console.error(e); } }, 9000);
 // Dépôts dont les articles sont arrivés sur cet appareil mais pas la fiche : on la reconstitue à partir des articles
 setTimeout(() => {
   try {
@@ -14045,7 +14082,7 @@ function ajusterZApresAnnulation(v, signe, motif) {
   const especes = parts.filter(p=>p.mode==="especes").reduce((s,p)=>s+p.montant,0);
   const payM = {...(z.payM||{})};
   parts.forEach(p=>{ payM[p.mode] = Math.max(0,(payM[p.mode]||0) + signe*p.montant); });
-  const dejaDepose = (STATE.depotsBanque||[]).some(d=>(d.jours||[]).some(j=>j.date===dateZ));
+  const dejaDepose = depotsBanqueActifs().some(d=>(d.jours||[]).some(j=>j.date===dateZ));
   STATE.caisseJour = STATE.caisseJour.map(x=>x.date!==dateZ ? x : {
     ...x,
     caTTC: Math.max(0,(x.caTTC||0) + signe*v.total),
@@ -15055,7 +15092,7 @@ function renderDepotBanque() {
     .sort((a,b) => b.date.localeCompare(a.date));
 
   // Retrouve, pour un jour donné, le dépôt dans lequel il a déjà été inclus (s'il y en a un)
-  const depotDeJour = (dateStr) => (STATE.depotsBanque||[]).find(d => (d.jours||[]).some(j=>j.date===dateStr));
+  const depotDeJour = (dateStr) => depotsBanqueActifs().find(d => (d.jours||[]).some(j=>j.date===dateStr));
 
   const totalJoursCoches = jours.reduce((s,z) => {
     if(depotDeJour(z.date)) return s; // déjà déposé, ne compte pas dans une nouvelle sélection
@@ -15067,7 +15104,7 @@ function renderDepotBanque() {
   const montantSaisi = parseFloat(STATE.depotMontantSaisi)||0;
   const ecartDepot = totalSuggere - montantSaisi; // positif = tu gardes des pièces pour plus tard, négatif = tu rattrapes un report précédent
 
-  const historique = [...(STATE.depotsBanque||[])].sort((a,b) => (b.creeLe||"").localeCompare(a.creeLe||""));
+  const historique = [...depotsBanqueActifs()].sort((a,b) => (b.creeLe||"").localeCompare(a.creeLe||""));
 
   return `
   <div style="max-width:560px;margin:0 auto;">
@@ -15084,8 +15121,8 @@ function renderDepotBanque() {
         <button onclick="toutCocherDepot(${!tousCoches})" style="background:${tousCoches?"#fff":"#185fa5"};color:${tousCoches?"#185fa5":"#fff"};border:1px solid #185fa5;border-radius:8px;padding:6px 12px;font-size:13px;font-weight:500;cursor:pointer;">${tousCoches?"☐ Tout décocher":"☑️ Tout cocher"}</button>
       </div>`; })()}
     <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:6px 14px;margin-bottom:14px;">
-      ${jours.length===0?`<div style="padding:14px 0;color:#aaa;font-size:13px;text-align:center;">Aucune clôture avec des espèces à déposer.</div>`:
-        jours.map(z => {
+      ${jours.filter(z=>!depotDeJour(z.date)).length===0?`<div style="padding:14px 0;color:#aaa;font-size:13px;text-align:center;">✅ Toutes les journées sont déjà déposées.</div>`:
+        jours.filter(z => !depotDeJour(z.date)).map(z => {
           const depot = depotDeJour(z.date);
           const checked = !depot && !!STATE.depotSelection[z.date];
           return `<div style="display:flex;align-items:center;justify-content:space-between;padding:9px 0;border-bottom:0.5px solid #f0ebee;">
@@ -15095,6 +15132,7 @@ function renderDepotBanque() {
             </label>
             <div style="display:flex;align-items:center;gap:10px;">
               ${depot?`<span style="font-size:11px;color:#3b6d11;background:#eaf3de;padding:2px 8px;border-radius:6px;">✅ Déposé le ${new Date(depot.dateDepot).toLocaleDateString("fr-FR")}</span>`:""}
+              ${depot?"":`<button onclick="marquerJourDejaDepose('${z.date}')" title="Ces espèces ont déjà été déposées (sans bordereau)" style="background:#f5f0f2;border:none;border-radius:6px;padding:2px 7px;font-size:11px;color:#555;cursor:pointer;">✔️ Déjà déposé</button>`}
               <span style="font-weight:600;font-size:13px;color:#993556;">${eur(z.aDeposer)}</span>
             </div>
           </div>`;
@@ -15151,13 +15189,21 @@ function renderDepotBanque() {
 window.toutCocherDepot = (cocher) => {
   STATE.depotSelection = {};
   if(cocher) {
-    const dejaDeposes = new Set((STATE.depotsBanque||[]).flatMap(d=>(d.jours||[]).map(j=>j.date)));
+    const dejaDeposes = new Set(depotsBanqueActifs().flatMap(d=>(d.jours||[]).map(j=>j.date)));
     (STATE.caisseJour||[]).filter(z => (z.aDeposer||0)>0.001 && !dejaDeposes.has(z.date)).forEach(z => STATE.depotSelection[z.date] = true);
   }
   STATE.depotMontantSaisi = null;
   render();
 };
 
+window.marquerJourDejaDepose = (dateStr) => {
+  const z = (STATE.caisseJour||[]).find(x=>x.date===dateStr); if(!z) return;
+  if(!confirm("Marquer le "+new Date(dateStr).toLocaleDateString("fr-FR")+" ("+eur(z.aDeposer)+") comme DÉJÀ déposé en banque ?\n\nLa journée sort de la liste. Aucun bordereau n'est imprimé et le report de pièces ne change pas.")) return;
+  STATE.depotsBanque = [...(STATE.depotsBanque||[]), {id:uid("DEP"), dateDepot:dateStr, jours:[{date:dateStr, montant:z.aDeposer}], total:z.aDeposer, totalJours:z.aDeposer, manuel:true, ancienReporte:STATE.soldeDepotReporte||0, nouveauReporte:STATE.soldeDepotReporte||0, creeLe:new Date().toISOString(), par:STATE.vendeur?.nom||""}];
+  if(STATE.depotSelection) delete STATE.depotSelection[dateStr];
+  STATE.depotMontantSaisi = null;
+  setState({depotsBanque:STATE.depotsBanque});
+};
 window.toggleDepotJour = (dateStr) => {
   STATE.depotSelection = STATE.depotSelection||{};
   STATE.depotSelection[dateStr] = !STATE.depotSelection[dateStr];
@@ -15204,7 +15250,7 @@ function genererEtOuvrirBordereau(dateDepot, jours, montantDepose, ancienReporte
 }
 
 window.imprimerBordereauDepot = () => {
-  const depotDeJour = (dateStr) => (STATE.depotsBanque||[]).find(d => (d.jours||[]).some(j=>j.date===dateStr));
+  const depotDeJour = (dateStr) => depotsBanqueActifs().find(d => (d.jours||[]).some(j=>j.date===dateStr));
   const jours = [...(STATE.caisseJour||[])]
     .filter(z => (z.aDeposer||0) > 0.001 && !depotDeJour(z.date) && STATE.depotSelection?.[z.date])
     .sort((a,b) => a.date.localeCompare(b.date))
@@ -15240,9 +15286,9 @@ window.reimprimerDepot = (depotId) => {
 window.supprimerDepotBanque = (depotId) => {
   if(!confirm("Supprimer ce dépôt ? Les journées concernées redeviendront disponibles pour un futur dépôt, et le report associé sera annulé.")) return;
   const d = (STATE.depotsBanque||[]).find(x=>x.id===depotId);
-  STATE.depotsBanque = (STATE.depotsBanque||[]).filter(d=>d.id!==depotId);
+  STATE.depotsBanque = (STATE.depotsBanque||[]).map(x=>x.id!==depotId ? x : {...x, supprime:true, supprimeLe:new Date().toISOString()});
   // Annuler l'effet de ce dépôt sur le report : revenir au report d'avant ce dépôt précis
-  if(d && d.ancienReporte!==undefined) STATE.soldeDepotReporte = d.ancienReporte;
+  if(d && !d.manuel && d.ancienReporte!==undefined) STATE.soldeDepotReporte = d.ancienReporte;
   setState({depotsBanque:STATE.depotsBanque, soldeDepotReporte:STATE.soldeDepotReporte});
 };
 
