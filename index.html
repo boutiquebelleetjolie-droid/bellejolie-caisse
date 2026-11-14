@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "14/11 · v174 (dépôt : plus de « peut-être vendu », restaurer un ticket annulé)";
+const APP_VERSION = "14/11 · v175 (alerte dépôt-vente / artisan à l'annulation d'un ticket)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -14014,12 +14014,25 @@ function ajusterZApresAnnulation(v, signe, motif) {
   return true;
 }
 
+// Alerte avant d'annuler un ticket qui contient du dépôt-vente ou de l'artisanat
+function alerteAnnulationSpeciale(v) {
+  const lignes = (v.panier||[]).filter(x=>!x.retour && !x.avoirId);
+  const prod = i => (STATE.products||[]).find(p=>p.id===(i.prodIdOriginal||i.id)) || {};
+  const depot = lignes.filter(i => i.depotVente || prod(i).depotVente);
+  const artisan = lignes.filter(i => !(i.depotVente || prod(i).depotVente) && estLigneArtisan(i, prod(i)));
+  let t = "";
+  if(depot.length) t += "⚠️ DÉPÔT-VENTE sur ce ticket :\n"+depot.map(i=>{ const p=prod(i); return "• "+i.name+((p.depotClientPrenom||p.depotClientNom)?" (dépôt de "+(p.depotClientPrenom||"")+" "+(p.depotClientNom||"")+")":""); }).join("\n")
+    +"\n→ En annulant, l'article repasse « en vente » et la déposante perd ce montant sur son bon d'achat.\n\n";
+  if(artisan.length) t += "⚠️ ARTISAN sur ce ticket :\n"+artisan.map(i=>{ const p=prod(i); const n=p.nomArtisan||i.nomArtisan; return "• "+i.name+(n?" ("+n+")":""); }).join("\n")
+    +"\n→ En annulant, la vente disparaît du relevé de l'artisan (commission et reversement).\n\n";
+  return t;
+}
 // ── ANNULATION COMPLÈTE : stock + fidélité + avoir ─────────────────────
 window.confirmerAnnulationComplete = (venteId) => {
   const v = STATE.ventes.find(x=>x.id===venteId);
   if(!v) return;
   const articles = v.panier.filter(x=>!x.retour).map(i=>`${i.qty}× ${i.name}`).join("\n");
-  if(!confirm(`ANNULATION COMPLÈTE\n\n${articles}\nTotal : ${eur(v.total)}\n\n✅ Articles remis en stock\n✅ Fidélité client ajustée\n✅ Avoir créé si CB/chèque\n\nConfirmer ?`)) return;
+  if(!confirm(`${alerteAnnulationSpeciale(v)}ANNULATION COMPLÈTE\n\n${articles}\nTotal : ${eur(v.total)}\n\n✅ Articles remis en stock\n✅ Fidélité client ajustée\n✅ Avoir créé si CB/chèque\n\nConfirmer ?`)) return;
   annulerVente(venteId, true);
 };
 
@@ -14028,7 +14041,7 @@ window.confirmerAnnulationSimple = (venteId) => {
   const v = STATE.ventes.find(x=>x.id===venteId);
   if(!v) return;
   const articles = v.panier.filter(x=>!x.retour).map(i=>`${i.qty}× ${i.name}`).join("\n");
-  if(!confirm(`ANNULATION COMPTABLE UNIQUEMENT\n\n${articles}\nTotal : ${eur(v.total)}\n\n❌ Stock non modifié\n❌ Fidélité client non modifiée\n❌ Pas d'avoir généré\n\nConfirmer ?`)) return;
+  if(!confirm(`${alerteAnnulationSpeciale(v)}ANNULATION COMPTABLE UNIQUEMENT\n\n${articles}\nTotal : ${eur(v.total)}\n\n❌ Stock non modifié\n❌ Fidélité client non modifiée\n❌ Pas d'avoir généré\n\nConfirmer ?`)) return;
   annulerVente(venteId, false);
 };
 
