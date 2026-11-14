@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "14/11 · v172 (adresses et horaires Chartres + Dreux sur les tickets)";
+const APP_VERSION = "14/11 · v173 (dépôt : retrouver une vente passée sous un autre article)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -2694,6 +2694,59 @@ function getVenteInfoArticleDepot(prodId) {
   return { vendu:false };
 }
 
+// Article de dépôt « encore en vente » alors qu'on l'a vu passer en caisse : on cherche pourquoi
+function motsNom(n) { return normStr(n||"").split(/[^a-z0-9]+/).filter(m=>m.length>2 && !["avec","pour","les","des","une"].includes(m)).map(m=>m.replace(/s$/,"")); }
+function indicesVenteDepot(p) {
+  if(!p) return null;
+  const debut = p.dateDepot ? new Date(p.dateDepot+"T00:00:00") : null;
+  const annules = [], cands = [];
+  const mp = motsNom(p.name);
+  (STATE.ventes||[]).forEach(v => {
+    if(v.test || (debut && new Date(v.date) < debut)) return;
+    (v.panier||[]).forEach((l,i) => {
+      if(l.retour || l.avoirId || l.isChequeCadeau) return;
+      const lid = l.prodIdOriginal || l.id;
+      if(lid===p.id) { if(v.annulee) annules.push(v); return; }
+      if(v.annulee) return;
+      const ml = motsNom(l.name), communs = mp.filter(m=>ml.includes(m)).length;
+      const memeNom = normStr(l.name)===normStr(p.name) || (mp.length && communs>=Math.min(2, mp.length));
+      const memePrix = Math.abs((l.price||0)-(p.price||0)) < 0.01;
+      const lienMort = !(STATE.products||[]).some(x=>x.id===lid);
+      if(memeNom || (memePrix && (communs>0 || l.depotVente || lienMort))) cands.push({v, i, l, score:(memeNom?2:0)+(memePrix?1:0)});
+    });
+  });
+  cands.sort((a,b)=>b.score-a.score || new Date(b.v.date)-new Date(a.v.date));
+  return {annules, cands: cands.slice(0,3)};
+}
+function htmlIndicesVenteDepot(p) {
+  const r = indicesVenteDepot(p); if(!r) return "";
+  const d = x => new Date(x).toLocaleDateString("fr-FR")+" "+new Date(x).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"});
+  let h = r.annules.map(v => `<div style="font-size:11px;color:#a32d2d;">⚠️ Passé en caisse le ${d(v.date)} (${v.vendeur?.nom||"—"}), mais ce ticket a été <strong>annulé</strong>${v.dateAnnulation?" le "+d(v.dateAnnulation):""}${v.annuleePar?" par "+v.annuleePar:""}. <a href="#" onclick="voirTicketVenteId('${v.id}');return false;">voir</a></div>`).join("");
+  h += r.cands.map(c => `<div style="font-size:11px;color:#854f0b;">🔎 Peut-être vendu sous un autre article : « ${c.l.name} » ${eur(c.l.price||0)} le ${d(c.v.date)} (${c.v.vendeur?.nom||"—"}) <a href="#" onclick="voirTicketVenteId('${c.v.id}');return false;">voir</a>
+      ${STATE.vendeur?.id==="V1"?`<button onclick="rattacherVenteDepot('${c.v.id}',${c.i},'${p.id}')" style="background:#faeeda;color:#854f0b;border:none;border-radius:6px;padding:1px 7px;cursor:pointer;font-size:11px;">🔗 C'était cet article</button>`:""}</div>`).join("");
+  if(!h && !(p.stock>0)) h = `<div style="font-size:11px;color:#888;">Stock à 0 mais aucun ticket trouvé sur cet appareil : la vente n'est peut-être pas encore arrivée ici → bouton « Vérifier ».</div>`;
+  return h;
+}
+window.rattacherVenteDepot = (venteId, idx, pid) => {
+  if(STATE.vendeur?.id!=="V1") { alert("Seule Élodie peut corriger un ticket."); return; }
+  const v = (STATE.ventes||[]).find(x=>x.id===venteId), art = (STATE.products||[]).find(x=>x.id===pid);
+  if(!v || !art || !v.panier?.[idx]) return;
+  const ligne = v.panier[idx], q0 = ligne.qty||1, idAncien = ligne.prodIdOriginal || ligne.id;
+  if(!confirm("Ticket du "+new Date(v.date).toLocaleDateString("fr-FR")+" ("+(v.vendeur?.nom||"")+") :\n\n✕ « "+ligne.name+" » → remis en stock (+"+q0+")\n✓ « "+art.name+" » (dépôt de "+(art.depotClientPrenom||"")+" "+(art.depotClientNom||"")+") → compté comme vendu\n\nPrix encaissé inchangé : "+eur((ligne.price||0)*q0)+". Le total du ticket ne change pas.")) return;
+  const nouvelle = {...ligne, id: art.id, prodIdOriginal: art.id, name: art.name, ref: art.ref, category: art.category, prixAchat: art.prixAchat||0,
+    artisanat: !!art.artisanat, nomArtisan: art.nomArtisan||"", depotVente: !!art.depotVente, depotLotId: art.depotLotId||undefined,
+    corrigeDe: {id: idAncien, name: ligne.name, taille: ligne.taille||"", le: new Date().toISOString(), par: STATE.vendeur?.nom||""}};
+  const panier = v.panier.map((l,i)=> i===idx ? nouvelle : l);
+  STATE.ventes = STATE.ventes.map(x=>x.id===v.id ? {...v, panier, modifLe: new Date().toISOString()} : x);
+  lsSet("bj_ventes", STATE.ventes);
+  let prods = STATE.products;
+  if(prods.some(p=>p.id===idAncien)) prods = ajusterStock(prods, idAncien, +q0, ligne.taille||null, ligne.couleur||null);
+  prods = prods.map(p => p.id===art.id ? {...p, stock: Math.max(0,(p.stock||0)-q0)} : p);
+  STATE.products = prods; lsSet("bj_products", STATE.products);
+  render();
+  alert("✅ « "+art.name+" » est maintenant compté comme vendu (ticket du "+new Date(v.date).toLocaleDateString("fr-FR")+").");
+};
+
 window.encaisserArticleDepot = (prodId) => {
   const p = STATE.products.find(x=>x.id===prodId); if(!p) return;
   if(!(p.stock>0)) { STATE.products = STATE.products.map(x=>x.id===prodId?{...x, stock:1}:x); lsSet("bj_products", STATE.products); }
@@ -2938,7 +2991,7 @@ function renderDepotVente() {
             </div>`;
           }
           return `<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:4px 0;">
-            <span>🕐 ${a.p.name}${marqueDepot(a.p)?" <i style='color:#888;'>("+marqueDepot(a.p)+")</i>":""} — ${eur(a.p.price)}</span>
+            <span>🕐 ${a.p.name}${marqueDepot(a.p)?" <i style='color:#888;'>("+marqueDepot(a.p)+")</i>":""} — ${eur(a.p.price)}${htmlIndicesVenteDepot(a.p)}</span>
             <span style="display:flex;gap:4px;">
               <button onclick="encaisserArticleDepot('${a.pid}')" title="Mettre cet article dans le panier (si le code-barres ne passe pas)" style="background:#993556;color:#fff;border:none;border-radius:6px;padding:3px 8px;cursor:pointer;font-size:11px;">🛒 Encaisser</button>
               <button onclick="renouvelerArticleDepot('${a.pid}')" style="background:#eef4fd;color:#185fa5;border:none;border-radius:6px;padding:3px 8px;cursor:pointer;font-size:11px;">🔄 Renouveler</button>
