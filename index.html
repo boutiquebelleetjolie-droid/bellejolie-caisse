@@ -71,6 +71,15 @@ const LOGO_TICKET_B64 = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAIwAAACMC
 const BOUTIQUE_ADRESSE = "12 rue du Bois Merrain, 28000 Chartres";
 const BOUTIQUE_TVA = "FR82107298093";
 const BOUTIQUE_HORAIRES = "Lun : 13h30–18h30 | Mar–Sam : 10h00–18h30";
+// Les deux boutiques, affichées sur tous les tickets (Chartres et Dreux)
+const ADRESSES_BOUTIQUES = [
+  {ville:"Chartres", adresse:"12 rue du Bois Merrain, 28000 Chartres", horaires:"Lun : 13h30–18h30 | Mar–Sam : 10h00–18h30"},
+  {ville:"Dreux", adresse:"31 place Rotrou, 28100 Dreux", horaires:"Mar & Jeu : 10h00–13h00 / 14h00–18h30 | Mer, Ven, Sam : 10h00–18h30"},
+];
+function htmlAdressesBoutiques(tA, tH, couleurA) {
+  const avantOuv = new Date() < new Date("2026-11-25T00:00:00");
+  return ADRESSES_BOUTIQUES.map(b => `<div style="font-size:${tA}px;color:${couleurA||"#555"};margin:4px 0 0;"><strong>📍 ${b.ville}</strong> — ${b.adresse.replace(/, \d{5} .*/,"")}${b.ville==="Dreux"&&avantOuv?" <em>(ouverture le 25/11)</em>":""}</div><div style="font-size:${tH}px;color:#888;margin:1px 0 2px;">🕐 ${b.horaires}</div>`).join("");
+}
 const BOUTIQUE_FB = "https://www.facebook.com/share/19JRJPEMJZ/";
 const BOUTIQUE_IG = "https://www.instagram.com/boutiquebellejolie?igsh=MW9zcWE1NDU4dDdwZQ==";
 const BOUTIQUE_TT = "https://www.tiktok.com/@bellejolie28";
@@ -95,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "13/11 · v171 (rappel : un mail par cliente, dépôts regroupés)";
+const APP_VERSION = "14/11 · v172 (adresses et horaires Chartres + Dreux sur les tickets)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -5778,7 +5787,7 @@ window.imprimerViaUSB = async () => {
     push([0x1D,0x21,0x00]);     // taille de caractère normale (largeur/hauteur x1, pas de mode condensé)
     push([0x1B,0x61,0x01]);     // centré
     pushText("Belle&Jolie\n");
-    BOUTIQUE_ADRESSE.split(",").forEach(ligneAdr => pushText(ligneAdr.trim()+"\n"));
+    ADRESSES_BOUTIQUES.forEach(b => pushText(b.ville+" - "+b.adresse.replace(/, \d{5} .*/,"")+"\n"));
     push([0x1B,0x61,0x00]);     // gauche
     pushText("--------------------------------\n");
     pushText(new Date(v.date).toLocaleString("fr-FR")+"\n");
@@ -5795,7 +5804,9 @@ window.imprimerViaUSB = async () => {
     push([0x1B,0x45,0x00]);     // gras OFF
     if(v.payMode) pushText("Règlement : "+(mLbt[v.payMode]||v.payMode)+"\n");
     pushText("\nMerci de votre visite !\n");
-    pushText("Belle&Jolie\n\n\n\n");
+    pushText("Belle&Jolie\n");
+    ADRESSES_BOUTIQUES.forEach(b => { pushText(b.ville+" :\n"); b.horaires.split(" | ").forEach(h => pushText("  "+h+"\n")); });
+    pushText("\n\n\n");
 
     const data = new Uint8Array(bytes);
     // Envoi en petits paquets, avec réessai automatique si un paquet échoue
@@ -5989,7 +6000,7 @@ window.imprimerTicketCadeau = () => {
         return `<div class="ligne">${a.qty||1}× ${a.name}${infos?" ("+infos+")":""}</div>`;
       }).join("")}
       <div style="border-top:1px solid #333;margin-top:10px;"></div>
-      <div class="center" style="font-size:10px;color:#888;margin-top:14px;">📍 ${BOUTIQUE_ADRESSE}<br>🕐 ${BOUTIQUE_HORAIRES}</div>
+      <div class="center" style="margin-top:14px;">${htmlAdressesBoutiques(10,9,"#666")}</div>
       <div class="center" style="font-size:10px;color:#888;margin-top:10px;">Merci pour votre confiance !<br>Belle&Jolie vous dit à bientôt ✿</div>
       <div class="center" style="font-size:9px;color:#aaa;margin-top:10px;">Article échangeable ${delaiEchange(v?.date)} sur présentation de ce ticket.<br>Non porté, non lavé, sans odeur, étiquette intacte.</div>
     </body></html>
@@ -6362,8 +6373,7 @@ function renderTicketModal() {
           <div style="border-top:1px dashed #ccc;margin:6px 0;"></div>
           <div style="text-align:center;">
             <img src="${LOGO_TICKET_B64}" width="70" height="70" style="border-radius:50%;margin:4px 0;" alt="Belle&Jolie"/>
-            <div style="font-size:10px;color:#555;margin:3px 0;">📍 ${BOUTIQUE_ADRESSE}</div>
-            <div style="font-size:9px;color:#888;margin:2px 0;">🕐 ${BOUTIQUE_HORAIRES}</div>
+            ${htmlAdressesBoutiques(10,9)}
             <div style="font-size:10px;color:#888;margin:6px 0 4px;">Retrouvez-nous sur :</div>
             <div style="display:flex;justify-content:center;gap:12px;margin-bottom:6px;">
               <div style="text-align:center;">
@@ -15624,8 +15634,7 @@ function buildTicketEmailHTML(v) {
         </tr>
         <tr>
           <td style="text-align:center;padding-bottom:8px;">
-            <div style="font-size:12px;color:#555;font-weight:500;">📍 ${BOUTIQUE_ADRESSE}</div>
-            <div style="font-size:11px;color:#888;margin-top:4px;">🕐 ${BOUTIQUE_HORAIRES}</div>
+            ${htmlAdressesBoutiques(12,11)}
           </td>
         </tr>
         <tr>
@@ -20614,8 +20623,7 @@ function buildTicketHTML(v) {
       <div class="footer">Merci de votre confiance !</div>
       <div class="footer" style="text-align:center;">
         <img src="${LOGO_TICKET_B64}" width="60" height="60" style="border-radius:50%;margin:4px auto;" alt="Belle&Jolie"/>
-        <div style="font-size:9px;color:#555;margin:2px 0;">${BOUTIQUE_ADRESSE}</div>
-        <div style="font-size:8px;color:#888;margin:2px 0;">${BOUTIQUE_HORAIRES}</div>
+        ${htmlAdressesBoutiques(9,8)}
         <div style="display:flex;justify-content:center;gap:8px;margin:6px 0;">
           <div style="text-align:center;">
             <div style="position:relative;width:50px;height:50px;display:inline-block;">
