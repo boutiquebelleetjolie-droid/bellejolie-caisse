@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "14/11 · v178 (suivi des remises d'espèces)";
+const APP_VERSION = "14/11 · v179 (dépense en espèces en cours de journée)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -12545,11 +12545,11 @@ function sortiesEspecesDuJour(dateStr) { return (STATE.sortiesEspeces||[]).filte
 function totalSortiesJour(dateStr) { return Math.round(sortiesEspecesDuJour(dateStr).reduce((s,x)=>s+(x.montant||0),0)*100)/100; }
 window.ajouterSortieEspeces = (dateStr) => {
   if(STATE.vendeur?.id!=="V1") { alert("Réservé à la gérante."); return; }
-  const m = prompt("Montant retiré de la caisse en espèces (€) :", "80");
+  const m = prompt("Montant retiré de la caisse en espèces (€) :", "");
   if(m===null) return;
   const montant = Math.round(parseFloat(String(m).replace(",","."))*100)/100;
   if(!(montant>0)) { alert("Montant invalide."); return; }
-  const motif = prompt("Motif (apparaîtra sur le ticket Z) :", "Remboursement du fond de caisse apporté par Élodie (fonds personnels)");
+  const motif = prompt("Motif (apparaîtra sur le ticket Z) — ex. achat fournitures, timbres, ménage :", "");
   if(motif===null) return;
   const sortie = {id: uid("SORT"), date: dateStr, montant, motif: motif.trim()||"Sortie d'espèces", par: STATE.vendeur?.nom||"", le: new Date().toISOString()};
   STATE.sortiesEspeces = [...(STATE.sortiesEspeces||[]), sortie];
@@ -17042,7 +17042,7 @@ function renderCaisseJour() {
           `<div style="background:#fff8e1;border-radius:8px;padding:8px 14px;font-size:13px;color:#c07020;font-weight:500;">🔴 Fermé le dimanche — <button onclick="if(confirm('Ouvrir exceptionnellement ce dimanche ?')){STATE.ouvertures={...(STATE.ouvertures||{}),'${zDateStr}':{heure:new Date().toISOString(),totalOuv:0,ecart:0,valide:true}};setState({ouvertures:STATE.ouvertures});}" style="background:none;border:none;color:#993556;cursor:pointer;text-decoration:underline;font-size:13px;">Ouverture exceptionnelle</button></div>`
         : !caisseOuverte&&isToday?
           `<div style="background:#fff0f3;border-radius:8px;padding:8px 14px;font-size:13px;color:#993556;font-weight:500;">⚠️ Caisse non ouverte ce matin — validez l'ouverture avant de clôturer</div>`
-        : `<button onclick="cloturerCaisse('${zDateStr}')" style="background:${isToday?'#993556':'#c07020'};color:#fff;border:none;border-radius:9px;padding:9px 18px;cursor:pointer;font-weight:500;">
+        : `${STATE.vendeur.id==="V1"?`<button onclick="ajouterSortieEspeces('${zDateStr}')" title="Dépense payée avec les espèces de la caisse, en cours de journée" style="background:#fff;border:1px solid #e8a0a0;color:#a32d2d;border-radius:9px;padding:9px 14px;cursor:pointer;font-weight:500;">➖ Dépense en espèces${totalSortiesJour(zDateStr)?" ("+eur(totalSortiesJour(zDateStr))+")":""}</button>`:""}<button onclick="cloturerCaisse('${zDateStr}')" style="background:${isToday?'#993556':'#c07020'};color:#fff;border:none;border-radius:9px;padding:9px 18px;cursor:pointer;font-weight:500;">
             🔒 ${isToday?'Clôturer la caisse':'Clôturer ce jour'}
           </button>`}
       </div>
