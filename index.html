@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "15/11 · v181 (TVA du dépôt-vente et des artisans sur la commission seulement)";
+const APP_VERSION = "15/11 · v182 (TVA : seul le dépôt-vente est sur la marge ; artisans sur le prix entier)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -5495,7 +5495,9 @@ function ventilationTVA(ventes) {
   });
   const r2 = x => Math.round(x*100)/100;
   const caTTC = (ventes||[]).filter(v=>v && !v.test && !v.annulee).reduce((s,v)=>s+(v.total||0),0);
-  const partReversee = Math.max(0, (depotTTC-depotCom) + (artTTC-artCom));
+  // Artisans : ils facturent la boutique (achat-revente) → TVA sur le prix de vente entier ; seule la TVA de
+  // leur facture (si elles en ont) est déductible, via les dépenses. Le dépôt-vente seul sort de la base.
+  const partReversee = Math.max(0, depotTTC-depotCom);
   const baseTTC = caTTC - partReversee;
   const tvaCol = r2(baseTTC - baseTTC/1.2);
   return {caTTC: r2(caTTC), depotTTC: r2(depotTTC), depotCom: r2(depotCom), artTTC: r2(artTTC), artCom: r2(artCom),
@@ -5505,10 +5507,9 @@ function ventilationTVA(ventes) {
 function ticketADepot(v) { const pm = {}; (STATE.products||[]).forEach(p=>pm[p.id]=p); return (v?.panier||[]).some(i => !i.retour && (i.depotVente || pm[i.prodIdOriginal||i.id]?.depotVente)); }
 function htmlMentionMarge(v, taille) { return ticketADepot(v) ? `<div style="font-size:${taille||9}px;color:#666;margin:4px 0;text-align:center;font-style:italic;">Articles de dépôt-vente : Régime particulier – Biens d'occasion (TVA sur la marge, non récupérable)</div>` : ""; }
 function lignesTVAZ(z, tdL, tdR) {
-  if(!z || !(z.depotTTC || z.artTTC)) return "";
+  if(!z || !z.depotTTC) return "";
   const L = (a,b) => `<tr><td${tdL||""}>${a}</td><td${tdR||""}>${b}</td></tr>`;
   return (z.depotTTC?L("dont dépôt-vente (régime de la marge)", eur(z.depotTTC)+" · commission "+eur(z.depotCom)):"")
-    + (z.artTTC?L("dont artisans (pour leur compte)", eur(z.artTTC)+" · commission "+eur(z.artCom)):"")
     + L("Base HT imposable", eur(z.baseHT));
 }
 function calculerPrixPayeReel(venteOrigine, ligneOrigine) {
@@ -10572,7 +10573,7 @@ function lignesZMensuel(z) {
     L("Avoirs émis (retours)", z.avoirsRetour.nb+" · "+eur(z.avoirsRetour.montant)),
     L("Bons offerts émis (bienvenue, anniversaire…)", z.bons.nb+" · "+eur(z.bons.montant)),
     T("TVA (CA3)"),
-    ...(z.tvaV && (z.tvaV.depotTTC||z.tvaV.artTTC) ? [L("Ventes dépôt-vente (régime de la marge)", eur(z.tvaV.depotTTC)+" · commission "+eur(z.tvaV.depotCom)), L("Ventes artisans (pour leur compte)", eur(z.tvaV.artTTC)+" · commission "+eur(z.tvaV.artCom)), L("Part reversée (hors base TVA)", eur(z.tvaV.partReversee))] : []),
+    ...(z.tvaV && z.tvaV.depotTTC ? [L("Ventes dépôt-vente (régime de la marge)", eur(z.tvaV.depotTTC)+" · commission "+eur(z.tvaV.depotCom)), L("Part reversée aux déposantes (hors base TVA)", eur(z.tvaV.partReversee))] : []),
     L("Base HT imposable (ligne A)", eur(z.tvaV ? z.tvaV.baseHT : z.caHT)), L("TVA collectée (ligne B1)", eur(z.tvaCol)),
     L("TVA déductible sur achats (ligne 20)", eur(z.tvaDeduct)), L("TVA nette à payer (ligne 28)", eur(z.tvaNette), true),
     T("PÉRIODE"),
@@ -15412,8 +15413,7 @@ window.imprimerCA3 = (month,year) => {
     <tr><td class="section" colspan="2">OPÉRATIONS IMPOSABLES</td></tr>
     <tr><td>Chiffre d'affaires TTC</td><td class="right">${eur(caTTC)}</td></tr>
     ${tv.depotTTC?`<tr><td>dont dépôt-vente — régime de la marge (commission ${eur(tv.depotCom)})</td><td class="right">${eur(tv.depotTTC)}</td></tr>`:""}
-    ${tv.artTTC?`<tr><td>dont artisans — vendus pour leur compte (commission ${eur(tv.artCom)})</td><td class="right">${eur(tv.artTTC)}</td></tr>`:""}
-    ${tv.partReversee?`<tr><td>Part reversée aux déposantes / artisans (hors base TVA)</td><td class="right">−${eur(tv.partReversee)}</td></tr>`:""}
+    ${tv.partReversee?`<tr><td>Part reversée aux déposantes (hors base TVA)</td><td class="right">−${eur(tv.partReversee)}</td></tr>`:""}
     <tr><td>Base imposable HT (Ligne A)</td><td class="right">${eur(caHT)}</td></tr>
     <tr><td>TVA collectée 20% (Ligne B1)</td><td class="right">${eur(tvaCol)}</td></tr>
     <tr><td class="section" colspan="2">TVA DÉDUCTIBLE</td></tr>
