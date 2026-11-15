@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "15/11 · v187 (Z mensuel : avoirs uniquement, plus de ventes annulées)";
+const APP_VERSION = "15/11 · v188 (Z mensuel : liste des jours sans Z)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -10565,7 +10565,8 @@ function calculerZMensuel(mois, annee) {
     bons: {nb: bons.length, montant: r2(bons.reduce((s,a)=>s+Math.abs(a.montant||0),0))},
     artisans: {ca: r2(artisansCA), commission: r2(artisansCom), reverser: r2(artisansCA-artisansCom), taux},
     chqCadeauxVendus: r2(chqCadeauxVendus), retouchesCA: r2(retouchesCA), sacsCA: r2(sacsCA),
-    jours, cumulAnnee, nbJoursOuverts: jours.length, nbZ: zClotures.length, ecartCaisse,
+    jours, cumulAnnee, nbJoursOuverts: jours.length, nbZ: zClotures.length,
+    joursSansZ: jours.map(j=>j.date).filter(d => !zClotures.some(z=>z.date===d)), ecartCaisse,
   };
 }
 function lignesZMensuel(z) {
@@ -10597,7 +10598,8 @@ function lignesZMensuel(z) {
     L("Base HT imposable (ligne A)", eur(z.tvaV ? z.tvaV.baseHT : z.caHT)), L("TVA collectée (ligne B1)", eur(z.tvaCol)),
     L("TVA déductible sur achats (ligne 20)", eur(z.tvaDeduct)), L("TVA nette à payer (ligne 28)", eur(z.tvaNette), true),
     T("PÉRIODE"),
-    L("Jours avec ventes / Z clôturés", z.nbJoursOuverts+" / "+z.nbZ), L("CA cumulé depuis le 1er janvier", eur(z.cumulAnnee), true),
+    L("Jours avec ventes / Z clôturés", z.nbJoursOuverts+" / "+z.nbZ),
+    ...((z.joursSansZ||[]).length ? [L("⚠️ Jours avec ventes mais sans Z", z.joursSansZ.map(d=>new Date(d+"T12:00:00").toLocaleDateString("fr-FR",{weekday:"short",day:"numeric",month:"numeric"})).join(", "))] : []), L("CA cumulé depuis le 1er janvier", eur(z.cumulAnnee), true),
   ];
 }
 function renderZMensuel(mois, annee) {
