@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "15/11 · v182 (TVA : seul le dépôt-vente est sur la marge ; artisans sur le prix entier)";
+const APP_VERSION = "15/11 · v183 (artisans en mandat dès le 16/11 : TVA sur la commission, mention ticket, facture de commission)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -5474,6 +5474,10 @@ window.setRemiseArtVal = (id, val) => {
 // remise article ET de la part proportionnelle d'une remise globale/fidélité/quantité sur toute la vente.
 // ── TVA : dépôt-vente (régime de la marge, biens d'occasion) et artisans (vente au nom et pour le compte) ──
 // La TVA ne porte que sur la commission de la boutique ; la part reversée (déposante / artisan) sort de la base.
+// Artisans en MANDAT à partir de cette date : vente au nom et pour le compte de l'artisan,
+// la boutique ne facture (et ne paie la TVA) que sur sa commission. Avant : achat-revente (TVA sur le prix entier).
+const ARTISANS_MANDAT_DEPUIS = "2026-11-16";
+function venteEnMandat(v) { return !!v && dateLocaleStr(new Date(v.date)) >= ARTISANS_MANDAT_DEPUIS; }
 function ventilationTVA(ventes) {
   const prodMap = {}; (STATE.products||[]).forEach(p => prodMap[p.id] = p);
   const txA = STATE.commissionArtisan ?? 20;
@@ -5490,14 +5494,14 @@ function ventilationTVA(ventes) {
       const net = q - r; if(net<=0) return;
       const m = calculerPrixPayeReel(v, i) * net;
       if(dep) { depotTTC += m; depotCom += m * DEPOT_COMMISSION_PCT / 100; }
-      else { artTTC += m; artCom += commissionLigneArtisan(p, net, m, txA, v.date, i); }
+      else if(venteEnMandat(v)) { artTTC += m; artCom += commissionLigneArtisan(p, net, m, txA, v.date, i); }
     });
   });
   const r2 = x => Math.round(x*100)/100;
   const caTTC = (ventes||[]).filter(v=>v && !v.test && !v.annulee).reduce((s,v)=>s+(v.total||0),0);
   // Artisans : ils facturent la boutique (achat-revente) → TVA sur le prix de vente entier ; seule la TVA de
   // leur facture (si elles en ont) est déductible, via les dépenses. Le dépôt-vente seul sort de la base.
-  const partReversee = Math.max(0, depotTTC-depotCom);
+  const partReversee = Math.max(0, (depotTTC-depotCom) + (artTTC-artCom));
   const baseTTC = caTTC - partReversee;
   const tvaCol = r2(baseTTC - baseTTC/1.2);
   return {caTTC: r2(caTTC), depotTTC: r2(depotTTC), depotCom: r2(depotCom), artTTC: r2(artTTC), artCom: r2(artCom),
@@ -5505,11 +5509,24 @@ function ventilationTVA(ventes) {
 }
 // Mention légale sur le ticket quand il contient un article de dépôt-vente (biens d'occasion)
 function ticketADepot(v) { const pm = {}; (STATE.products||[]).forEach(p=>pm[p.id]=p); return (v?.panier||[]).some(i => !i.retour && (i.depotVente || pm[i.prodIdOriginal||i.id]?.depotVente)); }
-function htmlMentionMarge(v, taille) { return ticketADepot(v) ? `<div style="font-size:${taille||9}px;color:#666;margin:4px 0;text-align:center;font-style:italic;">Articles de dépôt-vente : Régime particulier – Biens d'occasion (TVA sur la marge, non récupérable)</div>` : ""; }
+function artisansMandatTicket(v) {
+  if(!venteEnMandat(v)) return [];
+  const pm = {}; (STATE.products||[]).forEach(p=>pm[p.id]=p);
+  const out = {};
+  (v?.panier||[]).forEach(i => { if(i.retour || i.avoirId) return; const p = pm[i.prodIdOriginal||i.id] || {};
+    if(!(i.depotVente||p.depotVente) && estLigneArtisan(i, p)) { const n = nomArtisanCanon(p.nomArtisan||i.nomArtisan) || "l'artisan"; (out[n] = out[n]||[]).push(i.name); } });
+  return Object.entries(out);
+}
+function htmlMentionMarge(v, taille) {
+  const st = `font-size:${taille||9}px;color:#666;margin:4px 0;text-align:center;font-style:italic;`;
+  return (ticketADepot(v) ? `<div style="${st}">Articles de dépôt-vente : Régime particulier – Biens d'occasion (TVA sur la marge, non récupérable)</div>` : "")
+    + artisansMandatTicket(v).map(([n, arts]) => `<div style="${st}">${arts.join(", ")} : vendu${arts.length>1?"s":""} au nom et pour le compte de ${n}</div>`).join("");
+}
 function lignesTVAZ(z, tdL, tdR) {
-  if(!z || !z.depotTTC) return "";
+  if(!z || !(z.depotTTC || z.artTTC)) return "";
   const L = (a,b) => `<tr><td${tdL||""}>${a}</td><td${tdR||""}>${b}</td></tr>`;
   return (z.depotTTC?L("dont dépôt-vente (régime de la marge)", eur(z.depotTTC)+" · commission "+eur(z.depotCom)):"")
+    + (z.artTTC?L("dont artisans (mandat, pour leur compte)", eur(z.artTTC)+" · commission "+eur(z.artCom)):"")
     + L("Base HT imposable", eur(z.baseHT));
 }
 function calculerPrixPayeReel(venteOrigine, ligneOrigine) {
@@ -6004,6 +6021,7 @@ window.imprimerViaUSB = async () => {
     push([0x1B,0x45,0x00]);     // gras OFF
     if(v.payMode) pushText("Règlement : "+(mLbt[v.payMode]||v.payMode)+"\n");
     if(ticketADepot(v)) pushText("Depot-vente : Regime particulier\n- Biens d'occasion\n");
+    artisansMandatTicket(v).forEach(([n]) => pushText("Vendu au nom et pour le compte\nde "+n+"\n"));
     pushText("\nMerci de votre visite !\n");
     pushText("Belle&Jolie\n");
     ADRESSES_BOUTIQUES.forEach(b => { pushText(b.ville+" :\n"); b.horaires.split(" | ").forEach(h => pushText("  "+h+"\n")); });
@@ -10573,7 +10591,9 @@ function lignesZMensuel(z) {
     L("Avoirs émis (retours)", z.avoirsRetour.nb+" · "+eur(z.avoirsRetour.montant)),
     L("Bons offerts émis (bienvenue, anniversaire…)", z.bons.nb+" · "+eur(z.bons.montant)),
     T("TVA (CA3)"),
-    ...(z.tvaV && z.tvaV.depotTTC ? [L("Ventes dépôt-vente (régime de la marge)", eur(z.tvaV.depotTTC)+" · commission "+eur(z.tvaV.depotCom)), L("Part reversée aux déposantes (hors base TVA)", eur(z.tvaV.partReversee))] : []),
+    ...(z.tvaV && z.tvaV.depotTTC ? [L("Ventes dépôt-vente (régime de la marge)", eur(z.tvaV.depotTTC)+" · commission "+eur(z.tvaV.depotCom))] : []),
+    ...(z.tvaV && z.tvaV.artTTC ? [L("Ventes artisans en mandat (pour leur compte)", eur(z.tvaV.artTTC)+" · commission "+eur(z.tvaV.artCom))] : []),
+    ...(z.tvaV && z.tvaV.partReversee ? [L("Part reversée (hors base TVA)", eur(z.tvaV.partReversee))] : []),
     L("Base HT imposable (ligne A)", eur(z.tvaV ? z.tvaV.baseHT : z.caHT)), L("TVA collectée (ligne B1)", eur(z.tvaCol)),
     L("TVA déductible sur achats (ligne 20)", eur(z.tvaDeduct)), L("TVA nette à payer (ligne 28)", eur(z.tvaNette), true),
     T("PÉRIODE"),
@@ -13041,7 +13061,7 @@ window.imprimerReleveArtisan = (artisan) => {
     body{font-family:Arial,sans-serif;padding:24px;max-width:640px;margin:auto;color:#111}h1{color:#993556;font-size:19px;margin:0}
     table{width:100%;border-collapse:collapse;margin-top:12px;font-size:13px}td,th{padding:6px 8px;border-bottom:1px solid #eee;text-align:left}.r{text-align:right}
     .tot td{font-weight:700;background:#fbeaf0}</style></head><body>
-    <h1>Belle&amp;Jolie — Relevé de ventes</h1><p><strong>${artisan}</strong><br>${libelle}</p>
+    <h1>Belle&amp;Jolie — Relevé de ventes</h1><p><strong>${artisan}</strong><br>${libelle}${fin>=ARTISANS_MANDAT_DEPUIS?"<br><em>Ventes réalisées au nom et pour le compte de l'artisan (mandat de vente).</em>":""}</p>
     <table><tr><th>Date</th><th>Article</th><th class="r">Qté</th><th class="r">Montant TTC</th></tr>
     ${lignes.map(l=>`<tr><td>${new Date(l.date).toLocaleDateString("fr-FR")}</td><td>${l.article}${l.retour?" (retour)":""}</td><td class="r">${l.qty}</td><td class="r">${eur(l.montant)}</td></tr>`).join("")||`<tr><td colspan="4">Aucune vente sur la période</td></tr>`}
     <tr class="tot"><td colspan="3">Total des ventes</td><td class="r">${eur(ca)}</td></tr>
@@ -13050,6 +13070,48 @@ window.imprimerReleveArtisan = (artisan) => {
     <p style="margin-top:40px;font-size:12px;color:#555;">Signature de l'artisan : ______________________</p>
     <script>window.onload=()=>window.print()<\/script></body></html>`;
   const w = window.open("","_blank","width=720,height=900"); if(w) { w.document.write(html); w.document.close(); }
+};
+// Facture de commission mensuelle (mandat) : la boutique facture sa commission à l'artisan, TVA 20 %
+function infosLegalesBoutique(demander) {
+  let inf = {}; try { inf = JSON.parse(localStorage.getItem("bj_infos_legales")||"{}"); } catch{}
+  if(demander && !inf.siret) {
+    const siret = prompt("SIRET de Belle&Jolie (14 chiffres, figurera sur les factures) :", ""); if(siret===null) return null;
+    const tva = prompt("N° de TVA intracommunautaire (FR…) :", ""); if(tva===null) return null;
+    const siege = prompt("Adresse du siège social :", "4 Grande Rue de Montlouet, 28320 Gallardon"); if(siege===null) return null;
+    inf = {siret: siret.trim(), tva: tva.trim(), siege: siege.trim()};
+    try { localStorage.setItem("bj_infos_legales", JSON.stringify(inf)); } catch{}
+  }
+  return inf;
+}
+window.imprimerFactureCommission = (artisan) => {
+  const {debut, fin, libelle} = periodeArtisans();
+  const inf = infosLegalesBoutique(true); if(!inf) return;
+  const lignes = ventesArtisans(debut, fin).filter(l=>l.artisan===artisan && dateLocaleStr(new Date(l.date))>=ARTISANS_MANDAT_DEPUIS);
+  if(!lignes.length) { alert("Aucune vente en mandat (à partir du "+new Date(ARTISANS_MANDAT_DEPUIS+"T12:00:00").toLocaleDateString("fr-FR")+") pour "+artisan+" sur cette période."); return; }
+  const ca = Math.round(lignes.reduce((s,l)=>s+l.montant,0)*100)/100;
+  const comTTC = Math.round(lignes.reduce((s,l)=>s+(l.com||0),0)*100)/100;
+  const comHT = Math.round(comTTC/1.2*100)/100, tva = Math.round((comTTC-comHT)*100)/100;
+  const slug = normStr(artisan).replace(/[^a-z0-9]+/g,"").toUpperCase().slice(0,12) || "ARTISAN";
+  const num = "FC-"+debut.slice(0,7).replace("-","")+"-"+slug;
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Facture ${num}</title><style>
+    body{font-family:Arial,sans-serif;padding:28px;max-width:680px;margin:auto;color:#111;font-size:13px}h1{color:#993556;font-size:20px;margin:0 0 4px}
+    .flex{display:flex;justify-content:space-between;gap:20px;margin:16px 0}.box{border:1px solid #eee;border-radius:8px;padding:10px 12px;flex:1}
+    table{width:100%;border-collapse:collapse;margin-top:12px}td,th{padding:7px 8px;border-bottom:1px solid #eee;text-align:left}.r{text-align:right}.tot td{font-weight:700;background:#fbeaf0}
+    .small{font-size:11px;color:#666}</style></head><body>
+    <h1>FACTURE DE COMMISSION</h1><div>N° <strong>${num}</strong> · Date : ${new Date(fin+"T12:00:00").toLocaleDateString("fr-FR")}</div>
+    <div class="flex"><div class="box"><strong>Belle&amp;Jolie</strong> — SASU<br>${inf.siege||""}<br>SIRET : ${inf.siret||"—"}<br>TVA : ${inf.tva||"—"}<br>boutiquebelleetjolie@gmail.com</div>
+      <div class="box"><strong>${artisan}</strong><br>Adresse : ____________________<br>SIRET : ____________________</div></div>
+    <p>Commission sur les ventes réalisées <strong>au nom et pour le compte de ${artisan}</strong> (mandat de vente) — période : ${libelle}.</p>
+    <table><tr><th>Désignation</th><th class="r">Montant</th></tr>
+      <tr><td>Ventes encaissées pour le compte de l'artisan (${lignes.reduce((s,l)=>s+l.qty,0)} article(s), pour mémoire)</td><td class="r">${eur(ca)}</td></tr>
+      <tr><td>Commission HT</td><td class="r">${eur(comHT)}</td></tr>
+      <tr><td>TVA 20 %</td><td class="r">${eur(tva)}</td></tr>
+      <tr class="tot"><td>Commission TTC (retenue sur les ventes)</td><td class="r">${eur(comTTC)}</td></tr>
+      <tr class="tot"><td>Net reversé à l'artisan</td><td class="r">${eur(ca-comTTC)}</td></tr></table>
+    <p class="small">Commission réglée par compensation avec les sommes encaissées pour le compte de l'artisan. Détail des ventes : voir le relevé joint.<br>
+    Pas d'escompte pour paiement anticipé. En cas de retard de paiement : pénalités au taux de 3 fois le taux d'intérêt légal et indemnité forfaitaire de 40 € pour frais de recouvrement.</p>
+    <script>window.onload=()=>window.print()<\/script></body></html>`;
+  const w = window.open("","_blank","width=760,height=900"); if(w) { w.document.write(html); w.document.close(); }
 };
 function renderBilanArtisans() {
   if(STATE.vendeur.id!=="V1") return "";
@@ -13091,7 +13153,7 @@ function renderBilanArtisans() {
       <tbody>${artisans.map(([n,a])=>`<tr style="border-bottom:0.5px solid #f0ebee;">
         <td style="padding:6px;font-weight:500;cursor:pointer;" onclick="STATE._artOuvert=STATE._artOuvert===this.dataset.a?null:this.dataset.a;render()" data-a="${n.replace(/"/g,"&quot;")}">${STATE._artOuvert===n?"▼":"▶"} ${n}</td><td style="padding:6px;text-align:right;">${a.qty}</td><td style="padding:6px;text-align:right;">${eur(a.ca)}</td>
         <td style="padding:6px;text-align:right;color:#3b6d11;">${eur(a.com||0)}</td><td style="padding:6px;text-align:right;color:#993556;font-weight:600;">${eur(a.ca-(a.com||0))}</td>
-        <td style="padding:6px;text-align:right;"><button onclick="imprimerReleveArtisan(this.dataset.a)" data-a="${n.replace(/"/g,"&quot;")}" style="background:none;border:1px solid #d9c2ee;color:#6a3d9a;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">🖨️ Relevé</button></td></tr>
+        <td style="padding:6px;text-align:right;white-space:nowrap;">${per==="mois"?`<button onclick="imprimerFactureCommission(this.dataset.a)" data-a="${n.replace(/"/g,"&quot;")}" title="Facture de ta commission (mandat)" style="background:none;border:1px solid #b9dca0;color:#3b6d11;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;margin-right:4px;">🧾 Facture</button>`:""}<button onclick="imprimerReleveArtisan(this.dataset.a)" data-a="${n.replace(/"/g,"&quot;")}" style="background:none;border:1px solid #d9c2ee;color:#6a3d9a;border-radius:6px;padding:2px 8px;font-size:11px;cursor:pointer;">🖨️ Relevé</button></td></tr>
         ${STATE._artOuvert===n?`<tr><td colspan="6" style="padding:4px 6px 10px 22px;background:#faf6fd;">
           ${articlesDe(n).length?articlesDe(n).map(p=>`<div style="display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:3px 0;border-bottom:0.5px dashed #e6d8f2;">
             <span>${p.name} · ${eur(p.price||0)}</span><span style="color:#666;white-space:nowrap;">stock ${p.stock||0} · <strong style="color:#6a3d9a;">${vendusParArticle[p.name]||0} vendu${(vendusParArticle[p.name]||0)>1?"s":""}</strong></span></div>`).join(""):`<div style="font-size:12px;color:#aaa;">Aucun article en stock pour cet artisan.</div>`}
@@ -15413,7 +15475,8 @@ window.imprimerCA3 = (month,year) => {
     <tr><td class="section" colspan="2">OPÉRATIONS IMPOSABLES</td></tr>
     <tr><td>Chiffre d'affaires TTC</td><td class="right">${eur(caTTC)}</td></tr>
     ${tv.depotTTC?`<tr><td>dont dépôt-vente — régime de la marge (commission ${eur(tv.depotCom)})</td><td class="right">${eur(tv.depotTTC)}</td></tr>`:""}
-    ${tv.partReversee?`<tr><td>Part reversée aux déposantes (hors base TVA)</td><td class="right">−${eur(tv.partReversee)}</td></tr>`:""}
+    ${tv.artTTC?`<tr><td>dont artisans — mandat, vendus pour leur compte (commission ${eur(tv.artCom)})</td><td class="right">${eur(tv.artTTC)}</td></tr>`:""}
+    ${tv.partReversee?`<tr><td>Part reversée aux déposantes / artisans (hors base TVA)</td><td class="right">−${eur(tv.partReversee)}</td></tr>`:""}
     <tr><td>Base imposable HT (Ligne A)</td><td class="right">${eur(caHT)}</td></tr>
     <tr><td>TVA collectée 20% (Ligne B1)</td><td class="right">${eur(tvaCol)}</td></tr>
     <tr><td class="section" colspan="2">TVA DÉDUCTIBLE</td></tr>
