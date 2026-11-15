@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "15/11 · v183 (artisans en mandat dès le 16/11 : TVA sur la commission, mention ticket, facture de commission)";
+const APP_VERSION = "15/11 · v184 (artisans en mandat depuis le 1er novembre)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -5476,7 +5476,7 @@ window.setRemiseArtVal = (id, val) => {
 // La TVA ne porte que sur la commission de la boutique ; la part reversée (déposante / artisan) sort de la base.
 // Artisans en MANDAT à partir de cette date : vente au nom et pour le compte de l'artisan,
 // la boutique ne facture (et ne paie la TVA) que sur sa commission. Avant : achat-revente (TVA sur le prix entier).
-const ARTISANS_MANDAT_DEPUIS = "2026-11-16";
+const ARTISANS_MANDAT_DEPUIS = "2026-11-01";
 function venteEnMandat(v) { return !!v && dateLocaleStr(new Date(v.date)) >= ARTISANS_MANDAT_DEPUIS; }
 function ventilationTVA(ventes) {
   const prodMap = {}; (STATE.products||[]).forEach(p => prodMap[p.id] = p);
