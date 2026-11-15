@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "14/11 · v179 (dépense en espèces en cours de journée)";
+const APP_VERSION = "15/11 · v180 (dépenses en journée : déduites des espèces attendues sur le Z)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -2721,6 +2721,29 @@ window.envoyerRappelsDepot = async () => {
   alert("✅ "+ok+" mail(s) envoyé(s)."+(echecs.length?"\n❌ Échec pour : "+echecs.join(", "):""));
 };
 
+// v180 : les dépenses saisies en journée depuis la v179 (bouton « Dépense en espèces ») étaient retirées deux fois du
+// montant à déposer et pas des espèces attendues → on les marque « avant comptage » et on recalcule leur Z.
+function corrigerSortiesAvantComptage() {
+  try {
+    const DEBUT = "2026-11-14T15:40:00.000Z";
+    let chg = false;
+    STATE.sortiesEspeces = (STATE.sortiesEspeces||[]).map(x => { if(x.avantComptage || !(String(x.le||"")>=DEBUT)) return x;
+      const z = (STATE.caisseJour||[]).find(c=>c.date===x.date);
+      if(z && z.heure && String(z.heure) <= String(x.le)) return x; // ajoutée après la clôture : pas concernée
+      chg = true; return {...x, avantComptage:true}; });
+    if(chg) lsSet("bj_sorties_especes", STATE.sortiesEspeces);
+    let chgZ = false;
+    const cj = (STATE.caisseJour||[]).map(z => {
+      const avant = sortiesAvantComptage(z.date); if(!avant || z.corrigeSortiesAvant) return z;
+      chgZ = true;
+      const apres = sortiesApresComptage(z.date);
+      return {...z, sorties: sortiesEspecesDuJour(z.date), aDeposer: Math.max(0, Math.round(((z.fondFermeture||0)-80-apres)*100)/100),
+        ecart: Math.round(((z.ecart||0)+avant)*100)/100, corrigeSortiesAvant: true};
+    });
+    if(chgZ) { STATE.caisseJour = cj; lsSet("bj_caisse_jour", STATE.caisseJour); render(); }
+  } catch(e) { console.error("corrigerSortiesAvantComptage", e); }
+}
+setTimeout(corrigerSortiesAvantComptage, 4000);
 // Dépôts en banque : on réunit une fois les dépôts de cet appareil avec ceux du cloud (fait sur un autre appareil)
 setTimeout(() => { try { if(_fbDb) firestorePush("bj_depots_banque", STATE.depotsBanque||[]); } catch(e) { console.error(e); } }, 9000);
 // Dépôts dont les articles sont arrivés sur cet appareil mais pas la fiche : on la reconstitue à partir des articles
@@ -12543,7 +12566,12 @@ window.imprimerZone = (idZone) => {
 // ── Sorties d'espèces (ex. remboursement du fond de caisse apporté sur fonds personnels) ──
 function sortiesEspecesDuJour(dateStr) { return (STATE.sortiesEspeces||[]).filter(x=>x.date===dateStr); }
 function totalSortiesJour(dateStr) { return Math.round(sortiesEspecesDuJour(dateStr).reduce((s,x)=>s+(x.montant||0),0)*100)/100; }
-window.ajouterSortieEspeces = (dateStr) => {
+// Dépenses faites en cours de journée : les billets sont DÉJÀ sortis quand on compte la caisse le soir
+// → elles baissent les espèces attendues (écart juste) mais ne se retirent pas une 2e fois du montant à déposer.
+// Sorties saisies au moment de la clôture (billets retirés APRÈS comptage) → elles baissent le montant à déposer.
+function sortiesAvantComptage(dateStr) { return Math.round(sortiesEspecesDuJour(dateStr).filter(x=>x.avantComptage).reduce((s,x)=>s+(x.montant||0),0)*100)/100; }
+function sortiesApresComptage(dateStr) { return Math.round((totalSortiesJour(dateStr)-sortiesAvantComptage(dateStr))*100)/100; }
+window.ajouterSortieEspeces = (dateStr, avantComptage) => {
   if(STATE.vendeur?.id!=="V1") { alert("Réservé à la gérante."); return; }
   const m = prompt("Montant retiré de la caisse en espèces (€) :", "");
   if(m===null) return;
@@ -12551,7 +12579,8 @@ window.ajouterSortieEspeces = (dateStr) => {
   if(!(montant>0)) { alert("Montant invalide."); return; }
   const motif = prompt("Motif (apparaîtra sur le ticket Z) — ex. achat fournitures, timbres, ménage :", "");
   if(motif===null) return;
-  const sortie = {id: uid("SORT"), date: dateStr, montant, motif: motif.trim()||"Sortie d'espèces", par: STATE.vendeur?.nom||"", le: new Date().toISOString()};
+  const z0 = (STATE.caisseJour||[]).find(x=>x.date===dateStr);
+  const sortie = {id: uid("SORT"), date: dateStr, montant, motif: motif.trim()||"Sortie d'espèces", par: STATE.vendeur?.nom||"", le: new Date().toISOString(), ...(avantComptage && !z0 ? {avantComptage:true} : {})};
   STATE.sortiesEspeces = [...(STATE.sortiesEspeces||[]), sortie];
   lsSet("bj_sorties_especes", STATE.sortiesEspeces);
   // Journée déjà clôturée : on corrige son Z (montant à déposer)
@@ -12562,6 +12591,7 @@ window.ajouterSortieEspeces = (dateStr) => {
     lsSet("bj_caisse_jour", STATE.caisseJour);
   }
   render();
+  if(sortie.avantComptage) { alert("✅ Dépense de "+eur(montant)+" enregistrée. Tu peux prendre les billets maintenant.\n\nÀ la clôture, elle sera déduite des espèces attendues et apparaîtra sur le ticket Z."); return; }
   alert("✅ Sortie d'espèces de "+eur(montant)+" enregistrée"+(z?" sur le Z du "+new Date(dateStr+"T12:00:00").toLocaleDateString("fr-FR")+" (montant à déposer corrigé).":". Elle sera déduite du montant à déposer et figurera sur le ticket Z.")+"\n\nRetirez les billets de la caisse APRÈS l'avoir comptée.");
 };
 window.supprimerSortieEspeces = (id) => {
@@ -16980,8 +17010,8 @@ function renderCaisseJour() {
   const totalOuv = totalOuvBrut || ouvertureJour?.totalOuv || FOND_RESERVE;
   const totalFer = Object.entries(STATE.fondFermeture||{}).reduce((s,[k,v])=>{const val=parseFloat(k.replace("fer_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
   const sortiesJ = totalSortiesJour(zDateStr);
-  const aDeposer = Math.max(0, totalFer - FOND_RESERVE - sortiesJ);
-  const ecart    = totalFer - (totalOuv + especes - retours);
+  const aDeposer = Math.max(0, totalFer - FOND_RESERVE - sortiesApresComptage(zDateStr));
+  const ecart    = totalFer - (totalOuv + especes - retours - sortiesAvantComptage(zDateStr));
   // Écart fond de caisse matin : totalOuv doit être = FOND_RESERVE (100€)
   const ecartOuverture = totalOuv - FOND_RESERVE;
 
@@ -17042,7 +17072,7 @@ function renderCaisseJour() {
           `<div style="background:#fff8e1;border-radius:8px;padding:8px 14px;font-size:13px;color:#c07020;font-weight:500;">🔴 Fermé le dimanche — <button onclick="if(confirm('Ouvrir exceptionnellement ce dimanche ?')){STATE.ouvertures={...(STATE.ouvertures||{}),'${zDateStr}':{heure:new Date().toISOString(),totalOuv:0,ecart:0,valide:true}};setState({ouvertures:STATE.ouvertures});}" style="background:none;border:none;color:#993556;cursor:pointer;text-decoration:underline;font-size:13px;">Ouverture exceptionnelle</button></div>`
         : !caisseOuverte&&isToday?
           `<div style="background:#fff0f3;border-radius:8px;padding:8px 14px;font-size:13px;color:#993556;font-weight:500;">⚠️ Caisse non ouverte ce matin — validez l'ouverture avant de clôturer</div>`
-        : `${STATE.vendeur.id==="V1"?`<button onclick="ajouterSortieEspeces('${zDateStr}')" title="Dépense payée avec les espèces de la caisse, en cours de journée" style="background:#fff;border:1px solid #e8a0a0;color:#a32d2d;border-radius:9px;padding:9px 14px;cursor:pointer;font-weight:500;">➖ Dépense en espèces${totalSortiesJour(zDateStr)?" ("+eur(totalSortiesJour(zDateStr))+")":""}</button>`:""}<button onclick="cloturerCaisse('${zDateStr}')" style="background:${isToday?'#993556':'#c07020'};color:#fff;border:none;border-radius:9px;padding:9px 18px;cursor:pointer;font-weight:500;">
+        : `${STATE.vendeur.id==="V1"?`<button onclick="ajouterSortieEspeces('${zDateStr}',true)" title="Dépense payée avec les espèces de la caisse, en cours de journée" style="background:#fff;border:1px solid #e8a0a0;color:#a32d2d;border-radius:9px;padding:9px 14px;cursor:pointer;font-weight:500;">➖ Dépense en espèces${totalSortiesJour(zDateStr)?" ("+eur(totalSortiesJour(zDateStr))+")":""}</button>`:""}<button onclick="cloturerCaisse('${zDateStr}')" style="background:${isToday?'#993556':'#c07020'};color:#fff;border:none;border-radius:9px;padding:9px 18px;cursor:pointer;font-weight:500;">
             🔒 ${isToday?'Clôturer la caisse':'Clôturer ce jour'}
           </button>`}
       </div>
@@ -17306,8 +17336,8 @@ window.updateFermetureTotal = () => {
   const totalOuvBrut = Object.entries(STATE.fondOuverture||{}).reduce((s,[k,v])=>{const val=parseFloat(k.replace("ouv_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
   const ouvertureJour = (STATE.ouvertures||{})[zDateStr] || null;
   const totalOuv = totalOuvBrut || ouvertureJour?.totalOuv || FOND_RESERVE;
-  const aDeposer = Math.max(0, totalFer - FOND_RESERVE - totalSortiesJour(zDateStr));
-  const ecart = totalFer - (totalOuv + especes - retours);
+  const aDeposer = Math.max(0, totalFer - FOND_RESERVE - sortiesApresComptage(zDateStr));
+  const ecart = totalFer - (totalOuv + especes - retours - sortiesAvantComptage(zDateStr));
 
   const elDepot = document.getElementById("depot-fermeture"); if(elDepot) elDepot.textContent = eur(aDeposer);
   const elEcart = document.getElementById("ecart-fermeture");
@@ -17391,10 +17421,12 @@ window.cloturerCaisse = (targetDateStr) => {
   const totalOuv = totalOuvBrut || ouvertureJourCloture?.totalOuv || FOND_RESERVE;
   const totalFer=Object.entries(STATE.fondFermeture||{}).reduce((s,[k,v])=>{const val=parseFloat(k.replace("fer_","").replace("_","."));return s+val*(parseInt(v)||0);},0);
   const sortiesCl = sortiesEspecesDuJour(dateStr), sortiesTotal = totalSortiesJour(dateStr);
-  const aDeposer=Math.max(0,totalFer-FOND_RESERVE-sortiesTotal);
-  const ecart=totalFer-(totalOuv+especes);
+  const sortiesAvant = sortiesAvantComptage(dateStr);
+  const retoursEsp = ventesJour.filter(v=>v.payMode==="remboursement_especes").reduce((s,v)=>s+v.panier.filter(x=>x.retour&&!x.avoirId).reduce((ss,i)=>ss+i.price*i.qty,0),0);
+  const aDeposer=Math.max(0,totalFer-FOND_RESERVE-(sortiesTotal-sortiesAvant));
+  const ecart=totalFer-(totalOuv+especes-retoursEsp-sortiesAvant);
   if(!confirm(`Clôturer la caisse du ${new Date(dateStr).toLocaleDateString("fr-FR")} ?\n\nCA TTC : ${eur(caTTC)}\nEspèces : ${eur(especes)}\nTotal compté : ${eur(totalFer)}\n${sortiesTotal?"Sorties d'espèces : −"+eur(sortiesTotal)+"\n":""}À déposer : ${eur(aDeposer)}\nÉcart : ${eur(ecart)}`)) return;
-  const z={id:uid("Z"),date:dateStr,heure:now.toISOString(),nbVentes:ventesJour.length,caTTC,caHT:caTTC/(1+TVA),tvaCol:caTTC-caTTC/(1+TVA),especes,fondOuverture:totalOuv,fondFermeture:totalFer,aDeposer,ecart,payM,note,vendeur:STATE.vendeur.nom,sorties:sortiesCl,sortiesTotal};
+  const z={id:uid("Z"),corrigeSortiesAvant:true,date:dateStr,heure:now.toISOString(),nbVentes:ventesJour.length,caTTC,caHT:caTTC/(1+TVA),tvaCol:caTTC-caTTC/(1+TVA),especes,fondOuverture:totalOuv,fondFermeture:totalFer,aDeposer,ecart,payM,note,vendeur:STATE.vendeur.nom,sorties:sortiesCl,sortiesTotal};
   STATE.caisseJour=[...(STATE.caisseJour||[]),z];
   setState({caisseJour:STATE.caisseJour});
   STATE.fondFermeture = {};
@@ -17597,7 +17629,8 @@ window.imprimerZ = (z) => {
     <tr><td>Fond ouverture</td><td>${eur(z.fondOuverture)}</td></tr>
     <tr><td>Espèces encaissées</td><td>${eur(z.especes)}</td></tr>
     <tr><td>Total compté fermeture</td><td class="bold">${eur(z.fondFermeture)}</td></tr>
-    ${(z.sorties||[]).map(x=>`<tr><td>Sortie d'espèces : ${x.motif}</td><td style="color:#a32d2d;font-weight:700;">−${eur(x.montant)}</td></tr>`).join("")}
+    ${(z.sorties||[]).map(x=>`<tr><td>${x.avantComptage?"Dépense en espèces (dans la journée)":"Sortie d'espèces"} : ${x.motif}</td><td style="color:#a32d2d;font-weight:700;">−${eur(x.montant)}</td></tr>`).join("")}
+    ${(z.sorties||[]).some(x=>x.avantComptage)?`<tr><td>Espèces attendues dans la caisse</td><td style="font-weight:700;">${eur((z.fondOuverture||0)+(z.especes||0)-(z.sorties||[]).filter(x=>x.avantComptage).reduce((s,x)=>s+(x.montant||0),0))}</td></tr>`:""}
     <tr><td>À déposer en banque</td><td style="font-weight:700;color:#185fa5;">${eur(z.aDeposer||0)}</td></tr>
     <tr><td>Écart</td><td style="color:${Math.abs(z.ecart||0)>5?"red":"green"};font-weight:700;">${eur(z.ecart||0)}</td></tr>
   </table>
