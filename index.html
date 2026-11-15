@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "15/11 · v188 (Z mensuel : liste des jours sans Z)";
+const APP_VERSION = "15/11 · v189 (Z mensuel : artisans en mandat + vide-dressing détaillés)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -10580,7 +10580,8 @@ function lignesZMensuel(z) {
     L("Ventes au prix affiché (TTC)", eur(z.brut)), L("− Remises accordées", "− "+eur(z.remises)), L("− Retours ("+z.nbRetours+" article"+(z.nbRetours>1?"s":"")+")", "− "+eur(z.retours)),
     L("CA TTC du mois", eur(z.caTTC), true), L("CA HT", eur(z.caHT)), L("TVA collectée 20 %", eur(z.tvaCol)),
     T("DONT"),
-    L("Produits d'artisans (dépôt)", eur(z.artisans.ca)), L("   commission "+z.artisans.taux+" % / à reverser", eur(z.artisans.commission)+" / "+eur(z.artisans.reverser)),
+    L("Produits d'artisans (mandat, pour leur compte)", eur(z.artisans.ca)), L("   ta commission / à reverser aux artisans", eur(z.artisans.commission)+" / "+eur(z.artisans.reverser)),
+    ...(z.tvaV && z.tvaV.depotTTC ? [L("Vide-dressing (dépôt-vente)", eur(z.tvaV.depotTTC)), L("   ta commission / bons d'achat des déposantes", eur(z.tvaV.depotCom)+" / "+eur(z.tvaV.depotTTC-z.tvaV.depotCom))] : []),
     L("Chèques cadeaux vendus", eur(z.chqCadeauxVendus)), L("Retouches", eur(z.retouchesCA)), L("Sacs", eur(z.sacsCA)),
     T("ENCAISSEMENTS"),
     L("Carte bancaire", eur(z.modes.cb)), L("Espèces", eur(z.modes.especes)), L("Chèques", eur(z.modes.cheque)),
