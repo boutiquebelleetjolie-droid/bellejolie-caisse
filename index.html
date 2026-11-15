@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "15/11 · v186 (Z mensuel : annulations comptables retirées de la ligne ventes annulées)";
+const APP_VERSION = "15/11 · v187 (Z mensuel : avoirs uniquement, plus de ventes annulées)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -10587,8 +10587,7 @@ function lignesZMensuel(z) {
     L("Total encaissé", eur(Object.values(z.modes).reduce((a,b)=>a+b,0)), true),
     L("Écart de caisse cumulé (espèces)", eur(z.ecartCaisse)),
     ...(z.sorties && z.sorties.length ? [T("SORTIES D'ESPÈCES"), ...z.sorties.map(x => L(new Date(x.date+"T12:00:00").toLocaleDateString("fr-FR")+" · "+x.motif, "− "+eur(x.montant))), L("Total des sorties d'espèces", "− "+eur(z.sortiesTotal), true)] : []),
-    T("ANNULATIONS & AVOIRS"),
-    L("Ventes annulées (hors annulations comptables)", z.annuleesCompletes.nb+" · "+eur(z.annuleesCompletes.montant)),
+    T("AVOIRS"),
     L("Avoirs émis (retours)", z.avoirsRetour.nb+" · "+eur(z.avoirsRetour.montant)),
     L("Bons offerts émis (bienvenue, anniversaire…)", z.bons.nb+" · "+eur(z.bons.montant)),
     T("TVA (CA3)"),
