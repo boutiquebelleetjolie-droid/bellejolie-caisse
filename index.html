@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "15/11 · v180 (dépenses en journée : déduites des espèces attendues sur le Z)";
+const APP_VERSION = "15/11 · v181 (TVA du dépôt-vente et des artisans sur la commission seulement)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -5472,6 +5472,45 @@ window.setRemiseArtVal = (id, val) => {
 };
 // Calcule le prix unitaire réellement payé pour une ligne d'achat donnée, en tenant compte de la
 // remise article ET de la part proportionnelle d'une remise globale/fidélité/quantité sur toute la vente.
+// ── TVA : dépôt-vente (régime de la marge, biens d'occasion) et artisans (vente au nom et pour le compte) ──
+// La TVA ne porte que sur la commission de la boutique ; la part reversée (déposante / artisan) sort de la base.
+function ventilationTVA(ventes) {
+  const prodMap = {}; (STATE.products||[]).forEach(p => prodMap[p.id] = p);
+  const txA = STATE.commissionArtisan ?? 20;
+  let depotTTC = 0, depotCom = 0, artTTC = 0, artCom = 0;
+  (ventes||[]).forEach(v => {
+    if(!v || v.test || v.annulee) return;
+    const restants = {...(v.articlesRetournes||{})};
+    (v.panier||[]).forEach(i => {
+      if(i.retour || i.avoirId || i.id==="correction_manuelle") return;
+      const pid = i.prodIdOriginal || i.id, p = prodMap[pid] || {};
+      const dep = !!(i.depotVente || p.depotVente), art = !dep && estLigneArtisan(i, p);
+      if(!dep && !art) return;
+      const q = i.qty||1, r = Math.min(q, restants[pid]||0); if(r) restants[pid] -= r;
+      const net = q - r; if(net<=0) return;
+      const m = calculerPrixPayeReel(v, i) * net;
+      if(dep) { depotTTC += m; depotCom += m * DEPOT_COMMISSION_PCT / 100; }
+      else { artTTC += m; artCom += commissionLigneArtisan(p, net, m, txA, v.date, i); }
+    });
+  });
+  const r2 = x => Math.round(x*100)/100;
+  const caTTC = (ventes||[]).filter(v=>v && !v.test && !v.annulee).reduce((s,v)=>s+(v.total||0),0);
+  const partReversee = Math.max(0, (depotTTC-depotCom) + (artTTC-artCom));
+  const baseTTC = caTTC - partReversee;
+  const tvaCol = r2(baseTTC - baseTTC/1.2);
+  return {caTTC: r2(caTTC), depotTTC: r2(depotTTC), depotCom: r2(depotCom), artTTC: r2(artTTC), artCom: r2(artCom),
+    partReversee: r2(partReversee), baseHT: r2(baseTTC/1.2), tvaCol, caHT: r2(caTTC - tvaCol)};
+}
+// Mention légale sur le ticket quand il contient un article de dépôt-vente (biens d'occasion)
+function ticketADepot(v) { const pm = {}; (STATE.products||[]).forEach(p=>pm[p.id]=p); return (v?.panier||[]).some(i => !i.retour && (i.depotVente || pm[i.prodIdOriginal||i.id]?.depotVente)); }
+function htmlMentionMarge(v, taille) { return ticketADepot(v) ? `<div style="font-size:${taille||9}px;color:#666;margin:4px 0;text-align:center;font-style:italic;">Articles de dépôt-vente : Régime particulier – Biens d'occasion (TVA sur la marge, non récupérable)</div>` : ""; }
+function lignesTVAZ(z, tdL, tdR) {
+  if(!z || !(z.depotTTC || z.artTTC)) return "";
+  const L = (a,b) => `<tr><td${tdL||""}>${a}</td><td${tdR||""}>${b}</td></tr>`;
+  return (z.depotTTC?L("dont dépôt-vente (régime de la marge)", eur(z.depotTTC)+" · commission "+eur(z.depotCom)):"")
+    + (z.artTTC?L("dont artisans (pour leur compte)", eur(z.artTTC)+" · commission "+eur(z.artCom)):"")
+    + L("Base HT imposable", eur(z.baseHT));
+}
 function calculerPrixPayeReel(venteOrigine, ligneOrigine) {
   const remArticle = ligneOrigine.remiseType==="pct" ? ligneOrigine.price*(parseFloat(ligneOrigine.remise||0)/100)
                     : ligneOrigine.remiseType==="eur" ? parseFloat(ligneOrigine.remise||0)/ligneOrigine.qty : 0;
@@ -5963,6 +6002,7 @@ window.imprimerViaUSB = async () => {
     pushText("TOTAL : "+eur(v.total)+"\n");
     push([0x1B,0x45,0x00]);     // gras OFF
     if(v.payMode) pushText("Règlement : "+(mLbt[v.payMode]||v.payMode)+"\n");
+    if(ticketADepot(v)) pushText("Depot-vente : Regime particulier\n- Biens d'occasion\n");
     pushText("\nMerci de votre visite !\n");
     pushText("Belle&Jolie\n");
     ADRESSES_BOUTIQUES.forEach(b => { pushText(b.ville+" :\n"); b.horaires.split(" | ").forEach(h => pushText("  "+h+"\n")); });
@@ -6530,6 +6570,7 @@ function renderTicketModal() {
             if(v.mixed) return `<div style="font-size:11px;color:#555;margin-top:2px;">${(v.pays||[]).map(p=>mL[p.mode]+": "+eur(parseFloat(p.montant||0))).join(" + ")}</div>`;
             return `<div style="font-size:11px;color:#555;margin-top:2px;">Règlement : ${mL[v.payMode]||v.payMode}</div>`;
           })()}
+          ${htmlMentionMarge(v,9)}
           <div style="border-top:1px dashed #ccc;margin:6px 0;"></div>
           <div style="text-align:center;">
             <img src="${LOGO_TICKET_B64}" width="70" height="70" style="border-radius:50%;margin:4px 0;" alt="Belle&Jolie"/>
@@ -10461,7 +10502,8 @@ function calculerZMensuel(mois, annee) {
     const txA = STATE.commissionArtisan ?? 20;
     toutes.filter(venteCompteArtisan).forEach(v => { lignesArtisanVente(v, prodMap).forEach(l => { artisansCA += l.montant; artisansCom += commissionLigneArtisan(l.p, l.qty, l.montant, txA, v.date, l.i); }); retoursArtisanSansTicket(v, prodMap, idsV).forEach(l => { artisansCA += l.montant; artisansCom += commissionLigneArtisan(l.p, l.qty, l.montant, txA, v.date, l.i); }); }); }
   const remises = Math.max(0, r2(brut - retours - caTTC));
-  const caHT = r2(caTTC/(1+TVA)), tvaCol = r2(caTTC - caHT);
+  const tvaV = ventilationTVA(ventes);
+  const caHT = tvaV.caHT, tvaCol = tvaV.tvaCol;
   const modes = {cb:0, especes:0, cheque:0, avoir:0, cadeau:0};
   ventes.forEach(v => { const e = encaissementsParMode(v); Object.keys(modes).forEach(k => modes[k] += e[k]); });
   Object.keys(modes).forEach(k => modes[k] = r2(modes[k]));
@@ -10493,7 +10535,7 @@ function calculerZMensuel(mois, annee) {
   const ecartCaisse = r2(zClotures.reduce((s,z)=>s+(typeof z.ecart==="number"?z.ecart:0),0));
   const sorties = (STATE.sortiesEspeces||[]).filter(x => x.date && x.date.startsWith(annee+"-"+String(mois+1).padStart(2,"0"))).sort((a,b)=>a.date.localeCompare(b.date));
   return {
-    sorties, sortiesTotal: r2(sorties.reduce((s,x)=>s+(x.montant||0),0)),
+    tvaV, sorties, sortiesTotal: r2(sorties.reduce((s,x)=>s+(x.montant||0),0)),
     mois, annee, caTTC, caHT, tvaCol, tvaDeduct, tvaNette: r2(tvaCol-tvaDeduct), achatsHT,
     brut: r2(brut), remises, retours: r2(retours), nbRetours, corrections, nbCorrections,
     nbTickets: st.tickets, nbArticles: st.articles, panierMoyen: st.pm, idv: st.idv,
@@ -10530,7 +10572,8 @@ function lignesZMensuel(z) {
     L("Avoirs émis (retours)", z.avoirsRetour.nb+" · "+eur(z.avoirsRetour.montant)),
     L("Bons offerts émis (bienvenue, anniversaire…)", z.bons.nb+" · "+eur(z.bons.montant)),
     T("TVA (CA3)"),
-    L("Base HT imposable (ligne A)", eur(z.caHT)), L("TVA collectée (ligne B1)", eur(z.tvaCol)),
+    ...(z.tvaV && (z.tvaV.depotTTC||z.tvaV.artTTC) ? [L("Ventes dépôt-vente (régime de la marge)", eur(z.tvaV.depotTTC)+" · commission "+eur(z.tvaV.depotCom)), L("Ventes artisans (pour leur compte)", eur(z.tvaV.artTTC)+" · commission "+eur(z.tvaV.artCom)), L("Part reversée (hors base TVA)", eur(z.tvaV.partReversee))] : []),
+    L("Base HT imposable (ligne A)", eur(z.tvaV ? z.tvaV.baseHT : z.caHT)), L("TVA collectée (ligne B1)", eur(z.tvaCol)),
     L("TVA déductible sur achats (ligne 20)", eur(z.tvaDeduct)), L("TVA nette à payer (ligne 28)", eur(z.tvaNette), true),
     T("PÉRIODE"),
     L("Jours avec ventes / Z clôturés", z.nbJoursOuverts+" / "+z.nbZ), L("CA cumulé depuis le 1er janvier", eur(z.cumulAnnee), true),
@@ -14850,8 +14893,9 @@ function renderCompta() {
     return dt.getMonth()===STATE.comptaMonth && dt.getFullYear()===STATE.comptaYear;
   });
   const caTTC     = ventes.reduce((s,v)=>s+v.total,0);
-  const caHT      = parseFloat((caTTC/(1+TVA)).toFixed(2));
-  const tvaCol    = parseFloat((caTTC-caHT).toFixed(2));
+  const _tvaM     = ventilationTVA(ventes);
+  const caHT      = _tvaM.caHT;
+  const tvaCol    = _tvaM.tvaCol;
   const tvaDeduct = factures.filter(f=>f.deductible).reduce((s,f)=>s+parseFloat((f.montantHT*TVA).toFixed(2)),0);
   const tvaNette  = parseFloat((tvaCol-tvaDeduct).toFixed(2));
   const totalAchatsHT = factures.reduce((s,f)=>s+f.montantHT,0);
@@ -15354,8 +15398,9 @@ window.imprimerCA3 = (month,year) => {
   const ventes=STATE.ventes.filter(v=>{if(v.test||v.annulee)return false;const d=new Date(v.date);return d.getMonth()===m&&d.getFullYear()===y;});
   const factures=(STATE.depenses||[]).filter(f=>{const d=new Date(f.date);return d.getMonth()===m&&d.getFullYear()===y;});
   const caTTC=ventes.reduce((s,v)=>s+v.total,0);
-  const caHT=caTTC/(1+TVA);
-  const tvaCol=caTTC-caHT;
+  const tv=ventilationTVA(ventes);
+  const caHT=tv.baseHT;
+  const tvaCol=tv.tvaCol;
   const tvaDeduct=factures.filter(f=>f.deductible).reduce((s,f)=>s+f.montantHT*TVA,0);
   const tvaNette=tvaCol-tvaDeduct;
   const html=`<!DOCTYPE html><html><head><meta charset="utf-8"><title>CA3 ${moisNoms[m]} ${y}</title>
@@ -15366,6 +15411,9 @@ window.imprimerCA3 = (month,year) => {
   <table>
     <tr><td class="section" colspan="2">OPÉRATIONS IMPOSABLES</td></tr>
     <tr><td>Chiffre d'affaires TTC</td><td class="right">${eur(caTTC)}</td></tr>
+    ${tv.depotTTC?`<tr><td>dont dépôt-vente — régime de la marge (commission ${eur(tv.depotCom)})</td><td class="right">${eur(tv.depotTTC)}</td></tr>`:""}
+    ${tv.artTTC?`<tr><td>dont artisans — vendus pour leur compte (commission ${eur(tv.artCom)})</td><td class="right">${eur(tv.artTTC)}</td></tr>`:""}
+    ${tv.partReversee?`<tr><td>Part reversée aux déposantes / artisans (hors base TVA)</td><td class="right">−${eur(tv.partReversee)}</td></tr>`:""}
     <tr><td>Base imposable HT (Ligne A)</td><td class="right">${eur(caHT)}</td></tr>
     <tr><td>TVA collectée 20% (Ligne B1)</td><td class="right">${eur(tvaCol)}</td></tr>
     <tr><td class="section" colspan="2">TVA DÉDUCTIBLE</td></tr>
@@ -15827,6 +15875,7 @@ function buildTicketEmailHTML(v) {
         </tr>
         <tr>
           <td style="text-align:center;padding-bottom:8px;">
+            ${htmlMentionMarge(v,11)}
             ${htmlAdressesBoutiques(12,11)}
           </td>
         </tr>
@@ -16959,8 +17008,9 @@ function renderCaisseJour() {
 
   const caTTC  = ventesJour.reduce((s,v)=>s+v.total,0);
   const TVA    = 0.20;
-  const caHT   = caTTC/(1+TVA);
-  const tvaCol = caTTC-caHT;
+  const _tvaJ  = ventilationTVA(ventesJour);
+  const caHT   = _tvaJ.caHT;
+  const tvaCol = _tvaJ.tvaCol;
   const nbV    = ventesJour.length;
   const caSacJour = ventesJour.reduce((s,v)=>s+caSacVente(v),0);
   const pm     = nbV?(caTTC-caSacJour)/nbV:0;
@@ -17426,7 +17476,7 @@ window.cloturerCaisse = (targetDateStr) => {
   const aDeposer=Math.max(0,totalFer-FOND_RESERVE-(sortiesTotal-sortiesAvant));
   const ecart=totalFer-(totalOuv+especes-retoursEsp-sortiesAvant);
   if(!confirm(`Clôturer la caisse du ${new Date(dateStr).toLocaleDateString("fr-FR")} ?\n\nCA TTC : ${eur(caTTC)}\nEspèces : ${eur(especes)}\nTotal compté : ${eur(totalFer)}\n${sortiesTotal?"Sorties d'espèces : −"+eur(sortiesTotal)+"\n":""}À déposer : ${eur(aDeposer)}\nÉcart : ${eur(ecart)}`)) return;
-  const z={id:uid("Z"),corrigeSortiesAvant:true,date:dateStr,heure:now.toISOString(),nbVentes:ventesJour.length,caTTC,caHT:caTTC/(1+TVA),tvaCol:caTTC-caTTC/(1+TVA),especes,fondOuverture:totalOuv,fondFermeture:totalFer,aDeposer,ecart,payM,note,vendeur:STATE.vendeur.nom,sorties:sortiesCl,sortiesTotal};
+  const z={id:uid("Z"),corrigeSortiesAvant:true,date:dateStr,heure:now.toISOString(),nbVentes:ventesJour.length,caTTC,...(()=>{ const t=ventilationTVA(ventesJour); return {caHT:t.caHT,tvaCol:t.tvaCol,baseHT:t.baseHT,depotTTC:t.depotTTC,depotCom:t.depotCom,artTTC:t.artTTC,artCom:t.artCom,partReversee:t.partReversee}; })(),especes,fondOuverture:totalOuv,fondFermeture:totalFer,aDeposer,ecart,payM,note,vendeur:STATE.vendeur.nom,sorties:sortiesCl,sortiesTotal};
   STATE.caisseJour=[...(STATE.caisseJour||[]),z];
   setState({caisseJour:STATE.caisseJour});
   STATE.fondFermeture = {};
@@ -17537,6 +17587,7 @@ window.envoyerReleveCloture = async (z, ventesJour, dateStr) => {
           <table style="width:100%;border-collapse:collapse;margin-bottom:20px;">
             <tr style="background:#fbeaf0;"><td style="padding:10px 12px;font-weight:700;font-size:15px;">CA TTC</td><td style="padding:10px 12px;font-size:22px;font-weight:700;color:#993556;">${eur(z.caTTC)}</td></tr>
             <tr><td style="padding:6px 12px;color:#555;">CA HT</td><td style="padding:6px 12px;">${eur(z.caHT)}</td></tr>
+            ${lignesTVAZ(z,' style="padding:6px 12px;color:#555;"',' style="padding:6px 12px;"')}
             <tr><td style="padding:6px 12px;color:#555;">TVA collectée</td><td style="padding:6px 12px;">${eur(z.tvaCol)}</td></tr>
             <tr><td style="padding:6px 12px;color:#555;">Nb ventes</td><td style="padding:6px 12px;font-weight:600;">${z.nbVentes}</td></tr>
             <tr style="background:#eef4fd;"><td style="padding:8px 12px;font-weight:600;color:#185fa5;">🛒 IDV (articles/ticket)</td><td style="padding:8px 12px;font-weight:700;color:#185fa5;">${idv}</td></tr>
@@ -17617,6 +17668,7 @@ window.imprimerZ = (z) => {
     <tr><td>Nb ventes</td><td class="bold">${z.nbVentes}</td></tr>
     <tr><td>CA TTC</td><td class="total">${eur(z.caTTC)}</td></tr>
     <tr><td>CA HT</td><td>${eur(z.caHT)}</td></tr>
+    ${lignesTVAZ(z)}
     <tr><td>TVA</td><td>${eur(z.tvaCol)}</td></tr>
   </table>
   <hr/><h2 style="font-size:12px;color:#555;">Encaissements</h2><table>
@@ -20815,6 +20867,7 @@ function buildTicketHTML(v) {
       ${v.remiseFid>0?`<div class="line fid"><span>❤️ Fidélité -20%</span><span>-${eur(v.remiseFid)}</span></div>`:""}
       <div class="total-line"><span>TOTAL</span><span>${eur(v.total)}</span></div>
       <div class="paiement">Règlement : ${mL[v.payMode]||v.payMode||"—"}</div>
+      ${htmlMentionMarge(v,8)}
       <div class="sep"></div>
       <div class="footer">Merci de votre confiance !</div>
       <div class="footer" style="text-align:center;">
