@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "16/11 · v191 (stockage plein : photos déplacées dans IndexedDB)";
+const APP_VERSION = "16/11 · v192 (mail de clôture : alerte si échec + bouton renvoyer)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -17225,6 +17225,7 @@ function renderCaisseJour() {
         ${zDejàFait?
           `<div style="background:#eaf3de;border-radius:8px;padding:8px 14px;font-size:13px;color:#3b6d11;font-weight:500;display:flex;align-items:center;gap:10px;">
             <span>✅ Clôturée le ${new Date(zDejàFait.heure).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})} par ${zDejàFait.vendeur}</span>
+            <button onclick="renvoyerReleveCloture('${zDejàFait.date}')" title="Renvoyer le mail de clôture" style="background:#fff;border:1px solid #185fa5;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;color:#185fa5;margin-right:4px;">✉️ Renvoyer le mail</button>
             <button onclick='imprimerZ(${JSON.stringify(zDejàFait).replace(/'/g,"&apos;")})' style="background:#fff;border:1px solid #3b6d11;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:12px;color:#3b6d11;font-weight:500;white-space:nowrap;">🖨️ Réimprimer le ticket Z</button>
           </div>`
         : isDimanche&&!caisseOuverte?
@@ -17592,10 +17593,16 @@ window.cloturerCaisse = (targetDateStr) => {
   imprimerZ(z);
   if(STATE.sauvegardeEmail) envoyerSauvegardeEmail(true); // sauvegarde fraîche juste après la clôture
   // Envoyer le relevé CA + remises par email automatiquement
-  envoyerReleveCloture(z, ventesJour, dateStr);
+  // EmailJS refuse 2 envois dans la même seconde (la sauvegarde part juste avant) → on décale le relevé
+  setTimeout(() => envoyerReleveCloture(z, ventesJour, dateStr), STATE.sauvegardeEmail ? 3000 : 0);
+};
+window.renvoyerReleveCloture = (dateStr) => {
+  const z = (STATE.caisseJour||[]).find(x=>x.date===dateStr); if(!z) return;
+  const ventesJour = (STATE.ventes||[]).filter(v => !v.test && !v.annulee && dateLocaleStr(new Date(v.date))===dateStr);
+  envoyerReleveCloture(z, ventesJour, dateStr, true);
 };
 
-window.envoyerReleveCloture = async (z, ventesJour, dateStr) => {
+window.envoyerReleveCloture = async (z, ventesJour, dateStr, manuel) => {
   try {
     // Calculer les remises manuelles (hors promos auto)
     const remises = [];
@@ -17761,8 +17768,13 @@ window.envoyerReleveCloture = async (z, ventesJour, dateStr) => {
       message: html,
     });
     console.log('✅ Relevé clôture envoyé');
+    if(manuel) alert("✅ Relevé de clôture envoyé à boutiquebelleetjolie@gmail.com");
   } catch(err) {
     console.warn('Relevé clôture non envoyé:', err);
+    const t = String(err?.text||err?.message||err||"");
+    alert("⚠️ Le mail de clôture n'a pas pu partir.\n\nRaison : "+(err?.status?err.status+" — ":"")+t
+      +(/limit|quota|402|426/i.test(t+(err?.status||""))?"\n\n→ Le quota mensuel d'emails (EmailJS) est sans doute atteint.":"")
+      +"\n\nLa clôture, elle, est bien enregistrée. Tu pourras renvoyer le mail avec le bouton ✉️ à côté du Z.");
   }
 };
 
