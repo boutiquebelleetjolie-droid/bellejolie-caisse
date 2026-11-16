@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "15/11 · v190 (Z mensuel : TVA par jour après dépôt et artisans)";
+const APP_VERSION = "16/11 · v191 (stockage plein : photos déplacées dans IndexedDB)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -187,8 +187,45 @@ try {
 window._echecStockage = null;
 try {
   const SP = Storage.prototype, oSet = SP.setItem;
-  SP.setItem = function(k, v) { try { return oSet.call(this, k, v); } catch(e) { window._echecStockage = String(k)+" ("+(e && e.name || e)+")"; throw e; } };
+  SP.setItem = function(k, v) {
+    // Les photos des articles ne vont plus dans ce stockage (limité à ~5 Mo) : elles partent dans IndexedDB
+    if(this===window.localStorage && /^bj_products/.test(String(k)) && typeof v==="string" && v.indexOf('"photo":"')>=0) {
+      try { v = extrairePhotosVersIDB(String(k), v); } catch(err) { console.error("Photos → IndexedDB :", err); }
+    }
+    try { return oSet.call(this, k, v); } catch(e) { window._echecStockage = String(k)+" ("+(e && e.name || e)+")"; throw e; } };
 } catch{}
+// ── Photos des articles dans IndexedDB (place quasi illimitée) ──
+let _idbPhotos = null;
+function idbPhotos() {
+  if(_idbPhotos) return _idbPhotos;
+  _idbPhotos = new Promise((res, rej) => { try { const r = indexedDB.open("bj_photos_db", 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("photos");
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch(e) { rej(e); } });
+  return _idbPhotos;
+}
+function extrairePhotosVersIDB(cle, texte) {
+  const liste = JSON.parse(texte); if(!Array.isArray(liste)) return texte;
+  const photos = [];
+  const allegee = liste.map(p => { if(!p || !p.photo) return p; photos.push([cle+"|"+p.id, p.photo]); const {photo, ...r} = p; return {...r, aPhoto:true}; });
+  if(!photos.length) return texte;
+  idbPhotos().then(db => { const tx = db.transaction("photos","readwrite"); const st = tx.objectStore("photos"); photos.forEach(([k,ph]) => st.put(ph, k)); })
+    .catch(err => console.error("IndexedDB indisponible :", err));
+  return JSON.stringify(allegee);
+}
+function remettrePhotosDepuisIDB() {
+  const cle = cleFirestore("bj_products");
+  return idbPhotos().then(db => new Promise(res => {
+    const tx = db.transaction("photos","readonly"), st = tx.objectStore("photos"), map = new Map();
+    const req = st.openCursor(IDBKeyRange.bound(cle+"|", cle+"|\uffff"));
+    req.onsuccess = () => { const c = req.result; if(c) { map.set(String(c.key).slice(cle.length+1), c.value); c.continue(); } else res(map); };
+    req.onerror = () => res(map);
+  })).then(map => {
+    if(!map.size || !STATE || !Array.isArray(STATE.products)) return;
+    let n = 0;
+    STATE.products = STATE.products.map(p => (p && !p.photo && p.aPhoto!==false && map.has(p.id)) ? (n++, {...p, photo: map.get(p.id)}) : p);
+    if(n) render();
+  }).catch(err => console.error("Photos IndexedDB :", err));
+}
 function tailleStockageLocal() { let n = 0; try { for(let i=0;i<localStorage.length;i++){ const k = localStorage.key(i); n += k.length + (localStorage.getItem(k)||"").length; } } catch{} return n; }
 
 // ── Écoutes en direct coupées par le cloud (quota, réseau) : elles ne repartent jamais seules.
@@ -1252,8 +1289,8 @@ const DB = {
         if(key==="bj_ventes") allegerVentes(val);
         if(key==="bj_products") horodaterProduits(val);
         if(LISTES_FUSION[key]) { horodaterListe(key, val); journaliserListe(key, val); }
-        localStorage.setItem(cleFirestore(key), JSON.stringify(val));
-        firestorePush(key, val); // sauvegarde cloud en tâche de fond, ne bloque jamais l'appli
+        try { localStorage.setItem(cleFirestore(key), JSON.stringify(val)); }
+        finally { firestorePush(key, val); } // cloud même si le stockage local échoue : la vente n'est jamais perdue
       } catch(err) {
         console.error("Échec de sauvegarde localStorage pour la clé '"+key+"':", err);
         const estStockagePlein = err && (err.name==="QuotaExceededError" || err.code===22 || err.code===1014);
@@ -2721,6 +2758,12 @@ window.envoyerRappelsDepot = async () => {
   alert("✅ "+ok+" mail(s) envoyé(s)."+(echecs.length?"\n❌ Échec pour : "+echecs.join(", "):""));
 };
 
+// v191 : on sort les photos du stockage local (plein) → IndexedDB, puis on les remet en mémoire
+try {
+  for(let i=localStorage.length-1;i>=0;i--) { const k = localStorage.key(i);
+    if(/^bj_products/.test(k)) { const v = localStorage.getItem(k); if(v && v.indexOf('"photo":"')>=0) localStorage.setItem(k, v); } }
+} catch(e) { console.error("Allègement du stockage :", e); }
+setTimeout(remettrePhotosDepuisIDB, 300);
 // v180 : les dépenses saisies en journée depuis la v179 (bouton « Dépense en espèces ») étaient retirées deux fois du
 // montant à déposer et pas des espèces attendues → on les marque « avant comptage » et on recalcule leur Z.
 function corrigerSortiesAvantComptage() {
