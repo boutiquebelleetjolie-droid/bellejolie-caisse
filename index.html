@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "16/11 · v192 (mail de clôture : alerte si échec + bouton renvoyer)";
+const APP_VERSION = "17/11 · v193 (Black Friday −15/−20/−30 % du 21 au 30/11)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -2758,6 +2758,16 @@ window.envoyerRappelsDepot = async () => {
   alert("✅ "+ok+" mail(s) envoyé(s)."+(echecs.length?"\n❌ Échec pour : "+echecs.join(", "):""));
 };
 
+// Black Friday 2026 : remise progressive −15 % (2 art.) / −20 % (3) / −30 % (4+), du 21 au 30/11, sur chaque appareil et chaque boutique
+try {
+  const flagBF = "bj_bf2026_regle__"+BOUTIQUE_ID_ACTUEL;
+  if(!localStorage.getItem(flagBF)) {
+    STATE.remiseProgressive = {...(STATE.remiseProgressive||{}), active:true, testMode:false, dateDebut:"2026-11-21", dateFin:"2026-11-30",
+      nom:"Black Friday", paliers:[{qty:2,pct:15},{qty:3,pct:20},{qty:4,pct:30}]};
+    lsSet("bj_remise_progressive", STATE.remiseProgressive);
+    localStorage.setItem(flagBF, "1");
+  }
+} catch(e) { console.error("Réglage Black Friday :", e); }
 // v191 : on sort les photos du stockage local (plein) → IndexedDB, puis on les remet en mémoire
 try {
   for(let i=localStorage.length-1;i>=0;i--) { const k = localStorage.key(i);
