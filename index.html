@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "17/11 · v196 (Black Friday dès le vendredi 20/11)";
+const APP_VERSION = "17/11 · v197 (Leyna : profil vendeuse, création et modification des fiches)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -1351,7 +1351,11 @@ const VENDEURS = [
   { id:"V3", nom:"Sabrina",      prenom:"",     code:"2222", role:"vendeur",  color:"#2a8a5a" },
   { id:"V4", nom:"Mode Test",    prenom:"",     code:"0000", role:"apprenti", color:"#e07c00" },
   { id:"V5", nom:"Stagiaire",     prenom:"",     code:"5555", role:"stagiaire", color:"#8a6d3b" }, // encaisse pour de vrai, accès limité
+  { id:"V6", nom:"Leyna",         prenom:"",     code:"4444", role:"vendeur",   color:"#b0477a" }, // Chartres + Dreux : crée et modifie les fiches, sans baisse (prix, stock, suppression)
 ];
+// Vendeuses autorisées à modifier les fiches articles (descriptif, photo, tailles…) sans pouvoir baisser prix ou stock ni supprimer
+const EDITION_FICHES_IDS = ["V6"];
+function peutEditerFiches() { return !!STATE.vendeur && EDITION_FICHES_IDS.includes(STATE.vendeur.id); }
 
 const INITIAL_PRODUCTS = [];
 const INITIAL_CLIENTS = [
@@ -9597,6 +9601,11 @@ window.saveProd = () => {
   const existant = STATE.editProdId ? STATE.products.find(p=>p.id===STATE.editProdId) : null;
   if(existant && STATE.vendeur.id!=="V1" && existant.artisanat) f.artisanat = true;
   if(!existant && STATE.vendeur.id!=="V1" && peutGererArtisans() && f.artisanat && !(f.nomArtisan||"").trim()) { alert("Indique le nom de l'artisan."); return; }
+  if(existant && peutEditerFiches()) {
+    const np = parseFloat(f.price), na = parseFloat(f.prixAchat);
+    if(!isNaN(np) && np < (existant.price||0) - 0.009) { alert("⚠️ Tu ne peux pas baisser le prix d'un article ("+eur(existant.price)+"). Demande à Élodie."); return; }
+    if(existant.prixAchat!=null && !isNaN(na) && Math.abs(na-(existant.prixAchat||0))>0.009) f.prixAchat = existant.prixAchat;
+  }
   const stockActuel = existant ? existant.stock : 0;
   // Si des variantes sont définies, le stock total = somme des variantes
   const svForm = f.stockVariantes||{};
@@ -9694,7 +9703,7 @@ window.openProdModal = id => {
   // Vendeurs : création uniquement, pas de modification — sauf produits d'artisans pour les vendeuses autorisées
   if(id && STATE.vendeur.id !== "V1") {
     const pm = STATE.products.find(x=>x.id===id);
-    if(!(pm && (pm.artisanat || pm.depotVente) && peutGererArtisans())) { alert("Seule la gérante peut modifier cet article."); return; }
+    if(!(pm && ((pm.artisanat || pm.depotVente) && peutGererArtisans() || peutEditerFiches()))) { alert("Seule la gérante peut modifier cet article."); return; }
   }
   STATE.editProdId=id;
   STATE._newCouleur = "";
@@ -9704,7 +9713,7 @@ window.openProdModal = id => {
 };
 window.openBCModal  = id => { STATE.showBCModal=STATE.products.find(p=>p.id===id); STATE.etiquetteTailleVal=''; STATE.etiquetteCouleurVal=''; render(); };
 window.openStkModal = id => { STATE.showStkModal=STATE.products.find(p=>p.id===id); STATE.mvtType="entree"; STATE.mvtQty="1"; STATE.mvtTaille=""; STATE.mvtCouleur=""; STATE.mvtDefectueux=false; render(); };
-window.deleteProd   = id => { if(confirm("Supprimer cet article ?"))setState({products:STATE.products.filter(p=>p.id!==id)}); };
+window.deleteProd   = id => { if(STATE.vendeur?.id!=="V1") { alert("Seule la gérante peut supprimer un article."); return; } if(confirm("Supprimer cet article ?"))setState({products:STATE.products.filter(p=>p.id!==id)}); };
 
 function renderProdModal() {
   const f = STATE.prodForm;
@@ -10329,7 +10338,7 @@ function renderStkModal() {
         <div style="display:flex;justify-content:space-between;background:#f5f0f2;padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:13px;"><span style="color:#888;">Stock actuel</span><span style="font-weight:500;">${p.stock} unités</span></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
           <div onclick="STATE.mvtType='entree';render()" style="padding:10px;border-radius:8px;cursor:pointer;text-align:center;border:${STATE.mvtType==="entree"?"2px solid #993556":"1px solid #ddd"};color:${STATE.mvtType==="entree"?"#993556":"#555"};font-weight:${STATE.mvtType==="entree"?500:400};">⬆ Entrée</div>
-          <div onclick="STATE.mvtType='sortie';if(STATE.vendeur.id!=='V1')STATE.mvtDefectueux=true;render()" style="padding:10px;border-radius:8px;cursor:pointer;text-align:center;border:${STATE.mvtType==="sortie"?"2px solid #993556":"1px solid #ddd"};color:${STATE.mvtType==="sortie"?"#993556":"#555"};font-weight:${STATE.mvtType==="sortie"?500:400};">⬇ Sortie</div>
+          <div onclick="if(peutEditerFiches()){alert('Tu ne peux pas sortir de stock. Préviens Élodie.');return;}STATE.mvtType='sortie';if(STATE.vendeur.id!=='V1')STATE.mvtDefectueux=true;render()" style="padding:10px;border-radius:8px;cursor:pointer;text-align:center;border:${STATE.mvtType==="sortie"?"2px solid #993556":"1px solid #ddd"};color:${STATE.mvtType==="sortie"?"#993556":"#555"};font-weight:${STATE.mvtType==="sortie"?500:400};">⬇ Sortie</div>
         </div>
         ${STATE.mvtType==="sortie"&&STATE.vendeur.id!=="V1"?`
         <div style="background:#fcebeb;border:1px solid #e8a5a5;border-radius:8px;padding:10px;margin-bottom:10px;text-align:center;">
