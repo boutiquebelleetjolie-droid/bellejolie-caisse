@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "17/11 · v194 (Black Friday : artisans exclus)";
+const APP_VERSION = "17/11 · v195 (Sabrina peut modifier les articles de dépôt-vente)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -9686,7 +9686,7 @@ window.openProdModal = id => {
   // Vendeurs : création uniquement, pas de modification — sauf produits d'artisans pour les vendeuses autorisées
   if(id && STATE.vendeur.id !== "V1") {
     const pm = STATE.products.find(x=>x.id===id);
-    if(!(pm && pm.artisanat && peutGererArtisans())) { alert("Seule la gérante peut modifier cet article."); return; }
+    if(!(pm && (pm.artisanat || pm.depotVente) && peutGererArtisans())) { alert("Seule la gérante peut modifier cet article."); return; }
   }
   STATE.editProdId=id;
   STATE._newCouleur = "";
