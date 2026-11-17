@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "17/11 · v193 (Black Friday −15/−20/−30 % du 21 au 30/11)";
+const APP_VERSION = "17/11 · v194 (Black Friday : artisans exclus)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -4523,6 +4523,7 @@ function calcPanier() {
         if(x.retour || x.avoirId) return;
         if(x.ref==="SAC-CAISSE" || x.name==="Sac" || x.ref==="RETOUCHE-CAISSE") return;
         if(estLigneDepot(x)) return; // dépôt-vente : pas de remise progressive
+        { const pA = (STATE.products||[]).find(p=>p.id===(x.prodIdOriginal||x.id)) || {}; if(estLigneArtisan(x, pA)) return; } // artisans : exclus
         const aRemiseArt = parseFloat(x.remise||0)>0 || x._promoAuto;
         if(aRemiseArt) return; // déjà en promo, ne compte pas pour le palier
         qtyEligible += (x.qty||1);
@@ -18367,7 +18368,7 @@ function renderRemiseProgressive() {
     </div>
 
     <div style="font-weight:600;font-size:15px;margin-bottom:6px;">🎉 Remise progressive par quantité</div>
-    <div style="font-size:13px;color:#888;margin-bottom:16px;">S'applique automatiquement en caisse dès qu'une cliente atteint le palier — sur les articles plein tarif, hors sac à 0,20€ et hors articles déjà en promo.</div>
+    <div style="font-size:13px;color:#888;margin-bottom:16px;">S'applique automatiquement en caisse dès qu'une cliente atteint le palier — sur les articles plein tarif, hors sac à 0,20€, dépôt-vente, artisans et articles déjà en promo.</div>
 
     ${enCours?`<div style="background:#eaf3de;border:1px solid #b5d89a;border-radius:10px;padding:12px;margin-bottom:16px;font-size:13px;color:#3b6d11;font-weight:600;">✅ Offre active en ce moment en caisse</div>`:""}
 
