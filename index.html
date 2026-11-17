@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "17/11 · v198 (profils Leyna et Clara)";
+const APP_VERSION = "17/11 · v199 (Clara : droits de base)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -1352,10 +1352,10 @@ const VENDEURS = [
   { id:"V4", nom:"Mode Test",    prenom:"",     code:"0000", role:"apprenti", color:"#e07c00" },
   { id:"V5", nom:"Stagiaire",     prenom:"",     code:"5555", role:"stagiaire", color:"#8a6d3b" }, // encaisse pour de vrai, accès limité
   { id:"V6", nom:"Leyna",         prenom:"",     code:"4444", role:"vendeur",   color:"#b0477a" }, // Chartres + Dreux : crée et modifie les fiches, sans baisse (prix, stock, suppression)
-  { id:"V7", nom:"Clara",         prenom:"",     code:"3333", role:"vendeur",   color:"#3b7ab0" }, // Chartres + Dreux : mêmes droits que Leyna
+  { id:"V7", nom:"Clara",         prenom:"",     code:"3333", role:"vendeur",   color:"#3b7ab0" }, // Chartres + Dreux : droits de base (comme Noémie)
 ];
 // Vendeuses autorisées à modifier les fiches articles (descriptif, photo, tailles…) sans pouvoir baisser prix ou stock ni supprimer
-const EDITION_FICHES_IDS = ["V6","V7"];
+const EDITION_FICHES_IDS = ["V6"];
 function peutEditerFiches() { return !!STATE.vendeur && EDITION_FICHES_IDS.includes(STATE.vendeur.id); }
 
 const INITIAL_PRODUCTS = [];
