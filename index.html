@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "18/11 · v203 (baisse de stock : Sabrina avec code d'accord par mail, Leyna jamais)";
+const APP_VERSION = "18/11 · v204 (fidélité : non cumulable Black Friday, hors vide-dressing et articles rapportés)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -4453,7 +4453,20 @@ function passagesClient(clientId) {
       && (v.clientId||v.client?.id)===clientId && (parseFloat(v.total)||0)>0)
     .sort((a,b)=>new Date(b.date)-new Date(a.date));
 }
-function montantPassage(v) { return Math.round((parseFloat(v.total)||0)*100)/100; }
+// Montant retenu pour la fidélité : sans le vide-dressing (dépôt-vente) et sans les articles rapportés ensuite
+function montantPassage(v) {
+  let m = parseFloat(v.total)||0;
+  const rendus = {...(v.articlesRetournes||{})};
+  (v.panier||[]).forEach(x => {
+    if(x.retour || x.avoirId) return;
+    const pid = x.prodIdOriginal || x.id, q = x.qty||1;
+    const r = Math.min(q, rendus[pid]||0); if(r) rendus[pid] -= r;
+    const pu = (x.remiseType==="pct") ? x.price*(1-(parseFloat(x.remise||0)/100)) : (x.remiseType==="eur") ? x.price-(parseFloat(x.remise||0)/q) : x.price;
+    if(estLigneDepot(x)) m -= Math.max(0,pu)*q;          // vide-dressing : jamais de fidélité
+    else if(r) m -= Math.max(0,pu)*r;                    // rapporté ensuite : ne compte plus
+  });
+  return Math.max(0, Math.round(m*100)/100);
+}
 function profilFidelite(clientId, montantEnCours) {
   const tous = passagesClient(clientId);
   const derniers = tous.map(montantPassage);
@@ -4525,7 +4538,7 @@ function calcPanier() {
   
   if(STATE.client && stTotal>0 && !bonFid400Actif){
     const mod8=(profilFid ? profilFid.nb40Total : (STATE.client.totalAchats||0))%8;
-    const progFid = profilFidelite(STATE.client.id, stTotal).programme;
+    const progFid = profilFidelite(STATE.client.id, Math.max(0, stTotal - stDepot)).programme;
     // Palier atteint = remise disponible mais pas auto-appliquée (programme -20 % uniquement)
     if(progFid===1 && mod8>=7 && stTotal>=40) {
       // Marquer la remise comme disponible sur le client
@@ -4551,8 +4564,7 @@ function calcPanier() {
     : 0;
   // Fidélité -15%/-20% : seulement sur les articles plein tarif — escalade à -20% après 3 utilisations ou profil gros paniers
   const pct15 = bonFid400Actif ? (fid15Escalade ? 20 : 15) : 0;
-  const remiseFidMontant = fidPct>0 ? Math.max(stTotalSansRemise,0)*fidPct/100 : (pct15>0 ? Math.max(stTotalSansRemise,0)*pct15/100 : 0);
-  const fidPctFinal = fidPct>0 ? fidPct : pct15;
+  let baseBF = 0; // articles qui ont la remise Black Friday / progressive : pas de fidélité en plus
 
   // ── Remise progressive automatique par quantité (ex: 2 art. -10%, 3 art. -15%, 4+ -20%) ──
   // S'applique sur les articles plein tarif uniquement, hors sac (ref SAC-CAISSE) et hors retours.
@@ -4580,6 +4592,7 @@ function calcPanier() {
         remiseProgPct = palierAtteint.pct;
         remiseProgMontant = baseEligible * remiseProgPct/100;
         remiseProgPalier = palierAtteint;
+        baseBF = baseEligible;
       }
     }
   }
@@ -4612,9 +4625,14 @@ function calcPanier() {
     }
   }
   const remiseChaussuresMontant = promoChaussuresInfo ? promoChaussuresInfo.remiseTotale : 0;
+  // Fidélité : uniquement sur les articles plein tarif qui n'ont PAS déjà la remise Black Friday / progressive
+  const baseFid = Math.max(0, stTotalSansRemise - baseBF);
+  const remiseFidMontant = fidPct>0 ? baseFid*fidPct/100 : (pct15>0 ? baseFid*pct15/100 : 0);
+  const fidPctFinal = (fidPct>0 ? fidPct : pct15);
+  const fidBloqueeBF = fidPctFinal>0 && baseBF>0 && remiseFidMontant<0.005;
 
   const total = stTotal - remGlobal - remiseFidMontant - remiseProgMontant - remiseChaussuresMontant;
-  return {stTotal, stTotalSansRemise, stDepot, stHorsDepot, remGlobal, fidPct, fidPctFinal, remiseFidMontant, fid20Escalade, fid15Escalade, nbUtilisationsFid20, nbUtilisationsFid15, remiseProgPct, remiseProgMontant, remiseProgPalier, promoChaussuresInfo, remiseChaussuresMontant, total};
+  return {stTotal, stTotalSansRemise, stDepot, stHorsDepot, remGlobal, fidPct, fidPctFinal, remiseFidMontant, fidBloqueeBF, fid20Escalade, fid15Escalade, nbUtilisationsFid20, nbUtilisationsFid15, remiseProgPct, remiseProgMontant, remiseProgPalier, promoChaussuresInfo, remiseChaussuresMontant, total};
 }
 
 function getCaisseTotal()    { return calcPanier().total; } // peut être négatif
@@ -5461,7 +5479,8 @@ function renderCaisse() {
           ${panier.filter(x=>x.retour).length>0?`<div style="display:flex;justify-content:space-between;color:#e07c00;font-size:12px;"><span>Retours (${panier.filter(x=>x.retour).length})</span><span>-${eur(panier.filter(x=>x.retour).reduce((s,x)=>s+x.price*x.qty,0))}</span></div>`:""}
           <div style="display:flex;justify-content:space-between;"><span style="color:#888;">Sous-total</span><span>${eur(stTotal)}</span></div>
           ${remGlobal>0?`<div style="display:flex;justify-content:space-between;color:#3b6d11;"><span>Remise globale (${STATE.remType==="pct"?STATE.remVal+"%":"fixe"})</span><span>-${eur(remGlobal)}</span></div>`:""}
-          ${fidPctFinal>0?`<div style="display:flex;justify-content:space-between;color:#3b6d11;"><span>Fidélité -${fidPctFinal}%${(fid20Escalade||fid15Escalade)?' ⭐':''}</span><span>-${eur(remiseFidMontant)}</span></div>`:""}
+          ${calcPanier().fidBloqueeBF?`<div style="font-size:11px;color:#854f0b;">ℹ️ Fidélité non cumulable avec le Black Friday : elle reste disponible pour un prochain achat.</div>`:""}
+          ${fidPctFinal>0&&remiseFidMontant>0.005?`<div style="display:flex;justify-content:space-between;color:#3b6d11;"><span>Fidélité -${fidPctFinal}%${(fid20Escalade||fid15Escalade)?' ⭐':''}</span><span>-${eur(remiseFidMontant)}</span></div>`:""}
           ${remiseProgMontant>0?`<div style="display:flex;justify-content:space-between;color:#993556;"><span>🎉 Offre quantité (${remiseProgPalier?.qty}+ art. -${remiseProgPct}%)</span><span>-${eur(remiseProgMontant)}</span></div>`:""}
           ${remiseChaussuresMontant>0?`<div style="display:flex;justify-content:space-between;color:#993556;"><span>🩰 Promo chaussures (-${promoChaussuresInfo.remisePct}% sur ${promoChaussuresInfo.nom.slice(0,18)})</span><span>-${eur(remiseChaussuresMontant)}</span></div>`:""}
           <div style="display:flex;justify-content:space-between;font-weight:500;font-size:20px;padding-top:8px;border-top:0.5px solid #e8e0e4;margin-top:4px;">
@@ -7231,7 +7250,7 @@ function renderPayModal() {
             const {remGlobal, fidPctFinal, remiseFidMontant, remiseProgMontant, remiseProgPct, remiseProgPalier, promoChaussuresInfo, remiseChaussuresMontant} = calcPanier();
             const lignes = [];
             if(remGlobal>0) lignes.push(`<div style="display:flex;justify-content:space-between;color:#3b6d11;"><span>Remise globale (${STATE.remType==="pct"?STATE.remVal+"%":"fixe"})</span><span>-${eur(remGlobal)}</span></div>`);
-            if(fidPctFinal>0) lignes.push(`<div style="display:flex;justify-content:space-between;color:#3b6d11;"><span>Fidélité -${fidPctFinal}%</span><span>-${eur(remiseFidMontant)}</span></div>`);
+            if(fidPctFinal>0 && remiseFidMontant>0.005) lignes.push(`<div style="display:flex;justify-content:space-between;color:#3b6d11;"><span>Fidélité -${fidPctFinal}%</span><span>-${eur(remiseFidMontant)}</span></div>`);
             if(remiseProgMontant>0) lignes.push(`<div style="display:flex;justify-content:space-between;color:#993556;"><span>🎉 Offre quantité (${remiseProgPalier?.qty}+ art. -${remiseProgPct}%)</span><span>-${eur(remiseProgMontant)}</span></div>`);
             if(remiseChaussuresMontant>0) lignes.push(`<div style="display:flex;justify-content:space-between;color:#993556;"><span>🩰 Promo chaussures (-${promoChaussuresInfo.remisePct}% sur ${promoChaussuresInfo.nom.slice(0,18)})</span><span>-${eur(remiseChaussuresMontant)}</span></div>`);
             return lignes.length ? `<div style="margin-top:8px;padding-top:8px;border-top:1px solid #e8e0e4;font-size:12px;display:flex;flex-direction:column;gap:4px;">${lignes.join("")}</div>` : "";
@@ -7560,7 +7579,7 @@ window.validerPaiement = () => {
   if(STATE.client) {
     const achatsBruts = STATE.panier.filter(x=>!x.retour).reduce((s,x)=>s+x.price*x.qty,0);
     const retoursBruts = STATE.panier.filter(x=>x.retour&&!x.avoirId).reduce((s,x)=>s+x.price*x.qty,0);
-    const netAchat = Math.round(Math.max(0,total)*100)/100; // montant réellement payé
+    const netAchat = Math.round(Math.max(0,total - (calcPanier().stDepot||0))*100)/100; // montant payé, hors vide-dressing (pas de fidélité dessus)
     void achatsBruts; void retoursBruts;
     // Compter dans la fidélité seulement si le montant payé atteint 40€
     if(netAchat >= 40) {
@@ -7604,7 +7623,7 @@ window.validerPaiement = () => {
     }
 
     // ── Incrémenter le compteur d'utilisation du Programme -20%/-25% (pour l'escalade après 3 utilisations) ──
-    if(fidPct===20 || fidPct===25) {
+    if((fidPct===20 || fidPct===25) && (remiseFidMontant||0) > 0.005) {
       STATE.clients = STATE.clients.map(c=>c.id===STATE.client.id?{...c, nbUtilisationsFid20:(c.nbUtilisationsFid20||0)+1}:c);
     }
 
