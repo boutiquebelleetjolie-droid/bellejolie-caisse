@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "17/11 · v199 (Clara : droits de base)";
+const APP_VERSION = "18/11 · v200 (Sabrina peut modifier toutes les fiches articles)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -1355,7 +1355,7 @@ const VENDEURS = [
   { id:"V7", nom:"Clara",         prenom:"",     code:"3333", role:"vendeur",   color:"#3b7ab0" }, // Chartres + Dreux : droits de base (comme Noémie)
 ];
 // Vendeuses autorisées à modifier les fiches articles (descriptif, photo, tailles…) sans pouvoir baisser prix ou stock ni supprimer
-const EDITION_FICHES_IDS = ["V6"];
+const EDITION_FICHES_IDS = ["V3","V6"]; // V3 Sabrina, V6 Leyna
 function peutEditerFiches() { return !!STATE.vendeur && EDITION_FICHES_IDS.includes(STATE.vendeur.id); }
 
 const INITIAL_PRODUCTS = [];
@@ -9602,7 +9602,7 @@ window.saveProd = () => {
   const existant = STATE.editProdId ? STATE.products.find(p=>p.id===STATE.editProdId) : null;
   if(existant && STATE.vendeur.id!=="V1" && existant.artisanat) f.artisanat = true;
   if(!existant && STATE.vendeur.id!=="V1" && peutGererArtisans() && f.artisanat && !(f.nomArtisan||"").trim()) { alert("Indique le nom de l'artisan."); return; }
-  if(existant && peutEditerFiches()) {
+  if(existant && peutEditerFiches() && !((existant.artisanat || existant.depotVente) && peutGererArtisans())) {
     const np = parseFloat(f.price), na = parseFloat(f.prixAchat);
     if(!isNaN(np) && np < (existant.price||0) - 0.009) { alert("⚠️ Tu ne peux pas baisser le prix d'un article ("+eur(existant.price)+"). Demande à Élodie."); return; }
     if(existant.prixAchat!=null && !isNaN(na) && Math.abs(na-(existant.prixAchat||0))>0.009) f.prixAchat = existant.prixAchat;
