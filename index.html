@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "18/11 · v200 (Sabrina peut modifier toutes les fiches articles)";
+const APP_VERSION = "18/11 · v201 (crayon de modification pour Sabrina et Leyna)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -9069,7 +9069,7 @@ prods.forEach(p=>{
       t += '<button onclick="ajouterToutStockLot(\''+p.id+'\');ouvrirModalLotEtiq()" class="btn-ghost" style="color:#993556;border-color:#f0c8d4;white-space:nowrap;">📦 Lot ('+totalLot+')</button>';
     }
   }
-  if(isV1 || (p.artisanat && peutGererArtisans())) t += '<button onclick="openProdModal(\''+p.id+'\')" class="btn-ghost">✏️</button>';
+  if(isV1 || peutEditerFiches() || ((p.artisanat || p.depotVente) && peutGererArtisans())) t += '<button onclick="openProdModal(\''+p.id+'\')" class="btn-ghost">✏️</button>';
   if(isV1) t += '<button onclick="deleteProd(\''+p.id+'\')" class="btn-ghost" style="color:#a32d2d;border-color:#f0959599;">🗑️</button>';
   t += '</div></td></tr>';
 });
@@ -9216,7 +9216,7 @@ function renderStock() {
     const parA = {};
     filtered.forEach(p => { const n = nomArtisanCanon(p.nomArtisan); (parA[n] = parA[n] || []).push(p); });
     const noms = Object.keys(parA).sort((a,b)=>a.localeCompare(b));
-    const peutModif = isV1 || peutGererArtisans();
+    const peutModif = isV1 || peutGererArtisans() || peutEditerFiches();
     html += '<div style="background:#f3e8fc;border:1px solid #d9c2ee;border-radius:12px;padding:12px 14px;margin-bottom:14px;">';
     html += '<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;"><div style="font-weight:600;font-size:14px;color:#6a3d9a;">🎨 Produits d\'artisans — '+filtered.length+' article'+(filtered.length>1?'s':'')+' · '+noms.length+' artisan'+(noms.length>1?'s':'')+'</div>';
     html += '<div style="display:flex;gap:6px;">'+(peutModif?'<button onclick="openProdModal(null);STATE.prodForm.artisanat=true;render()" style="background:#6a3d9a;color:#fff;border:none;border-radius:7px;padding:5px 10px;font-size:12px;cursor:pointer;">+ Article d\'artisan</button>':'')+'<button onclick="STATE.filtreArtisans=false;render()" style="background:none;border:1px solid #6a3d9a;color:#6a3d9a;border-radius:7px;padding:4px 10px;font-size:12px;cursor:pointer;">✕ Fermer</button></div></div>';
@@ -9277,7 +9277,7 @@ function renderStock() {
         html += '<td style="padding:6px;color:#666;">'+(couleurs.length?couleurs.join(", "):"—")+'</td>';
         html += '<td style="padding:6px;color:#c2185b;font-weight:600;">'+(toutes?(couleurs.length>1?'⚠️ Toutes les couleurs':'✅ Oui'):'✅ '+concernees.join(", "))+'</td>';
         html += '<td style="padding:6px;text-align:right;">'+stockConcerne+'</td>';
-        html += '<td style="padding:6px;text-align:right;">'+((isV1)?'<button onclick="openProdModal(\''+p.id+'\')" class="btn-ghost" style="padding:3px 8px;">✏️</button>':'')+'</td>';
+        html += '<td style="padding:6px;text-align:right;">'+((isV1 || peutEditerFiches())?'<button onclick="openProdModal(\''+p.id+'\')" class="btn-ghost" style="padding:3px 8px;">✏️</button>':'')+'</td>';
         html += '</tr>';
       });
       html += '</tbody></table></div>';
