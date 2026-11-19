@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "19/11 · v205 (stats : analyse fermeture du midi mardi/jeudi)";
+const APP_VERSION = "19/11 · v206 (analyse du midi en haut de Stats › Par heure)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -3359,7 +3359,7 @@ function renderApp() {
     ${STATE.tab==="stock"     ? renderStock()      : ""}
 
     ${STATE.tab==="crm"       ? renderCRM()        : ""}
-    ${STATE.tab==="stats"     ? renderStats()+renderAnalyseMidi()+renderCompteurTickets() : ""}
+    ${STATE.tab==="stats"     ? renderStats()+renderCompteurTickets() : ""}
   ${STATE.tab==="historique" ? renderHistorique() : ""}
     ${STATE.tab==="journal"      ? renderJournal()        : ""}
     ${STATE.tab==="fidelite"     ? renderFidelite()       : ""}
@@ -11834,7 +11834,7 @@ function renderAnalyseMidi() {
     return `<div style="flex:1;min-width:260px;"><div style="font-weight:600;font-size:13px;margin-bottom:4px;">${nom} <span style="font-weight:400;color:#888;font-size:11px;">(${n} jour${n>1?"s":""} · ${eur(caJour)}/jour en moyenne)</span></div>
       <table style="width:100%;border-collapse:collapse;font-size:12px;">${res.map(r=>`<tr style="${r.ca===min?"background:#eaf3de;font-weight:600;":""}"><td style="padding:4px 6px;">${r.ca===min?"✅ ":""}Fermé ${r.lib}</td><td style="padding:4px 6px;text-align:right;">${eur(r.ca)} perdus/jour</td><td style="padding:4px 6px;text-align:right;color:#888;">${r.nb.toFixed(1)} ticket(s) · ${caJour?Math.round(r.ca/caJour*100):0} %</td></tr>`).join("")}</table></div>`;
   };
-  return `<div class="card" style="margin-top:16px;"><div style="font-weight:600;font-size:14px;margin-bottom:4px;">🕐 Fermeture du midi — mardi et jeudi</div>
+  return `<div class="card" style="margin:0 0 16px;border:1.5px solid #993556;"><div style="font-weight:600;font-size:14px;margin-bottom:4px;">🕐 Fermeture du midi — mardi et jeudi</div>
     <div style="font-size:11px;color:#888;margin-bottom:10px;">CA moyen encaissé sur chaque créneau d'1 h entre 12 h et 15 h, depuis l'ouverture. ✅ = l'heure où fermer coûte le moins.</div>
     <div style="display:flex;gap:20px;flex-wrap:wrap;">${bloc(2,"Mardi")}${bloc(4,"Jeudi")}</div></div>`;
 }
@@ -12388,6 +12388,7 @@ function renderStats() {
     })()}
     `:""}
 
+    ${per==="detail_jour"?renderAnalyseMidi():""}
     ${per==="detail_jour"?`
     <!-- VUE DETAIL HEURE PAR HEURE -->
     ${(()=>{
