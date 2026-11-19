@@ -104,7 +104,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "18/11 · v204 (fidélité : non cumulable Black Friday, hors vide-dressing et articles rapportés)";
+const APP_VERSION = "19/11 · v205 (stats : analyse fermeture du midi mardi/jeudi)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -3359,7 +3359,7 @@ function renderApp() {
     ${STATE.tab==="stock"     ? renderStock()      : ""}
 
     ${STATE.tab==="crm"       ? renderCRM()        : ""}
-    ${STATE.tab==="stats"     ? renderStats()+renderCompteurTickets() : ""}
+    ${STATE.tab==="stats"     ? renderStats()+renderAnalyseMidi()+renderCompteurTickets() : ""}
   ${STATE.tab==="historique" ? renderHistorique() : ""}
     ${STATE.tab==="journal"      ? renderJournal()        : ""}
     ${STATE.tab==="fidelite"     ? renderFidelite()       : ""}
@@ -11816,6 +11816,28 @@ function renderPaceHoraireWidget() {
 
 // ── Nombre de tickets : semaine, mois, année (et même période l'an dernier) ──
 function estTicketDeVente(v) { return v && !v.test && !v.annulee && !v.correctionManuelle && v.payMode!=="avoir_cree" && v.payMode!=="remboursement_especes"; }
+// Analyse du créneau 12h-15h les mardis et jeudis (choix de l'heure de fermeture du midi)
+function renderAnalyseMidi() {
+  if(STATE.vendeur?.id!=="V1") return "";
+  const ventes = (STATE.ventes||[]).filter(v => !v.test && !v.annulee && !v.correctionManuelle && (parseFloat(v.total)||0)>0);
+  const jours = {2:{}, 4:{}}; // date -> {slots:{minutes:CA}, nb:{}, total}
+  ventes.forEach(v => { const d = new Date(v.date), dow = d.getDay(); if(dow!==2 && dow!==4) return;
+    const k = dateLocaleStr(d); const j = (jours[dow][k] = jours[dow][k] || {ca:{}, nb:{}, total:0});
+    j.total += v.total; const m = d.getHours()*60+d.getMinutes();
+    if(m>=720 && m<900) { const sl = Math.floor((m-720)/30); j.ca[sl] = (j.ca[sl]||0)+v.total; j.nb[sl] = (j.nb[sl]||0)+1; } });
+  const fen = [[0,"12h00–13h00"],[1,"12h30–13h30"],[2,"13h00–14h00"],[3,"13h30–14h30"],[4,"14h00–15h00"]];
+  const bloc = (dow, nom) => {
+    const js = Object.values(jours[dow]); const n = js.length; if(!n) return `<div style="font-size:12px;color:#aaa;">${nom} : pas encore de ventes.</div>`;
+    const caJour = js.reduce((s,j)=>s+j.total,0)/n;
+    const res = fen.map(([i,lib]) => { const ca = js.reduce((s,j)=>s+(j.ca[i]||0)+(j.ca[i+1]||0),0)/n, nb = js.reduce((s,j)=>s+(j.nb[i]||0)+(j.nb[i+1]||0),0)/n; return {lib, ca, nb}; });
+    const min = Math.min(...res.map(r=>r.ca));
+    return `<div style="flex:1;min-width:260px;"><div style="font-weight:600;font-size:13px;margin-bottom:4px;">${nom} <span style="font-weight:400;color:#888;font-size:11px;">(${n} jour${n>1?"s":""} · ${eur(caJour)}/jour en moyenne)</span></div>
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">${res.map(r=>`<tr style="${r.ca===min?"background:#eaf3de;font-weight:600;":""}"><td style="padding:4px 6px;">${r.ca===min?"✅ ":""}Fermé ${r.lib}</td><td style="padding:4px 6px;text-align:right;">${eur(r.ca)} perdus/jour</td><td style="padding:4px 6px;text-align:right;color:#888;">${r.nb.toFixed(1)} ticket(s) · ${caJour?Math.round(r.ca/caJour*100):0} %</td></tr>`).join("")}</table></div>`;
+  };
+  return `<div class="card" style="margin-top:16px;"><div style="font-weight:600;font-size:14px;margin-bottom:4px;">🕐 Fermeture du midi — mardi et jeudi</div>
+    <div style="font-size:11px;color:#888;margin-bottom:10px;">CA moyen encaissé sur chaque créneau d'1 h entre 12 h et 15 h, depuis l'ouverture. ✅ = l'heure où fermer coûte le moins.</div>
+    <div style="display:flex;gap:20px;flex-wrap:wrap;">${bloc(2,"Mardi")}${bloc(4,"Jeudi")}</div></div>`;
+}
 function renderCompteurTickets() {
   if(STATE.vendeur.id!=="V1") return "";
   const now = new Date();
