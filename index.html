@@ -107,7 +107,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "20/11 · v212 (frais avancés : TVA déductible, Z mensuel, CA3)";
+const APP_VERSION = "20/11 · v213 (remises à virgule)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -5111,7 +5111,7 @@ function renderCaisse() {
                       <option value="pct" ${it.remiseType==="pct"?"selected":""}>%</option>
                       <option value="eur" ${it.remiseType==="eur"?"selected":""}>€</option>
                     </select>
-                    ${it.remiseType?`<input type="number" min="0" value="${it.remise||''}" oninput="setRemiseArtVal('${it.id}',this.value)" style="width:48px;font-size:11px;padding:2px 4px;" placeholder="0"/>`:""}`}
+                    ${it.remiseType?`<input type="text" inputmode="decimal" value="${String(it.remise||'').replace('.',',')}" oninput="setRemiseArtVal('${it.id}',this.value)" style="width:52px;font-size:11px;padding:2px 4px;" placeholder="0"/>`:""}`}
                   </div>
                 </td>
                 <td style="text-align:right;padding:8px 4px;font-weight:500;color:${it.retour?"#e07c00":"#1a1a1a"};">
@@ -5475,7 +5475,7 @@ function renderCaisse() {
             <option value="pct" ${STATE.remType==="pct"?"selected":""}>%</option>
             <option value="eur" ${STATE.remType==="eur"?"selected":""}>€</option>
           </select>
-          <input type="number" min="0" value="${STATE.remVal}" oninput="STATE.remVal=this.value;clearTimeout(window._remTimer);window._remTimer=setTimeout(render,200)" onblur="validerRemGlobal()" placeholder="${STATE.remType==="pct"?"ex: 10":"ex: 5"}" style="flex:1;"/>
+          <input type="text" inputmode="decimal" value="${String(STATE.remVal||'').replace('.',',')}" oninput="STATE.remVal=this.value.replace(',','.').replace(/[^0-9.]/g,'');clearTimeout(window._remTimer);window._remTimer=setTimeout(render,600)" onblur="validerRemGlobal()" placeholder="${STATE.remType==="pct"?"ex: 10":"ex: 5"}" style="flex:1;"/>
           ${STATE.remVal?`<button onclick="setState({remVal:'',remGlobalMotif:''})" class="btn-ghost">×</button>`:""}
         </div>`}
       </div>
@@ -5593,8 +5593,10 @@ window.retablirRemiseRetour = (id) => {
   render();
 };
 window.setRemiseArtVal = (id, val) => {
-  STATE.panier = STATE.panier.map(x => x.id===id ? {...x, remise:val} : x);
-  render();
+  // Virgule acceptée (ex. 2,5) ; on attend la fin de la frappe avant de rafraîchir pour ne pas perdre la saisie
+  const v = String(val||"").replace(",", ".").replace(/[^0-9.]/g, "");
+  STATE.panier = STATE.panier.map(x => x.id===id ? {...x, remise:v} : x);
+  clearTimeout(window._remArtTimer); window._remArtTimer = setTimeout(render, 600);
 };
 // Calcule le prix unitaire réellement payé pour une ligne d'achat donnée, en tenant compte de la
 // remise article ET de la part proportionnelle d'une remise globale/fidélité/quantité sur toute la vente.
@@ -18488,7 +18490,7 @@ function renderPromoChaussures() {
 
       <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Remise sur le 2e article (le plus cher, hors chaussures)</label>
       <div style="display:flex;align-items:center;gap:8px;">
-        <input type="number" min="1" max="90" value="${pc.remisePct||30}" onchange="STATE.promoChaussures.remisePct=parseInt(this.value)||30;sauvegarderPromoChaussures()" style="width:80px;text-align:center;font-weight:600;color:#993556;"/>
+        <input type="number" step="0.5" min="1" max="90" value="${pc.remisePct||30}" onchange="STATE.promoChaussures.remisePct=parseFloat(String(this.value).replace(',','.'))||30;sauvegarderPromoChaussures()" style="width:80px;text-align:center;font-weight:600;color:#993556;"/>
         <span style="font-size:14px;color:#555;">%</span>
       </div>
     </div>
@@ -18548,7 +18550,7 @@ function renderRemiseProgressive() {
           <span style="font-size:13px;color:#555;">Dès</span>
           <input type="number" min="2" value="${p.qty}" onchange="STATE.remiseProgressive.paliers[${i}].qty=parseInt(this.value)||2;sauvegarderRemiseProgressive()" style="width:60px;text-align:center;"/>
           <span style="font-size:13px;color:#555;">articles achetés →</span>
-          <input type="number" min="1" max="90" value="${p.pct}" onchange="STATE.remiseProgressive.paliers[${i}].pct=parseInt(this.value)||0;sauvegarderRemiseProgressive()" style="width:60px;text-align:center;font-weight:600;color:#993556;"/>
+          <input type="number" step="0.5" min="1" max="90" value="${p.pct}" onchange="STATE.remiseProgressive.paliers[${i}].pct=parseFloat(String(this.value).replace(',','.'))||0;sauvegarderRemiseProgressive()" style="width:60px;text-align:center;font-weight:600;color:#993556;"/>
           <span style="font-size:13px;color:#555;">%</span>
           <button onclick="STATE.remiseProgressive.paliers=STATE.remiseProgressive.paliers.filter((_,idx)=>idx!==${i});sauvegarderRemiseProgressive()" style="margin-left:auto;background:none;border:none;color:#a32d2d;cursor:pointer;font-size:14px;">✕</button>
         </div>
@@ -18710,7 +18712,7 @@ function renderPromoArticles() {
       ${np.type==="pct"||np.type==="soldes"?`
       <div style="margin-bottom:12px;">
         <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Remise %</label>
-        <input type="number" min="1" max="90" value="${np.remisePct}" oninput="STATE._newPromo.remisePct=parseInt(this.value)||0"
+        <input type="number" step="0.5" min="1" max="90" value="${np.remisePct}" oninput="STATE._newPromo.remisePct=parseFloat(String(this.value).replace(',','.'))||0"
           style="width:120px;font-size:14px;font-weight:600;color:#993556;"/>
         <span style="font-size:13px;color:#888;margin-left:6px;">%</span>
       </div>`:""}
@@ -18718,7 +18720,7 @@ function renderPromoArticles() {
       ${np.type==="euro"?`
       <div style="margin-bottom:12px;">
         <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">Remise €</label>
-        <input type="number" min="1" value="${np.remiseEuro}" oninput="STATE._newPromo.remiseEuro=parseFloat(this.value)||0"
+        <input type="number" step="0.01" min="0" value="${np.remiseEuro}" oninput="STATE._newPromo.remiseEuro=parseFloat(this.value)||0"
           style="width:120px;font-size:14px;font-weight:600;color:#993556;"/>
         <span style="font-size:13px;color:#888;margin-left:6px;">€</span>
       </div>`:""}
@@ -18728,7 +18730,7 @@ function renderPromoArticles() {
         <div style="display:flex;gap:12px;align-items:center;margin-bottom:8px;">
           <div>
             <label style="font-size:12px;color:#888;display:block;margin-bottom:3px;">1 acheté → % sur le 2ème</label>
-            <input type="number" min="1" max="100" value="${np.remisePct||20}" oninput="STATE._newPromo.remisePct=parseInt(this.value)||20"
+            <input type="number" step="0.5" min="1" max="100" value="${np.remisePct||20}" oninput="STATE._newPromo.remisePct=parseFloat(String(this.value).replace(',','.'))||20"
               style="width:80px;font-size:14px;font-weight:600;color:#993556;"/>
             <span style="font-size:13px;color:#888;margin-left:4px;">%</span>
           </div>
