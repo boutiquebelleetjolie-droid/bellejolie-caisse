@@ -107,7 +107,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "20/11 · v220 (transférer tout un dépôt vers l'autre boutique)";
+const APP_VERSION = "20/11 · v221 (rappel en caisse 2 jours avant la fin d'un dépôt)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -2695,6 +2695,28 @@ function infosRappelLot(lot) {
   const dejaBons = +bonsDuLot(lot).reduce((s,b)=>s+(b.montant||0),0).toFixed(2);
   return {vendus, enVente, gagne, dejaBons, reste: Math.max(0, +(gagne-dejaBons).toFixed(2))};
 }
+// Rappel en caisse : dépôts qui se terminent dans les 2 jours (sauf ceux d'Élodie)
+function lotsFinProche() {
+  const auj = new Date(); auj.setHours(0,0,0,0);
+  const lim = new Date(auj); lim.setDate(lim.getDate()+2); lim.setHours(23,59,59);
+  return (STATE.depotsVente||[]).filter(l => {
+    if(l.supprime) return false;
+    const nom = normStr((l.clientPrenom||"")+" "+(l.clientNom||"")), inv = normStr((l.clientNom||"")+" "+(l.clientPrenom||""));
+    if(nom==="elodie couespel" || inv==="elodie couespel") return false;
+    const f = finDepot(l); if(f < auj || f > lim) return false;
+    return [...new Set(l.articleIds||[])].some(pid => !getVenteInfoArticleDepot(pid).vendu && STATE.products.some(p=>p.id===pid));
+  }).sort((a,b)=>finDepot(a)-finDepot(b));
+}
+function renderRappelFinDepots() {
+  if(STATE._rappelDepotsMasque===dateLocaleStr()) return "";
+  const lots = lotsFinProche(); if(!lots.length) return "";
+  const auj = new Date(); auj.setHours(0,0,0,0);
+  const quand = l => { const n = Math.round((new Date(finDepot(l)).setHours(0,0,0,0)-auj)/864e5); return n<=0?"aujourd'hui":n===1?"demain":"dans "+n+" jours"; };
+  return `<div style="background:#fff3e8;border:1px solid #f0c890;border-radius:10px;padding:8px 12px;margin-bottom:10px;font-size:12px;color:#854f0b;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+    <span>⏰ <strong>Fin de dépôt-vente proche</strong> : ${lots.map(l=>`${l.clientPrenom||""} ${l.clientNom||""} (${quand(l)})`).join(" · ")} — pense à la prévenir (renouveler ou récupérer).</span>
+    <span style="margin-left:auto;display:flex;gap:6px;"><button onclick="setTab('depotvente')" style="background:#854f0b;color:#fff;border:none;border-radius:6px;padding:4px 10px;cursor:pointer;font-size:11px;">Voir</button>
+    <button onclick="STATE._rappelDepotsMasque=dateLocaleStr();render()" title="Masquer pour aujourd'hui" style="background:none;border:1px solid #f0c890;color:#854f0b;border-radius:6px;padding:4px 8px;cursor:pointer;font-size:11px;">✕</button></span></div>`;
+}
 // Regroupement par cliente (même email, sinon même nom) : un seul mail récapitulant tous ses dépôts
 function cleClienteDepot(l) { const em = (emailLotDepot(l)||"").trim().toLowerCase(); return em || ("nom:"+normStr((l.clientPrenom||"")+" "+(l.clientNom||"")).trim()); }
 function groupesRappelDepot() {
@@ -3365,7 +3387,7 @@ function renderApp() {
   </div>
   `:""}
   <div style="padding:${STATE.tab==="caisse"?"12px 14px":"18px"};max-width:${STATE.tab==="caisse"?"none":"1100px"};margin:0 auto;">
-    ${STATE.tab==="caisse"    ? renderCaisse()     : ""}
+    ${STATE.tab==="caisse"    ? renderRappelFinDepots()+renderCaisse()     : ""}
     ${STATE.tab==="stock"     ? renderStock()      : ""}
 
     ${STATE.tab==="crm"       ? renderCRM()        : ""}
