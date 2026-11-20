@@ -107,7 +107,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "20/11 · v218 (vide-dressing : ni repris ni échangé)";
+const APP_VERSION = "20/11 · v219 (marque sur les étiquettes vide-dressing)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -10311,7 +10311,7 @@ window.imprimerToutStock = () => {
     for(let i=0;i<ligne.qty;i++) {
       etiqHtml += `<div class="etiq">
         <div class="etiq-name">${p.name.length>26?p.name.slice(0,26)+"…":p.name}</div>
-        <div class="etiq-ref" style="${p.depotVente?'color:#185fa5;font-weight:600;':''}">${p.depotVente ? ("🔄 DÉPÔT · "+(p.depotClientPrenom||"")+" "+(p.depotClientNom||"")+((p.depotTaille||(infos))?" · "+(p.depotTaille?"T."+p.depotTaille:infos):"")).slice(0,40) : ((p.marque?p.marque+" · ":"")+(p.ref+(infos?" · "+infos:"")).slice(0,30)+(p.grandeTaille?" · GT":""))}</div>
+        <div class="etiq-ref" style="${p.depotVente?'color:#185fa5;font-weight:600;':''}">${p.depotVente ? ("🔄 DÉPÔT · "+(marqueDepot(p)?marqueDepot(p).toUpperCase()+" · ":"")+(p.depotClientPrenom||"")+" "+(p.depotClientNom||"")+((p.depotTaille||(infos))?" · "+(p.depotTaille?"T."+p.depotTaille:infos):"")).slice(0,52) : ((p.marque?p.marque+" · ":"")+(p.ref+(infos?" · "+infos:"")).slice(0,30)+(p.grandeTaille?" · GT":""))}</div>
         <img src="${bcImg}" class="etiq-bc"/>
         <div class="etiq-bc-num">${codeLigne}</div>
         ${ligneItem&&ligneItem.prixOriginal ? `<div class="etiq-prix"><span style="text-decoration:line-through;color:#aaa;font-size:9px;">${eur(ligneItem.prixOriginal)}</span> ${eur(p.price)}</div>` : `<div class="etiq-prix">${eur(p.price)}</div>`}
@@ -10389,7 +10389,7 @@ window.imprimerEtiquettes = () => {
     <div class="nom">${p.name}</div>
     ${desig?`<div class="desig">${desig}</div>`:""}
     ${p.depotVente
-      ? `<div class="ref" style="color:#185fa5;font-weight:600;">🔄 DÉPÔT-VENTE · ${p.depotClientPrenom||""} ${p.depotClientNom||""}${(p.depotTaille||tailleVal)?" · T."+(p.depotTaille||tailleVal):""}</div>`
+      ? `<div class="ref" style="color:#185fa5;font-weight:600;">🔄 DÉPÔT-VENTE · ${marqueDepot(p)?marqueDepot(p).toUpperCase()+" · ":""}${p.depotClientPrenom||""} ${p.depotClientNom||""}${(p.depotTaille||tailleVal)?" · T."+(p.depotTaille||tailleVal):""}</div>`
       : `<div class="ref">${p.marque?p.marque+" · ":""}${p.ref}${p.category?" · "+p.category:""}${tailleVal?" · T."+tailleVal:""}${couleurVal?" · "+couleurVal:""}</div>`
     }
     <svg width="${svgW}" height="${cfg.bcH+4}" viewBox="${viewBox||'0 0 '+svgW+' '+cfg.bcH}" preserveAspectRatio="none" style="display:block;margin:2px auto 0;max-width:100%;">${rects}</svg>
@@ -21145,7 +21145,7 @@ window.imprimerLotEtiquettes = () => {
     const bcImg = btoa_svg(bc);
     return `<div class="etiq">
       <div class="etiq-name">${p.name.length>26?p.name.slice(0,26)+"…":p.name}</div>
-      <div class="etiq-ref" style="${p.depotVente?'color:#185fa5;font-weight:600;':''}">${p.depotVente ? ("🔄 DÉPÔT · "+(p.depotClientPrenom||"")+" "+(p.depotClientNom||"")+((p.depotTaille||(infos))?" · "+(p.depotTaille?"T."+p.depotTaille:infos):"")).slice(0,40) : ((p.marque?p.marque+" · ":"")+(p.ref+(infos?" · "+infos:"")).slice(0,30)+(p.grandeTaille?" · GT":""))}</div>
+      <div class="etiq-ref" style="${p.depotVente?'color:#185fa5;font-weight:600;':''}">${p.depotVente ? ("🔄 DÉPÔT · "+(marqueDepot(p)?marqueDepot(p).toUpperCase()+" · ":"")+(p.depotClientPrenom||"")+" "+(p.depotClientNom||"")+((p.depotTaille||(infos))?" · "+(p.depotTaille?"T."+p.depotTaille:infos):"")).slice(0,52) : ((p.marque?p.marque+" · ":"")+(p.ref+(infos?" · "+infos:"")).slice(0,30)+(p.grandeTaille?" · GT":""))}</div>
       <img src="${bcImg}" class="etiq-bc"/>
         <div class="etiq-bc-num">${bcCode}</div>
       ${ligneItem&&ligneItem.prixOriginal ? `<div class="etiq-prix"><span style="text-decoration:line-through;color:#aaa;font-size:9px;">${eur(ligneItem.prixOriginal)}</span> ${eur(p.price)}</div>` : `<div class="etiq-prix">${eur(p.price)}</div>`}
