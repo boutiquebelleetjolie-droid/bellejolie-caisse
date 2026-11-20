@@ -107,7 +107,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "19/11 · v207 (Chartres fermée le lundi dès janvier 2027)";
+const APP_VERSION = "20/11 · v208 (dépôt-vente : transfert d'articles vers Dreux)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -2890,7 +2890,8 @@ setTimeout(() => {
 }, 14000);
 function marqueDepot(p) { const m = (p.marque||"").trim(); return m && !/^Dépôt ·/.test(m) ? m : (p.depotMarque||""); }
 function getVenteInfoArticleDepot(prodId) {
-  for(const v of (STATE.ventes||[])) {
+  // Toutes les boutiques : un article de dépôt transféré à Dreux garde le même identifiant
+  for(const v of toutesVentesClientes()) {
     if(v.annulee || v.test) continue;
     const item = (v.panier||[]).find(x=>!x.retour && (x.prodIdOriginal===prodId || x.id===prodId));
     if(item && ((v.articlesRetournes||{})[prodId]||0) >= (item.qty||1)) continue; // rapporté : de nouveau en vente
@@ -3201,8 +3202,9 @@ function renderDepotVente() {
             </div>`;
           }
           return `<div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;padding:4px 0;">
-            <span>🕐 ${a.p.name}${marqueDepot(a.p)?" <i style='color:#888;'>("+marqueDepot(a.p)+")</i>":""} — ${eur(a.p.price)}${htmlIndicesVenteDepot(a.p)}</span>
+            <span>🕐 ${a.p.name}${marqueDepot(a.p)?" <i style='color:#888;'>("+marqueDepot(a.p)+")</i>":""} — ${eur(a.p.price)}${a.p.depotTransfereVers&&!(a.p.stock>0)?` <span style="background:#eef4fd;color:#185fa5;font-size:10px;padding:1px 6px;border-radius:6px;">📍 ${nomBoutiqueCourt(a.p.depotTransfereVers)||"autre boutique"}</span>`:""}${a.p.depotTransfereVers&&!(a.p.stock>0)?"":htmlIndicesVenteDepot(a.p)}</span>
             <span style="display:flex;gap:4px;">
+              ${peutGererBoutiques() && BOUTIQUES.length>1 && (a.p.stock>0) ? `<button onclick="ouvrirTransfertBoutique('${a.pid}')" title="Envoyer cet article dans l'autre boutique" style="background:#eef4fd;color:#185fa5;border:none;border-radius:6px;padding:3px 8px;cursor:pointer;font-size:11px;">📦↔️</button>` : ""}
               <button onclick="encaisserArticleDepot('${a.pid}')" title="Mettre cet article dans le panier (si le code-barres ne passe pas)" style="background:#993556;color:#fff;border:none;border-radius:6px;padding:3px 8px;cursor:pointer;font-size:11px;">🛒 Encaisser</button>
               <button onclick="renouvelerArticleDepot('${a.pid}')" style="background:#eef4fd;color:#185fa5;border:none;border-radius:6px;padding:3px 8px;cursor:pointer;font-size:11px;">🔄 Renouveler</button>
               <button onclick="retirerArticleDepot('${a.pid}')" style="background:#fcebeb;color:#a32d2d;border:none;border-radius:6px;padding:3px 8px;cursor:pointer;font-size:11px;">🗑️ Retirer</button>
@@ -8788,6 +8790,7 @@ window.validerTransfertBoutique = async () => {
   try {
     // 1. Retirer du stock ICI (boutique actuelle)
     lignes.forEach(l => { STATE.products = ajusterStock(STATE.products, p.id, -l.q, l.t, l.c); });
+    if(p.depotVente) STATE.products = STATE.products.map(x=>x.id===p.id?{...x, depotTransfereVers:bDest.id, majLe:new Date().toISOString()}:x);
     lsSet("bj_products", STATE.products);
 
     // 2. Lire le stock de la boutique de destination, trouver/créer l'article (correspondance par référence), incrémenter
@@ -8799,7 +8802,7 @@ window.validerTransfertBoutique = async () => {
     if(idx>=0) {
       idDest = produitsDest[idx].id;
     } else {
-      idDest = uid("PROD");
+      idDest = p.depotVente && !produitsDest.some(x=>x.id===p.id) ? p.id : uid("PROD"); // dépôt-vente : même identifiant partout
       const sv0 = {}; Object.keys(p.stockVariantes||{}).forEach(k=>sv0[k]=0);
       const { photo: _phT, ...pSansPhoto } = p;
       produitsDest = [...produitsDest, {...pSansPhoto, id:idDest, stock:0, stockVariantes:sv0, reserveQty:0, aPhoto:!!p.photo, copieDe:{boutique:BOUTIQUE_ID_ACTUEL, id:p.id}}];
@@ -20410,7 +20413,7 @@ function articlesCoches() { const sel = STATE.etiqSelection||{}; return (STATE.p
 async function ficheDestPour(p, produitsDest, bDest, maint) {
   const ex = produitsDest.find(x => (p.ref && x.ref===p.ref) || (x.copieDe && x.copieDe.id===p.id));
   if(ex) return {id: ex.id, cree: false};
-  const idDest = uid("PROD");
+  const idDest = p.depotVente && !produitsDest.some(x=>x.id===p.id) ? p.id : uid("PROD"); // dépôt-vente : même identifiant partout
   const sv0 = {}; Object.keys(p.stockVariantes||{}).forEach(k=>sv0[k]=0);
   const { photo: _ph, ...pSansPhoto } = p;
   produitsDest.push({...pSansPhoto, id:idDest, stock:0, stockVariantes:sv0, reserveQty:0, aPhoto:!!p.photo, copieDe:{boutique:BOUTIQUE_ID_ACTUEL, id:p.id}, majLe:maint});
@@ -20503,6 +20506,7 @@ window.validerTransfertGroupe = async () => {
     for(const {p, lignes} of plan) {
       const r = await ficheDestPour(p, produitsDest, bDest, maint);
       lignes.forEach(l => { produitsDest = ajusterStock(produitsDest, r.id, l.q, l.t, l.c); STATE.products = ajusterStock(STATE.products, p.id, -l.q, l.t, l.c); });
+      if(p.depotVente) STATE.products = STATE.products.map(x=>x.id===p.id?{...x, depotTransfereVers:bDest.id, majLe:maint}:x);
       produitsDest = produitsDest.map(x=>x.id===r.id?{...x, majLe:maint}:x);
       transf.push({id: uid("TRF"), date: maint, article: p.name, ref: p.ref, qty: lignes.reduce((s,l)=>s+l.q,0),
         taille: lignes.length===1 ? lignes[0].t : lignes.map(l=>(l.t||"")+(l.q>1?"×"+l.q:"")).join(", "), couleur: null,
@@ -20532,6 +20536,7 @@ window.transfererStockSelection = async () => {
       const lignes = vs.length ? vs.map(v=>({t:v.t, c:v.c, q:v.n})) : [{t:null, c:null, q:p.stock||0}];
       const r = await ficheDestPour(p, produitsDest, bDest, maint);
       lignes.forEach(l => { produitsDest = ajusterStock(produitsDest, r.id, l.q, l.t, l.c); STATE.products = ajusterStock(STATE.products, p.id, -l.q, l.t, l.c); });
+      if(p.depotVente) STATE.products = STATE.products.map(x=>x.id===p.id?{...x, depotTransfereVers:bDest.id, majLe:maint}:x);
       produitsDest = produitsDest.map(x=>x.id===r.id?{...x, majLe:maint}:x);
       transf.push({id: uid("TRF"), date: maint, article: p.name, ref: p.ref, qty: lignes.reduce((s,l)=>s+l.q,0),
         taille: lignes.length===1 ? lignes[0].t : lignes.map(l=>(l.t||"")+(l.q>1?"×"+l.q:"")).join(", "), couleur: null,
