@@ -107,7 +107,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "20/11 · v224 (opérations : bilan global de la période + historique)";
+const APP_VERSION = "20/11 · v225 (opérations : taux de marge)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -11981,9 +11981,9 @@ function renderSuiviOperation() {
   const ref = new Set(); joursOp.forEach(j => { for(let w=1; w<=4; w++) { const d = new Date(j+"T12:00:00"); d.setDate(d.getDate()-7*w); if(d < d0) ref.add(jourStr(d)); } });
   const agg = (jours) => { const vs = ventes.filter(v=>jours.has(dateLocaleStr(new Date(v.date))));
     const tk = vs.filter(v=>v.total>0), g = statsGroupeVentes(tk);
-    let marge = 0, sansPA = 0; vs.forEach(v => { const m = margeVenteHT(v); marge += m.marge; sansPA += m.sansPA; });
+    let marge = 0, sansPA = 0, caConnu = 0; vs.forEach(v => { const m = margeVenteHT(v); marge += m.marge; sansPA += m.sansPA; caConnu += m.caConnu; });
     const nbJ = new Set(vs.map(v=>dateLocaleStr(new Date(v.date)))).size || 1;
-    return {nbJ, ca: vs.reduce((s,v)=>s+(v.total||0),0), tickets: g.tickets, idv: g.idv, pm: g.pm, articles: g.articles, marge, sansPA,
+    return {nbJ, ca: vs.reduce((s,v)=>s+(v.total||0),0), tickets: g.tickets, idv: g.idv, pm: g.pm, articles: g.articles, marge, sansPA, caConnu, taux: caConnu>0 ? marge/(caConnu/1.2)*100 : 0,
       remise: vs.reduce((s,v)=>s+(parseFloat(v.remiseProg)||0),0), avecRemise: vs.filter(v=>(parseFloat(v.remiseProg)||0)>0).length}; };
   const A = agg(ouvertsOp), R = agg(ref);
   const pj = (x,k) => x[k]/x.nbJ;
@@ -12002,10 +12002,12 @@ function renderSuiviOperation() {
     </div>
     <table style="width:100%;border-collapse:collapse;font-size:13px;"><tr style="color:#888;font-size:11px;"><td></td><td style="padding:4px 8px;text-align:right;">Avant (par jour)</td><td style="padding:4px 8px;text-align:right;">Pendant (par jour)</td><td style="padding:4px 8px;text-align:right;">Écart</td></tr>
       ${L("Chiffre d'affaires", pj(A,"ca"), pj(R,"ca"), eur)}${L("Tickets", pj(A,"tickets"), pj(R,"tickets"), x=>x.toFixed(1))}${L("Articles vendus", pj(A,"articles"), pj(R,"articles"), x=>x.toFixed(1))}
-      ${L("Articles / ticket (IDV)", A.idv, R.idv, x=>x.toFixed(2))}${L("Panier moyen", A.pm, R.pm, eur)}${L("Marge HT (articles avec prix d'achat)", pj(A,"marge"), pj(R,"marge"), eur)}</table>
+      ${L("Articles / ticket (IDV)", A.idv, R.idv, x=>x.toFixed(2))}${L("Panier moyen", A.pm, R.pm, eur)}${L("Marge HT (articles avec prix d'achat)", pj(A,"marge"), pj(R,"marge"), eur)}
+      <tr style="border-top:1px solid #f0ebee;"><td style="padding:6px 8px;color:#555;">Taux de marge</td><td style="padding:6px 8px;text-align:right;">${R.taux.toFixed(1)} %</td><td style="padding:6px 8px;text-align:right;font-weight:600;">${A.taux.toFixed(1)} %</td><td style="padding:6px 8px;text-align:right;font-size:11px;font-weight:600;color:${A.taux>=R.taux?"#3b6d11":"#a32d2d"};">${A.taux-R.taux>=0?"+":""}${(A.taux-R.taux).toFixed(1)} pt</td></tr></table>
     <div style="font-weight:600;font-size:13px;margin:16px 0 4px;">📦 Bilan global sur toute la période (${A.nbJ} jour${A.nbJ>1?"s":""})</div>
     <table style="width:100%;border-collapse:collapse;font-size:13px;"><tr style="color:#888;font-size:11px;"><td></td><td style="padding:4px 8px;text-align:right;">Sans l'opération (rythme normal)</td><td style="padding:4px 8px;text-align:right;">Avec l'opération</td><td style="padding:4px 8px;text-align:right;">Différence</td></tr>
       ${T("Chiffre d'affaires TTC","ca",eur)}${T("Tickets","tickets",x=>Math.round(x))}${T("Articles vendus","articles",x=>Math.round(x))}${T("Marge HT","marge",eur)}
+      <tr style="border-top:1px solid #f0ebee;"><td style="padding:6px 8px;color:#555;">Taux de marge sur la période</td><td style="padding:6px 8px;text-align:right;">${R.taux.toFixed(1)} %</td><td style="padding:6px 8px;text-align:right;font-weight:600;">${A.taux.toFixed(1)} %</td><td style="padding:6px 8px;text-align:right;font-weight:600;color:${A.taux>=R.taux?"#3b6d11":"#a32d2d"};">${A.taux-R.taux>=0?"+":""}${(A.taux-R.taux).toFixed(1)} pt</td></tr>
       <tr style="border-top:1px solid #f0ebee;"><td style="padding:6px 8px;color:#555;">Remises Black Friday accordées</td><td style="padding:6px 8px;text-align:right;">—</td><td style="padding:6px 8px;text-align:right;font-weight:600;color:#a32d2d;">−${eur(A.remise)}</td><td></td></tr></table>
     ${A.sansPA+R.sansPA?`<div style="font-size:11px;color:#888;margin-top:8px;">${A.sansPA+R.sansPA} article(s) vendus sans prix d'achat ne sont pas comptés dans la marge.</div>`:""}
   </div>`;
