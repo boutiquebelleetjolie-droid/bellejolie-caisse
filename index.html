@@ -107,7 +107,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "20/11 · v208 (dépôt-vente : transfert d'articles vers Dreux)";
+const APP_VERSION = "20/11 · v209 (bordereau : remboursement de frais en espèces)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -15403,7 +15403,8 @@ function renderDepotBanque() {
     return STATE.depotSelection[z.date] ? s+z.aDeposer : s;
   }, 0);
   const reporte = STATE.soldeDepotReporte||0;
-  const totalSuggere = totalJoursCoches + reporte;
+  const retraitFrais = Math.max(0, parseFloat(STATE.depotRetraitFrais)||0);
+  const totalSuggere = Math.max(0, totalJoursCoches + reporte - retraitFrais);
   if(STATE.depotMontantSaisi===undefined || STATE.depotMontantSaisi===null) STATE.depotMontantSaisi = totalSuggere>0?totalSuggere.toFixed(2):"";
   const montantSaisi = parseFloat(STATE.depotMontantSaisi)||0;
   const ecartDepot = totalSuggere - montantSaisi; // positif = tu gardes des pièces pour plus tard, négatif = tu rattrapes un report précédent
@@ -15452,6 +15453,14 @@ function renderDepotBanque() {
         <span style="font-size:12px;color:#993556;">${reporte>0?"+ Report précédent":"− Rattrapage report"}</span>
         <span style="font-size:13px;color:#993556;">${eur(reporte)}</span>
       </div>`:""}
+      <div style="background:#fff;border-radius:8px;padding:8px 10px;margin:6px 0 8px;">
+        <div style="font-size:12px;color:#555;margin-bottom:4px;">➖ Remboursement de frais avancés par Élodie (pris dans ces espèces)</div>
+        <div style="display:flex;gap:6px;">
+          <input type="number" step="0.01" min="0" value="${STATE.depotRetraitFrais||""}" placeholder="0,00 €" oninput="STATE.depotRetraitFrais=this.value" onchange="STATE.depotMontantSaisi=null;render()" style="width:110px;border:1px solid #ddd;border-radius:7px;padding:6px 8px;font-size:13px;"/>
+          <input type="text" value="${(STATE.depotRetraitMotif||"").replace(/"/g,"&quot;")}" placeholder="Motif (ex. achats Action, essence…)" oninput="STATE.depotRetraitMotif=this.value" style="flex:1;border:1px solid #ddd;border-radius:7px;padding:6px 8px;font-size:13px;"/>
+        </div>
+        ${retraitFrais>0?`<div style="font-size:11px;color:#a32d2d;margin-top:4px;">− ${eur(retraitFrais)} que tu reprends en espèces · garde les tickets de caisse de ces dépenses pour ta comptable.</div>`:""}
+      </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;padding-top:6px;border-top:0.5px solid #f0c4d4;">
         <span style="font-weight:500;font-size:13px;color:#993556;">Montant réellement déposé (billets, pas de pièces)</span>
       </div>
@@ -15478,6 +15487,7 @@ function renderDepotBanque() {
         <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:0.5px solid #f0ebee;">
           <div>
             <div style="font-size:13px;font-weight:500;">🏦 Déposé le ${new Date(d.dateDepot).toLocaleDateString("fr-FR",{weekday:"short",day:"numeric",month:"short"})}${d.manuel?` <span style="background:#f5f0f2;color:#888;font-size:10px;padding:1px 6px;border-radius:6px;">marqué « déjà déposé »</span>`:""}</div>
+            ${d.retraitFrais?`<div style="font-size:11px;color:#a32d2d;margin-top:2px;">➖ ${eur(d.retraitFrais)} repris en espèces : ${d.retraitMotif||"remboursement de frais"}</div>`:""}
             <div style="font-size:11px;color:#666;margin-top:2px;">Correspond à : ${(d.jours||[]).map(j=>`${new Date(j.date).toLocaleDateString("fr-FR",{weekday:"short",day:"numeric",month:"numeric"})} <strong>${eur(j.montant)}</strong>`).join(" · ")||"—"}</div>
             ${(d.ancienReporte||d.nouveauReporte)&&!d.manuel?`<div style="font-size:11px;color:#888;">${d.ancienReporte?(d.ancienReporte>0?"+ report précédent ":"− rattrapage ")+eur(Math.abs(d.ancienReporte))+" · ":""}${d.nouveauReporte?(d.nouveauReporte>0?"🪙 pièces gardées "+eur(d.nouveauReporte):"rattrapage à faire "+eur(-d.nouveauReporte)):""}</div>`:""}
           </div>
@@ -15567,17 +15577,23 @@ window.imprimerBordereauDepot = () => {
   const totalJours = jours.reduce((s,j)=>s+j.montant,0);
   const ancienReporte = STATE.soldeDepotReporte||0;
   const montantSaisi = parseFloat(STATE.depotMontantSaisi)||0;
+  const retraitFrais = Math.max(0, parseFloat(STATE.depotRetraitFrais)||0);
+  const retraitMotif = (STATE.depotRetraitMotif||"").trim() || "Remboursement de frais avancés";
 
-  if(jours.length===0 && montantSaisi<=0) { alert("Sélectionnez au moins une journée, ou saisissez un montant, avant d'imprimer le bordereau."); return; }
-  if(montantSaisi<=0) { alert("Le montant réellement déposé doit être supérieur à 0."); return; }
+  if(jours.length===0 && montantSaisi<=0 && retraitFrais<=0) { alert("Sélectionnez au moins une journée, ou saisissez un montant, avant d'imprimer le bordereau."); return; }
+  if(montantSaisi<0) { alert("Le montant déposé ne peut pas être négatif."); return; }
+  if(montantSaisi<=0 && retraitFrais<=0) { alert("Le montant réellement déposé doit être supérieur à 0."); return; }
+  if(retraitFrais>0 && !confirm("Tu reprends "+eur(retraitFrais)+" en espèces ("+retraitMotif+")"+(montantSaisi>0?" et tu déposes "+eur(montantSaisi)+" en banque.":", sans dépôt en banque.")+"\n\nPense à garder les tickets de ces dépenses pour ta comptable. Valider ?")) return;
 
   const dateDepot = STATE.depotDateEffective || dateLocaleStr();
   // Ce qui reste à reporter pour la prochaine fois (positif = pièces gardées, négatif = rattrapage effectué)
-  const nouveauReporte = (totalJours+ancienReporte) - montantSaisi;
+  const nouveauReporte = (totalJours+ancienReporte) - retraitFrais - montantSaisi;
 
-  genererEtOuvrirBordereau(dateDepot, jours, montantSaisi, ancienReporte, nouveauReporte);
+  if(montantSaisi>0) genererEtOuvrirBordereau(dateDepot, jours, montantSaisi, ancienReporte, nouveauReporte);
 
-  STATE.depotsBanque = [...(STATE.depotsBanque||[]), {id:uid("DEP"), dateDepot, jours, total:montantSaisi, totalJours, ancienReporte, nouveauReporte, ecartReporte:nouveauReporte, creeLe:new Date().toISOString()}];
+  STATE.depotsBanque = [...(STATE.depotsBanque||[]), {id:uid("DEP"), dateDepot, jours, total:montantSaisi, totalJours, ancienReporte, nouveauReporte, ecartReporte:nouveauReporte, creeLe:new Date().toISOString(),
+    ...(retraitFrais>0?{retraitFrais, retraitMotif}:{})}];
+  STATE.depotRetraitFrais = ""; STATE.depotRetraitMotif = "";
   STATE.soldeDepotReporte = nouveauReporte;
   STATE.depotSelection = {};
   STATE.depotMontantSaisi = null;
