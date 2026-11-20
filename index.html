@@ -107,7 +107,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "20/11 · v213 (remises à virgule)";
+const APP_VERSION = "20/11 · v214 (ticket : remise Black Friday pas sur le sac, message fidélité juste)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -5666,9 +5666,16 @@ function calculerPrixPayeReel(venteOrigine, ligneOrigine) {
     const r = i.remiseType==="pct" ? i.price*(parseFloat(i.remise||0)/100) : i.remiseType==="eur" ? parseFloat(i.remise||0)/i.qty : 0;
     return s+Math.max(0,i.price-r)*i.qty;
   },0);
-  const totalRemiseGlobaleVente = (parseFloat(venteOrigine.remise)||0) + (parseFloat(venteOrigine.remiseFid)||0) + (parseFloat(venteOrigine.remiseProg)||0) + (parseFloat(venteOrigine.remiseChaussures)||0);
-  const tauxGlobal = sousTotalVente>0 ? totalRemiseGlobaleVente/sousTotalVente : 0;
-  return Math.max(0, +(puApresRemiseArticle*(1-tauxGlobal)).toFixed(2));
+  // Remise progressive (Black Friday) : répartie uniquement sur les articles qui y ont droit (pas le sac, ni les artisans, ni les articles déjà remisés)
+  const eligibleProg = l => !l.retour && !l.avoirId && !estLigneDepot(l) && !estArticleSac(l) && (parseFloat(l.price)||0)>=1 && l.ref!=="SAC-CAISSE" && l.ref!=="RETOUCHE-CAISSE"
+    && !(parseFloat(l.remise||0)>0 || l._promoAuto) && !estLigneArtisan(l, (STATE.products||[]).find(p=>p.id===(l.prodIdOriginal||l.id))||{});
+  const remProg = parseFloat(venteOrigine.remiseProg)||0;
+  const baseProg = remProg>0 ? (venteOrigine.panier||[]).filter(eligibleProg).reduce((s,i)=>s+i.price*(i.qty||1),0) : 0;
+  const tauxProg = baseProg>0 ? remProg/baseProg : 0;
+  const autres = (parseFloat(venteOrigine.remise)||0) + (parseFloat(venteOrigine.remiseFid)||0) + (parseFloat(venteOrigine.remiseChaussures)||0) + (baseProg>0 ? 0 : remProg);
+  const tauxGlobal = sousTotalVente>0 ? autres/sousTotalVente : 0;
+  const pu = puApresRemiseArticle*(1-tauxGlobal) - (tauxProg>0 && eligibleProg(ligneOrigine) ? ligneOrigine.price*tauxProg : 0);
+  return Math.max(0, +pu.toFixed(2));
 }
 
 window.addRetour = (pid, taille, couleur) => {
@@ -6672,7 +6679,7 @@ function renderTicketModal() {
             if(!v.client) return "";
             const achatsBruts=(v.panier||[]).filter(x=>!x.retour&&!x.avoirId).reduce((s,x)=>s+x.price*x.qty,0);
             const retoursBruts=(v.panier||[]).filter(x=>x.retour&&!x.avoirId).reduce((s,x)=>s+x.price*x.qty,0);
-            const netAchat=achatsBruts-retoursBruts;
+            const netAchat=montantPassage(v); void achatsBruts; void retoursBruts; // montant réellement payé (remises déduites, hors vide-dressing)
             if(netAchat>0 && netAchat<40 && !(v.remiseFid>0)) {
               const manque=parseFloat((40-netAchat).toFixed(2));
               return "<div style='background:#fbeaf0;border:1px solid #f0c8d4;border-radius:6px;padding:6px 10px;margin-top:5px;font-size:10px;color:#993556;line-height:1.5;'>"
@@ -16090,7 +16097,7 @@ function buildTicketEmailHTML(v) {
   if(v?.client) {
     const achatsBruts=(v.panier||[]).filter(x=>!x.retour&&!x.avoirId).reduce((s,x)=>s+x.price*(x.qty||1),0);
     const retoursBruts=(v.panier||[]).filter(x=>x.retour&&!x.avoirId).reduce((s,x)=>s+x.price*(x.qty||1),0);
-    const net=achatsBruts-retoursBruts;
+    const net=montantPassage(v); void achatsBruts; void retoursBruts;
     if(net>0&&net<40&&!(v.remiseFid>0)) {
       const manque=parseFloat((40-net).toFixed(2));
       fideliteHtml='<div style="background:#fbeaf0;border-radius:8px;padding:12px;margin:16px 0;font-size:13px;color:#993556;">💕 Il vous manquait seulement <strong>'+eur(manque)+'</strong> pour valider ce passage dans votre programme fidélité !</div>';
@@ -16292,7 +16299,7 @@ function buildMsgEmailHTML(v) {
       if(!v.client) return "";
       const achatsBruts=(v.panier||[]).filter(x=>!x.retour&&!x.avoirId).reduce((s,x)=>s+x.price*x.qty,0);
       const retoursBruts=(v.panier||[]).filter(x=>x.retour&&!x.avoirId).reduce((s,x)=>s+x.price*x.qty,0);
-      const netAchat=achatsBruts-retoursBruts;
+      const netAchat=montantPassage(v); void achatsBruts; void retoursBruts;
       if(netAchat>0 && netAchat<40 && !(v.remiseFid>0)) {
         const manque=parseFloat((40-netAchat).toFixed(2));
         return "\n💕 Il vous manquait seulement "+eur(manque)+" pour valider ce passage dans votre programme fidélité !\n"
