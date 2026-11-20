@@ -107,7 +107,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "20/11 · v209 (bordereau : remboursement de frais en espèces)";
+const APP_VERSION = "20/11 · v210 (Black Friday : sacs exclus)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -4586,7 +4586,7 @@ function calcPanier() {
       let qtyEligible = 0, baseEligible = 0;
       panier.forEach(x=>{
         if(x.retour || x.avoirId) return;
-        if(x.ref==="SAC-CAISSE" || x.name==="Sac" || x.ref==="RETOUCHE-CAISSE") return;
+        if(x.ref==="SAC-CAISSE" || x.name==="Sac" || x.ref==="RETOUCHE-CAISSE" || estArticleSac(x) || (parseFloat(x.price)||0) < 1) return; // sacs et petits articles à moins d'1 € : jamais dans l'offre
         if(estLigneDepot(x)) return; // dépôt-vente : pas de remise progressive
         { const pA = (STATE.products||[]).find(p=>p.id===(x.prodIdOriginal||x.id)) || {}; if(estLigneArtisan(x, pA)) return; } // artisans : exclus
         const aRemiseArt = parseFloat(x.remise||0)>0 || x._promoAuto;
