@@ -107,7 +107,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "20/11 · v221 (rappel en caisse 2 jours avant la fin d'un dépôt)";
+const APP_VERSION = "20/11 · v222 (dépôt-vente : bilan par catégorie)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -2695,6 +2695,32 @@ function infosRappelLot(lot) {
   const dejaBons = +bonsDuLot(lot).reduce((s,b)=>s+(b.montant||0),0).toFixed(2);
   return {vendus, enVente, gagne, dejaBons, reste: Math.max(0, +(gagne-dejaBons).toFixed(2))};
 }
+// Ce qui se vend le mieux en dépôt-vente, par catégorie (tous les dépôts, toutes boutiques pour les ventes)
+function renderCategoriesDepot() {
+  const g = {};
+  (STATE.depotsVente||[]).filter(l=>!l.supprime).forEach(l => {
+    [...new Set(l.articleIds||[])].forEach(pid => {
+      const p = STATE.products.find(x=>x.id===pid); if(!p) return;
+      const i = getVenteInfoArticleDepot(pid);
+      if(!i.vendu && p.depotRetire) return;
+      const cat0 = (p.category||"").trim() || familleArticle(p.name, p.category) || "Autre";
+      const cat = cat0.charAt(0).toUpperCase()+cat0.slice(1);
+      const x = (g[cat] = g[cat] || {cat, dep:0, vendus:0, ca:0, jours:0});
+      x.dep++;
+      if(i.vendu) { x.vendus++; x.ca += i.montant||0; const d0 = new Date((p.dateDepot||l.dateDepot)+"T12:00:00"); x.jours += Math.max(0, Math.round((new Date(i.date)-d0)/864e5)); }
+    });
+  });
+  const rows = Object.values(g).filter(x=>x.dep>0).sort((a,b)=> (b.vendus/b.dep)-(a.vendus/a.dep) || b.vendus-a.vendus);
+  if(!rows.length) return "";
+  return `<div style="font-weight:600;font-size:13px;margin:10px 0 6px;">📊 Ce qui part le mieux (par catégorie, depuis le début)</div>
+    <div style="overflow-x:auto;margin-bottom:12px;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:520px;">
+      <tr style="background:#f5f0f2;font-weight:600;"><td style="padding:6px;">Catégorie</td><td style="padding:6px;text-align:right;">Déposés</td><td style="padding:6px;text-align:right;">Vendus</td><td style="padding:6px;text-align:right;">Taux de vente</td><td style="padding:6px;text-align:right;">Prix moyen vendu</td><td style="padding:6px;text-align:right;">Vendu en (moy.)</td></tr>
+      ${rows.map((x,i)=>{ const t = Math.round(x.vendus/x.dep*100);
+        return `<tr style="border-top:1px solid #f0ebee;"><td style="padding:5px 6px;font-weight:${i<3?600:400};">${i<3?["🥇","🥈","🥉"][i]+" ":""}${x.cat}</td><td style="padding:5px 6px;text-align:right;">${x.dep}</td><td style="padding:5px 6px;text-align:right;">${x.vendus}</td>
+          <td style="padding:5px 6px;text-align:right;"><span style="display:inline-block;min-width:44px;padding:1px 6px;border-radius:6px;background:${t>=50?"#eaf3de":t>=25?"#faeeda":"#fcebeb"};color:${t>=50?"#3b6d11":t>=25?"#854f0b":"#a32d2d"};font-weight:600;">${t} %</span></td>
+          <td style="padding:5px 6px;text-align:right;">${x.vendus?eur(x.ca/x.vendus):"—"}</td><td style="padding:5px 6px;text-align:right;">${x.vendus?Math.round(x.jours/x.vendus)+" j":"—"}</td></tr>`; }).join("")}
+    </table><div style="font-size:11px;color:#888;margin-top:4px;">Vert ≥ 50 % vendus · orange 25-49 % · rouge &lt; 25 %. À privilégier lors des prochains dépôts : les catégories en haut du tableau.</div></div>`;
+}
 // Rappel en caisse : dépôts qui se terminent dans les 2 jours (sauf ceux d'Élodie)
 function lotsFinProche() {
   const auj = new Date(); auj.setHours(0,0,0,0);
@@ -3152,6 +3178,7 @@ function renderBilanDepotVente() {
       ${tuile("Prix de vente des articles", eur(ca))}${tuile("CA encaissé (remises déduites)", eur(caPaye))}${tuile("Part boutique (encaissé − à reverser)", eur(caPaye-ca*pct/100), "#eaf3de")}${tuile("À reverser en bons ("+pct+" %)", eur(ca*pct/100))}${tuile("Bons déjà générés", eur(bonsTotal))}
     </div>
     ${retires?`<div style="font-size:11px;color:#888;margin-bottom:8px;">${retires} article(s) retiré(s) (rendus à la cliente).</div>`:""}
+    ${renderCategoriesDepot()}
     <div style="font-weight:600;font-size:13px;margin:6px 0;">🏆 Classement des déposantes</div>
     <div style="overflow-x:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;min-width:560px;">
       <tr><th style="${th}">Rang</th><th style="${th}">Cliente</th><th style="${th}text-align:right;">Déposés</th><th style="${th}text-align:right;">Vendus</th><th style="${th}text-align:right;">En vente</th><th style="${th}text-align:right;">CA</th><th style="${th}text-align:right;">À reverser</th><th style="${th}text-align:right;">Bon généré</th></tr>
