@@ -107,7 +107,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "20/11 · v214 (ticket : remise Black Friday pas sur le sac, message fidélité juste)";
+const APP_VERSION = "20/11 · v215 (création cliente pré-remplie, bilan dépôt 2 boutiques, comparatif Chartres/Dreux)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -3154,9 +3154,10 @@ function renderDepotVente() {
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;">
       ${peutGererArtisans()?`<button onclick="ouvrirRappelsDepot()" class="btn-ghost" style="width:auto;padding:10px 14px;">✉️ Rappel d'échéance</button>`:""}
+      ${peutGererArtisans() && BOUTIQUES.length>1?`<button onclick="ouvrirBilanDepotDeux()" class="btn-ghost" style="width:auto;padding:10px 14px;">🏬 Bilan 2 boutiques</button>`:""}
       <button onclick="ouvrirNouveauDepot()" class="btn-primary" style="width:auto;padding:10px 18px;">➕ Nouveau dépôt</button>
     </div>
-  </div>${bandeauDepotsPause()}${renderBilanDepotVente()}${STATE.showRappelsDepot?renderRappelsDepotModal():""}${STATE.showProlongDepot?renderProlongDepotModal():""}`;
+  </div>${bandeauDepotsPause()}${renderBilanDepotVente()}${STATE.showRappelsDepot?renderRappelsDepotModal():""}${STATE.showBilanDepotDeux?renderBilanDepotDeuxModal():""}${STATE.showProlongDepot?renderProlongDepotModal():""}`;
 
   if(lots.length===0) {
     html += `<div style="text-align:center;color:#aaa;padding:50px 20px;">Aucun dépôt enregistré pour le moment.</div>`;
@@ -3367,7 +3368,7 @@ function renderApp() {
     ${STATE.tab==="stock"     ? renderStock()      : ""}
 
     ${STATE.tab==="crm"       ? renderCRM()        : ""}
-    ${STATE.tab==="stats"     ? renderStats()+renderCompteurTickets() : ""}
+    ${STATE.tab==="stats"     ? (STATE.statPer==="boutiques" ? renderComparatifBoutiques() : renderStats()+renderCompteurTickets()) : ""}
   ${STATE.tab==="historique" ? renderHistorique() : ""}
     ${STATE.tab==="journal"      ? renderJournal()        : ""}
     ${STATE.tab==="fidelite"     ? renderFidelite()       : ""}
@@ -7228,8 +7229,20 @@ window.selectClient = id => {
   render();
 };
 
+// Pré-remplit la fiche avec ce qui a été tapé dans la recherche (nom/prénom, téléphone ou email)
+function formDepuisRecherche(texte) {
+  const f = {nom:"",prenom:"",tel:"",email:"",cp:"",anniversaire:"",suitReseaux:false,remiseReseauxAccordee:false,pasDeMailPromo:false};
+  const t = String(texte||"").trim(); if(!t) return f;
+  if(t.includes("@")) { f.email = t.toLowerCase(); return f; }
+  const chiffres = t.replace(/[^0-9]/g,"");
+  if(chiffres.length>=6 && chiffres.length >= t.replace(/\s/g,"").length-1) { f.tel = t; return f; }
+  const cap = w => w.split("-").map(x=>x? x[0].toUpperCase()+x.slice(1).toLowerCase() : x).join("-");
+  const mots = t.split(/\s+/).filter(Boolean);
+  f.prenom = cap(mots[0]); f.nom = mots.slice(1).map(cap).join(" ");
+  return f;
+}
 window.openNewClientModal = () => {
-  STATE.clientForm={nom:"",prenom:"",tel:"",email:"",cp:"",anniversaire:"",suitReseaux:false,remiseReseauxAccordee:false,pasDeMailPromo:false};
+  STATE.clientForm=formDepuisRecherche(STATE.searchClient);
   STATE.editClientId=null;
   STATE._creationDepuisCaisse=true;
   STATE.showNewClient=true;
@@ -10869,7 +10882,7 @@ window.openClientModal = id => {
   STATE.editClientId=id;
   STATE._creationDepuisCaisse=false;
   if(id){const c=STATE.clients.find(x=>x.id===id);STATE.clientForm={nom:c.nom||'',prenom:c.prenom||'',tel:c.tel||'',email:c.email||'',cp:c.cp||'',anniversaire:c.anniversaire||'',suitReseaux:c.suitReseaux||false,remiseReseauxAccordee:c.remiseReseauxAccordee||false,pasDeMailPromo:c.pasDeMailPromo||false};}
-  else STATE.clientForm={nom:"",prenom:"",tel:"",email:"",cp:"",anniversaire:"",suitReseaux:false,remiseReseauxAccordee:false,pasDeMailPromo:false};
+  else STATE.clientForm=formDepuisRecherche(STATE.tab==="crm" || STATE.tab==="clients" ? STATE.searchProd : "");
   STATE.showClientModal=true; render();
 };
 
@@ -11859,6 +11872,66 @@ function renderAnalyseMidi() {
     <div style="font-size:11px;color:#888;margin-bottom:10px;">CA moyen encaissé sur chaque créneau d'1 h entre 12 h et 15 h, depuis l'ouverture. ✅ = l'heure où fermer coûte le moins.</div>
     <div style="display:flex;gap:20px;flex-wrap:wrap;">${bloc(2,"Mardi")}${bloc(4,"Jeudi")}</div></div>`;
 }
+// ── Comparatif des deux boutiques ──
+function renderComparatifBoutiques() {
+  const r2 = x => Math.round(x*100)/100;
+  const now = new Date();
+  const debutSem = new Date(now); debutSem.setHours(0,0,0,0); debutSem.setDate(debutSem.getDate()-((debutSem.getDay()+6)%7));
+  const periodes = [
+    ["Aujourd'hui", new Date(now.getFullYear(),now.getMonth(),now.getDate()), now],
+    ["Cette semaine", debutSem, now],
+    ["Ce mois-ci", new Date(now.getFullYear(),now.getMonth(),1), now],
+    ["Mois dernier", new Date(now.getFullYear(),now.getMonth()-1,1), new Date(now.getFullYear(),now.getMonth(),0,23,59,59)],
+    ["Depuis le 1er janvier", new Date(now.getFullYear(),0,1), now],
+  ];
+  const ventesDe = bId => (bId===BOUTIQUE_ID_ACTUEL ? (STATE.ventes||[]) : VENTES_AUTRES.filter(v=>v._boutique===bId)).filter(v=>!v.test && !v.annulee);
+  const cols = BOUTIQUES.map(b => ({b, ventes: ventesDe(b.id)}));
+  const cell = (st, autre, k, fmt) => { const v = st[k], w = autre ? autre[k] : null; const mieux = w!=null && v > w + 1e-9;
+    return `<td style="padding:6px 8px;text-align:right;${mieux?"font-weight:700;color:#3b6d11;":""}">${fmt(v)}</td>`; };
+  const bloc = ([lib, d, f]) => {
+    const st = cols.map(c => { const vs = c.ventes.filter(v => { const x = new Date(v.date); return x>=d && x<=f; });
+      const tk = vs.filter(v=>!v.correctionManuelle && v.total>0); const g = statsGroupeVentes(tk);
+      return {ca: r2(vs.reduce((s,v)=>s+(v.total||0),0)), tickets: g.tickets, pm: g.pm, idv: g.idv, articles: g.articles}; });
+    const L = (titre, k, fmt) => `<tr><td style="padding:6px 8px;color:#555;">${titre}</td>${st.map((x,i)=>cell(x, st[1-i], k, fmt)).join("")}</tr>`;
+    return `<div class="card" style="margin-bottom:12px;"><div style="font-weight:600;font-size:13px;margin-bottom:6px;">${lib}</div>
+      <table style="width:100%;border-collapse:collapse;font-size:13px;"><tr style="color:#888;font-size:11px;"><td></td>${cols.map(c=>`<td style="padding:4px 8px;text-align:right;">${c.b.nom.replace(/^Belle\s*&\s*Jolie\s*[—-]\s*/,"")||"Chartres"}</td>`).join("")}</tr>
+      ${L("Chiffre d'affaires TTC","ca",eur)}${L("Tickets","tickets",x=>x)}${L("Panier moyen","pm",eur)}${L("Articles / ticket (IDV)","idv",x=>x.toFixed(2))}${L("Articles vendus","articles",x=>x)}</table></div>`;
+  };
+  const sansAutre = !VENTES_AUTRES.length;
+  return `<div><button onclick="STATE.statPer='mois';render()" class="btn-ghost" style="margin-bottom:12px;">← Retour aux stats</button>
+    <div style="font-weight:600;font-size:15px;margin-bottom:4px;">🏬 Comparatif Chartres / Dreux</div>
+    <div style="font-size:11px;color:#888;margin-bottom:12px;">En vert : la boutique qui fait le mieux sur la ligne.${sansAutre?" ⚠️ Les ventes de l'autre boutique ne sont pas encore arrivées sur cet appareil.":""}</div>
+    ${periodes.map(bloc).join("")}</div>`;
+}
+// ── Bilan dépôt-vente sur les deux boutiques (clientes qui ont des articles dans les deux) ──
+window.ouvrirBilanDepotDeux = async () => {
+  const autres = BOUTIQUES.filter(b=>b.id!==BOUTIQUE_ID_ACTUEL);
+  let lotsAutres = [];
+  if(_fbDb) { for(const b of autres) { try { const d = await _fbDb.collection("bellejolie").doc(cleFirestorePour(b.id,"bj_depots_vente")).get();
+    if(d.exists) lotsAutres = lotsAutres.concat((d.data().value||[]).filter(l=>!l.supprime).map(l=>({...l, _boutique:b.id}))); } catch(e) { console.error(e); } } }
+  STATE.showBilanDepotDeux = {lotsAutres}; render();
+};
+function renderBilanDepotDeuxModal() {
+  const st = STATE.showBilanDepotDeux, ici = BOUTIQUE_ID_ACTUEL;
+  const tous = [...(STATE.depotsVente||[]).filter(l=>!l.supprime).map(l=>({...l,_boutique:ici})), ...(st.lotsAutres||[])];
+  const pct = (100-DEPOT_COMMISSION_PCT)/100, g = {};
+  tous.forEach(l => { const k = cleClienteDepot(l); const x = (g[k] = g[k] || {nom:(l.clientPrenom||"")+" "+(l.clientNom||""), par:{}});
+    const ids = [...new Set(l.articleIds||[])]; let vendus = 0, ca = 0;
+    ids.forEach(pid => { const i = getVenteInfoArticleDepot(pid); if(i.vendu) { vendus++; ca += i.montant; } });
+    const b = (x.par[l._boutique] = x.par[l._boutique] || {lots:0, articles:0, vendus:0, ca:0, bons:0});
+    b.lots++; b.articles += ids.length; b.vendus += vendus; b.ca += ca; b.bons += bonsDuLot(l).reduce((s,bn)=>s+(bn.montant||0),0); });
+  const lignes = Object.values(g).sort((a,b)=>Object.keys(b.par).length-Object.keys(a.par).length || a.nom.localeCompare(b.nom));
+  const nomB = id => (BOUTIQUES.find(b=>b.id===id)?.nom||id).replace(/^Belle\s*&\s*Jolie\s*[—-]\s*/,"") || "Chartres";
+  return `<div class="modal-bg" onclick="if(event.target===this)setState({showBilanDepotDeux:null})"><div class="modal" style="max-width:760px;">
+    <div class="modal-header"><span style="font-weight:500;">🏬 Bilan dépôt-vente — les deux boutiques</span><button onclick="setState({showBilanDepotDeux:null})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button></div>
+    <div class="modal-body"><div style="font-size:11px;color:#888;margin-bottom:8px;">Par cliente : articles déposés, vendus, bon gagné (${100-DEPOT_COMMISSION_PCT} %) et bons déjà faits, boutique par boutique. Les clientes présentes dans les deux boutiques sont en haut.</div>
+    <div style="max-height:60vh;overflow:auto;"><table style="width:100%;border-collapse:collapse;font-size:12px;">
+      <tr style="background:#f5f0f2;font-weight:600;"><td style="padding:6px;">Cliente</td><td style="padding:6px;">Boutique</td><td style="padding:6px;text-align:right;">Vendus</td><td style="padding:6px;text-align:right;">Bon gagné</td><td style="padding:6px;text-align:right;">Déjà en bon</td><td style="padding:6px;text-align:right;">Reste</td></tr>
+      ${lignes.map(c => { const bs = Object.entries(c.par); const tot = bs.reduce((s,[,b])=>({v:s.v+b.vendus,a:s.a+b.articles,g:s.g+b.ca*pct,d:s.d+b.bons}),{v:0,a:0,g:0,d:0});
+        return bs.map(([bid,b],i)=>`<tr style="border-top:${i?"0":"1px solid #eee"};"><td style="padding:5px 6px;font-weight:${i?400:600};">${i?"":c.nom}${!i&&bs.length>1?' <span style="background:#eef4fd;color:#185fa5;font-size:10px;padding:1px 5px;border-radius:6px;">2 boutiques</span>':""}</td><td style="padding:5px 6px;">${nomB(bid)}</td><td style="padding:5px 6px;text-align:right;">${b.vendus}/${b.articles}</td><td style="padding:5px 6px;text-align:right;">${eur(b.ca*pct)}</td><td style="padding:5px 6px;text-align:right;">${eur(b.bons)}</td><td style="padding:5px 6px;text-align:right;">${eur(Math.max(0,b.ca*pct-b.bons))}</td></tr>`).join("")
+          + (bs.length>1?`<tr style="background:#fbf3f6;font-weight:600;"><td></td><td style="padding:5px 6px;">Total</td><td style="padding:5px 6px;text-align:right;">${tot.v}/${tot.a}</td><td style="padding:5px 6px;text-align:right;">${eur(tot.g)}</td><td style="padding:5px 6px;text-align:right;">${eur(tot.d)}</td><td style="padding:5px 6px;text-align:right;color:#993556;">${eur(Math.max(0,tot.g-tot.d))}</td></tr>`:""); }).join("")}
+    </table></div></div></div></div>`;
+}
 function renderCompteurTickets() {
   if(STATE.vendeur.id!=="V1") return "";
   const now = new Date();
@@ -12183,6 +12256,7 @@ function renderStats() {
         ["avance","📈 Stats avancées"],["fidelite","🏅 Fidélité"],
         ["remises","🏷️ Remises"],
         ["retours","↩ Retours"],
+        ...(BOUTIQUES.length>1 ? [["boutiques","🏬 Chartres / Dreux"]] : []),
       ].map(([k,l])=>`
         <button onclick="STATE.statPer='${k}';render()" style="padding:6px 12px;border-radius:8px;border:none;background:${per===k?"#993556":"#f5f0f2"};color:${per===k?"#fff":"#333"};cursor:pointer;font-weight:${per===k?500:400};font-size:13px;">${l}</button>
       `).join("")}
