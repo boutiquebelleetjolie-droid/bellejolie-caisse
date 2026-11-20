@@ -107,7 +107,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "20/11 · v215 (création cliente pré-remplie, bilan dépôt 2 boutiques, comparatif Chartres/Dreux)";
+const APP_VERSION = "20/11 · v216 (Black Friday : remises manuelles réservées à Élodie, cumulables)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -4590,10 +4590,13 @@ function calcPanier() {
         if(x.ref==="SAC-CAISSE" || x.name==="Sac" || x.ref==="RETOUCHE-CAISSE" || estArticleSac(x) || (parseFloat(x.price)||0) < 1) return; // sacs et petits articles à moins d'1 € : jamais dans l'offre
         if(estLigneDepot(x)) return; // dépôt-vente : pas de remise progressive
         { const pA = (STATE.products||[]).find(p=>p.id===(x.prodIdOriginal||x.id)) || {}; if(estLigneArtisan(x, pA)) return; } // artisans : exclus
-        const aRemiseArt = parseFloat(x.remise||0)>0 || x._promoAuto;
+        const remManuelle = parseFloat(x.remise||0)>0 && !x._promoAuto;
+        const cumulElodie = remManuelle && STATE.vendeur?.id==="V1"; // Élodie : sa remise manuelle se cumule avec le Black Friday
+        const aRemiseArt = (parseFloat(x.remise||0)>0 && !cumulElodie) || x._promoAuto;
         if(aRemiseArt) return; // déjà en promo, ne compte pas pour le palier
         qtyEligible += (x.qty||1);
-        baseEligible += x.price*(x.qty||1);
+        const remL = !cumulElodie ? 0 : x.remiseType==="pct" ? x.price*(parseFloat(x.remise)||0)/100*(x.qty||1) : x.remiseType==="eur" ? (parseFloat(x.remise)||0) : 0;
+        baseEligible += Math.max(0, x.price*(x.qty||1) - remL);
       });
       const paliers = [...(rp.paliers||[])].sort((a,b)=>b.qty-a.qty); // du plus grand au plus petit
       const palierAtteint = paliers.find(p => qtyEligible >= p.qty);
@@ -5476,7 +5479,7 @@ function renderCaisse() {
             <option value="pct" ${STATE.remType==="pct"?"selected":""}>%</option>
             <option value="eur" ${STATE.remType==="eur"?"selected":""}>€</option>
           </select>
-          <input type="text" inputmode="decimal" value="${String(STATE.remVal||'').replace('.',',')}" oninput="STATE.remVal=this.value.replace(',','.').replace(/[^0-9.]/g,'');clearTimeout(window._remTimer);window._remTimer=setTimeout(render,600)" onblur="validerRemGlobal()" placeholder="${STATE.remType==="pct"?"ex: 10":"ex: 5"}" style="flex:1;"/>
+          <input type="text" inputmode="decimal" value="${String(STATE.remVal||'').replace('.',',')}" oninput="if(remiseManuelleBloquee()){alert('Pendant le Black Friday, seule Élodie peut faire des remises manuelles.');this.value='';STATE.remVal='';return;}STATE.remVal=this.value.replace(',','.').replace(/[^0-9.]/g,'');clearTimeout(window._remTimer);window._remTimer=setTimeout(render,600)" onblur="validerRemGlobal()" placeholder="${STATE.remType==="pct"?"ex: 10":"ex: 5"}" style="flex:1;"/>
           ${STATE.remVal?`<button onclick="setState({remVal:'',remGlobalMotif:''})" class="btn-ghost">×</button>`:""}
         </div>`}
       </div>
@@ -5566,7 +5569,15 @@ window.validerRemGlobal = () => {
   }
 };
 
+// Black Friday / remise progressive en cours aujourd'hui ?
+function bfEnCours() {
+  const rp = STATE.remiseProgressive; if(!rp || !rp.active) return false;
+  const now = new Date();
+  return (rp.testMode || !rp.dateDebut || now >= new Date(rp.dateDebut+"T00:00:00")) && (rp.testMode || !rp.dateFin || now <= new Date(rp.dateFin+"T23:59:59"));
+}
+function remiseManuelleBloquee() { return bfEnCours() && STATE.vendeur?.id!=="V1"; }
 window.setRemiseArtType = (id, type) => {
+  if(type && remiseManuelleBloquee()) { alert("Pendant le Black Friday, seule Élodie peut faire des remises manuelles."); render(); return; }
   if(type && STATE.vendeur?.id !== "V1") {
     // Vendeurs : motif obligatoire pour appliquer une remise manuelle
     let motif = "";
@@ -5594,6 +5605,7 @@ window.retablirRemiseRetour = (id) => {
   render();
 };
 window.setRemiseArtVal = (id, val) => {
+  if(remiseManuelleBloquee() && String(val||"").trim()) { alert("Pendant le Black Friday, seule Élodie peut faire des remises manuelles."); STATE.panier = STATE.panier.map(x => x.id===id ? {...x, remise:"", remiseType:""} : x); render(); return; }
   // Virgule acceptée (ex. 2,5) ; on attend la fin de la frappe avant de rafraîchir pour ne pas perdre la saisie
   const v = String(val||"").replace(",", ".").replace(/[^0-9.]/g, "");
   STATE.panier = STATE.panier.map(x => x.id===id ? {...x, remise:v} : x);
@@ -5669,13 +5681,14 @@ function calculerPrixPayeReel(venteOrigine, ligneOrigine) {
   },0);
   // Remise progressive (Black Friday) : répartie uniquement sur les articles qui y ont droit (pas le sac, ni les artisans, ni les articles déjà remisés)
   const eligibleProg = l => !l.retour && !l.avoirId && !estLigneDepot(l) && !estArticleSac(l) && (parseFloat(l.price)||0)>=1 && l.ref!=="SAC-CAISSE" && l.ref!=="RETOUCHE-CAISSE"
-    && !(parseFloat(l.remise||0)>0 || l._promoAuto) && !estLigneArtisan(l, (STATE.products||[]).find(p=>p.id===(l.prodIdOriginal||l.id))||{});
+    && !((parseFloat(l.remise||0)>0 && venteOrigine.vendeur?.id!=="V1") || l._promoAuto) && !estLigneArtisan(l, (STATE.products||[]).find(p=>p.id===(l.prodIdOriginal||l.id))||{});
+  const puNetLigne = i => { const r = i.remiseType==="pct" ? i.price*(parseFloat(i.remise||0)/100) : i.remiseType==="eur" ? parseFloat(i.remise||0)/(i.qty||1) : 0; return Math.max(0, i.price-r); };
   const remProg = parseFloat(venteOrigine.remiseProg)||0;
-  const baseProg = remProg>0 ? (venteOrigine.panier||[]).filter(eligibleProg).reduce((s,i)=>s+i.price*(i.qty||1),0) : 0;
+  const baseProg = remProg>0 ? (venteOrigine.panier||[]).filter(eligibleProg).reduce((s,i)=>s+puNetLigne(i)*(i.qty||1),0) : 0;
   const tauxProg = baseProg>0 ? remProg/baseProg : 0;
   const autres = (parseFloat(venteOrigine.remise)||0) + (parseFloat(venteOrigine.remiseFid)||0) + (parseFloat(venteOrigine.remiseChaussures)||0) + (baseProg>0 ? 0 : remProg);
   const tauxGlobal = sousTotalVente>0 ? autres/sousTotalVente : 0;
-  const pu = puApresRemiseArticle*(1-tauxGlobal) - (tauxProg>0 && eligibleProg(ligneOrigine) ? ligneOrigine.price*tauxProg : 0);
+  const pu = puApresRemiseArticle*(1-tauxGlobal) - (tauxProg>0 && eligibleProg(ligneOrigine) ? puApresRemiseArticle*tauxProg : 0);
   return Math.max(0, +pu.toFixed(2));
 }
 
