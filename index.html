@@ -107,7 +107,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "20/11 · v211 (remboursement de frais en espèces sans dépôt en banque)";
+const APP_VERSION = "20/11 · v212 (frais avancés : TVA déductible, Z mensuel, CA3)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -10694,7 +10694,9 @@ function calculerZMensuel(mois, annee) {
   const zClotures = (STATE.caisseJour||[]).filter(z => z.date && z.date.startsWith(annee+"-"+String(mois+1).padStart(2,"0")));
   const ecartCaisse = r2(zClotures.reduce((s,z)=>s+(typeof z.ecart==="number"?z.ecart:0),0));
   const sorties = (STATE.sortiesEspeces||[]).filter(x => x.date && x.date.startsWith(annee+"-"+String(mois+1).padStart(2,"0"))).sort((a,b)=>a.date.localeCompare(b.date));
+  const fraisAvances = factures.filter(f=>f.fraisAvances);
   return {
+    fraisAvances, fraisAvancesTTC: r2(fraisAvances.reduce((s,f)=>s+(f.montantTTC||f.montantHT||0),0)), fraisAvancesTVA: r2(fraisAvances.filter(f=>f.deductible).reduce((s,f)=>s+(f.montantHT||0)*TVA,0)),
     tvaV, sorties, sortiesTotal: r2(sorties.reduce((s,x)=>s+(x.montant||0),0)),
     mois, annee, caTTC, caHT, tvaCol, tvaDeduct, tvaNette: r2(tvaCol-tvaDeduct), achatsHT,
     brut: r2(brut), remises, retours: r2(retours), nbRetours, corrections, nbCorrections,
@@ -10738,7 +10740,8 @@ function lignesZMensuel(z) {
     ...(z.tvaV && z.tvaV.artTTC ? [L("Ventes artisans en mandat (pour leur compte)", eur(z.tvaV.artTTC)+" · commission "+eur(z.tvaV.artCom))] : []),
     ...(z.tvaV && z.tvaV.partReversee ? [L("Part reversée (hors base TVA)", eur(z.tvaV.partReversee))] : []),
     L("Base HT imposable (ligne A)", eur(z.tvaV ? z.tvaV.baseHT : z.caHT)), L("TVA collectée (ligne B1)", eur(z.tvaCol)),
-    L("TVA déductible sur achats (ligne 20)", eur(z.tvaDeduct)), L("TVA nette à payer (ligne 28)", eur(z.tvaNette), true),
+    L("TVA déductible sur achats (ligne 20)", eur(z.tvaDeduct)),
+    ...((z.fraisAvances||[]).length ? [L("   dont frais avancés remboursés en espèces", eur(z.fraisAvancesTTC)+" TTC · TVA "+eur(z.fraisAvancesTVA))] : []), L("TVA nette à payer (ligne 28)", eur(z.tvaNette), true),
     T("PÉRIODE"),
     L("Jours avec ventes / Z clôturés", z.nbJoursOuverts+" / "+z.nbZ),
     ...((z.joursSansZ||[]).length ? [L("⚠️ Jours avec ventes mais sans Z", z.joursSansZ.map(d=>new Date(d+"T12:00:00").toLocaleDateString("fr-FR",{weekday:"short",day:"numeric",month:"numeric"})).join(", "))] : []), L("CA cumulé depuis le 1er janvier", eur(z.cumulAnnee), true),
@@ -15566,10 +15569,19 @@ window.reprendreEspecesFrais = () => {
   const montant = Math.round((parseFloat(String(m).replace(",", "."))||0)*100)/100;
   if(montant<=0) { alert("Montant invalide."); return; }
   const motif = prompt("Motif (ex. achats Action, essence, fournitures…) :", ""); if(motif===null) return;
-  if(!confirm("Tu reprends "+eur(montant)+" en espèces ("+(motif.trim()||"frais avancés")+").\n\nCe montant sera déduit de ton prochain dépôt en banque. Garde les tickets de ces dépenses pour ta comptable.\n\nValider ?")) return;
+  const choixCat = prompt("Catégorie de la dépense (tape le numéro) :\n"+CAT_FACTURES.map((c,i)=>(i+1)+". "+c).join("\n"), String(CAT_FACTURES.indexOf("Marchandises")+1)); if(choixCat===null) return;
+  const categorie = CAT_FACTURES[(parseInt(choixCat)||0)-1] || "Autre";
+  const avecTVA = confirm("Le ticket de cette dépense comporte-t-il de la TVA récupérable (20 %) ?\n\nOK = oui (la TVA sera déduite dans le Z mensuel et la CA3)\nAnnuler = non (pas de TVA, ex. ticket sans TVA)");
+  const ht = avecTVA ? Math.round(montant/1.2*100)/100 : montant;
+  if(!confirm("Tu reprends "+eur(montant)+" en espèces ("+(motif.trim()||"frais avancés")+").\n\nCatégorie : "+categorie+(avecTVA?" · TVA récupérable : "+eur(montant-ht):" · sans TVA")+"\nCe montant sera déduit de ton prochain dépôt en banque. Garde les tickets de ces dépenses pour ta comptable.\n\nValider ?")) return;
   const ancien = STATE.soldeDepotReporte||0, maint = new Date().toISOString();
+  // Enregistrée aussi comme facture fournisseur → charges, TVA déductible, Z mensuel et CA3
+  const facId = uid("FAC");
+  STATE.depenses = [...(STATE.depenses||[]), {id:facId, num:"", date:dateLocaleStr(), categorie, fournisseur:(motif.trim()||"Frais avancés"), montantHT:ht, tauxTVA:avecTVA?0.20:0, deductible:avecTVA,
+    description:"Frais avancés par Élodie, remboursés en espèces de la caisse", fraisAvances:true, montantTTC:montant}];
+  lsSet("bj_depenses", STATE.depenses);
   STATE.depotsBanque = [...(STATE.depotsBanque||[]), {id:uid("DEP"), type:"retrait", dateDepot:dateLocaleStr(), jours:[], total:0, totalJours:0,
-    ancienReporte:ancien, nouveauReporte:Math.round((ancien-montant)*100)/100, retraitFrais:montant, retraitMotif:motif.trim()||"Remboursement de frais avancés", creeLe:maint, par:STATE.vendeur?.nom||""}];
+    ancienReporte:ancien, nouveauReporte:Math.round((ancien-montant)*100)/100, retraitFrais:montant, retraitMotif:motif.trim()||"Remboursement de frais avancés", factureId:facId, creeLe:maint, par:STATE.vendeur?.nom||""}];
   STATE.soldeDepotReporte = Math.round((ancien-montant)*100)/100;
   STATE.depotMontantSaisi = null;
   setState({depotsBanque:STATE.depotsBanque, soldeDepotReporte:STATE.soldeDepotReporte});
@@ -15621,6 +15633,7 @@ window.supprimerDepotBanque = (depotId) => {
   STATE.depotsBanque = (STATE.depotsBanque||[]).map(x=>x.id!==depotId ? x : {...x, supprime:true, supprimeLe:new Date().toISOString()});
   // Annuler l'effet de ce dépôt sur le report : revenir au report d'avant ce dépôt précis
   if(d && !d.manuel && d.ancienReporte!==undefined) STATE.soldeDepotReporte = d.ancienReporte;
+  if(d && d.factureId) { STATE.depenses = (STATE.depenses||[]).filter(f=>f.id!==d.factureId); lsSet("bj_depenses", STATE.depenses); }
   setState({depotsBanque:STATE.depotsBanque, soldeDepotReporte:STATE.soldeDepotReporte});
 };
 
