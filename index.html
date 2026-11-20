@@ -107,7 +107,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "20/11 · v219 (marque sur les étiquettes vide-dressing)";
+const APP_VERSION = "20/11 · v220 (transférer tout un dépôt vers l'autre boutique)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -3214,6 +3214,7 @@ function renderDepotVente() {
         }).join("")}
       </div>
 
+      ${enVente.length && peutGererBoutiques() && BOUTIQUES.length>1 && enVente.some(a=>(a.p.stock||0)>0)?`<button onclick="transfererLotDepot('${lot.id}')" style="width:100%;margin-top:10px;padding:8px;background:#fff;color:#185fa5;border:1px solid #b8d4f5;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;">📦↔️ Transférer tout le dépôt vers ${(BOUTIQUES.find(b=>b.id!==BOUTIQUE_ID_ACTUEL)?.nom||"l'autre boutique").replace(/^Belle\s*&\s*Jolie\s*[—-]\s*/,"")}</button>`:""}
       ${enVente.length?`<button onclick="ouvrirProlongDepot('${lot.id}')" style="width:100%;margin-top:10px;padding:8px;background:#eef4fd;color:#185fa5;border:1px solid #b8d4f5;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;">🔄 Prolonger le dépôt / changer les prix</button>`:""}
       <button onclick="envoyerRecapDepot('${lot.id}')" style="width:100%;margin-top:10px;padding:8px;background:#fff;color:#993556;border:1px solid #e8c4d3;border-radius:8px;cursor:pointer;font-size:12px;">✉️ ${lot.recapEnvoyeLe?"Renvoyer le récapitulatif (envoyé le "+new Date(lot.recapEnvoyeLe).toLocaleDateString("fr-FR")+(lot.recapNbArticles?", "+lot.recapNbArticles+" art.":"")+")":"Envoyer le récapitulatif par mail"}${emailLotDepot(lot)?" · "+emailLotDepot(lot):""}</button>
       ${true ? `<button onclick="ouvrirAjoutDepot('${lot.id}')" style="width:100%;margin-top:10px;padding:8px;background:#f5f0f2;color:#555;border:1px dashed #d8c8d0;border-radius:8px;cursor:pointer;font-size:12px;">➕ Ajouter des articles à ce dépôt</button>`:""}
@@ -20657,6 +20658,15 @@ window.validerTransfertGroupe = async () => {
     STATE.etiqSelection = {}; STATE.showTransfertGroupe = null; render();
     alert("✅ "+total+" pièce(s) transférée(s) vers "+bDest.nom+".");
   } catch(err) { console.error(err); alert("❌ Erreur pendant le transfert : "+(err.message||err)+"\nVérifie le stock des deux boutiques avant de recommencer."); }
+};
+// Transférer tout le dépôt d'une cliente (articles encore en vente ici) vers l'autre boutique
+window.transfererLotDepot = async (lotId) => {
+  const lot = (STATE.depotsVente||[]).find(l=>l.id===lotId); if(!lot) return;
+  const ids = [...new Set(lot.articleIds||[])].filter(pid => { const p = STATE.products.find(x=>x.id===pid); return p && (p.stock||0)>0 && !getVenteInfoArticleDepot(pid).vendu; });
+  if(!ids.length) { alert("Aucun article de ce dépôt n'est en stock ici."); return; }
+  const avant = STATE.etiqSelection;
+  STATE.etiqSelection = {}; ids.forEach(id => STATE.etiqSelection[id] = 1);
+  try { await transfererStockSelection(); } finally { STATE.etiqSelection = avant || {}; render(); }
 };
 window.transfererStockSelection = async () => {
   const liste = articlesCoches().filter(p=>(p.stock||0)>0), bDest = BOUTIQUES.find(b=>b.id!==BOUTIQUE_ID_ACTUEL);
