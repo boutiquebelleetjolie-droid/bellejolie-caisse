@@ -107,7 +107,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "20/11 · v217 (pas de remise réseaux sociaux pendant le Black Friday)";
+const APP_VERSION = "20/11 · v218 (vide-dressing : ni repris ni échangé)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -5660,7 +5660,7 @@ function artisansMandatTicket(v) {
 }
 function htmlMentionMarge(v, taille) {
   const st = `font-size:${taille||9}px;color:#666;margin:4px 0;text-align:center;font-style:italic;`;
-  return (ticketADepot(v) ? `<div style="${st}">Articles de dépôt-vente : Régime particulier – Biens d'occasion (TVA sur la marge, non récupérable)</div>` : "")
+  return (ticketADepot(v) ? `<div style="${st}">Articles de dépôt-vente : Régime particulier – Biens d'occasion (TVA sur la marge, non récupérable). Ni repris ni échangés.</div>` : "")
     + artisansMandatTicket(v).map(([n, arts]) => `<div style="${st}">${arts.join(", ")} : vendu${arts.length>1?"s":""} au nom et pour le compte de ${n}</div>`).join("");
 }
 function lignesTVAZ(z, tdL, tdR) {
@@ -5695,6 +5695,11 @@ function calculerPrixPayeReel(venteOrigine, ligneOrigine) {
 window.addRetour = (pid, taille, couleur) => {
   const p = STATE.products.find(x=>x.id===pid);
   if(!p) return;
+  // Vide-dressing (dépôt-vente) : ni repris ni échangé
+  if(p.depotVente) {
+    if(STATE.vendeur?.id!=="V1") { alert("❌ Les articles de vide-dressing (dépôt-vente) ne sont ni repris ni échangés."); return; }
+    if(!confirm("⚠️ Article de vide-dressing : normalement ni repris ni échangé.\n\nForcer quand même le retour (exception gérante) ?")) return;
+  }
   const varSuffix = (taille||couleur) ? "_"+(taille||"")+"_"+(couleur||"") : "";
   const retourId = "R_"+pid+varSuffix;
   const ex = STATE.panier.find(x=>x.id===retourId);
@@ -6170,7 +6175,7 @@ window.imprimerViaUSB = async () => {
     pushText("TOTAL : "+eur(v.total)+"\n");
     push([0x1B,0x45,0x00]);     // gras OFF
     if(v.payMode) pushText("Règlement : "+(mLbt[v.payMode]||v.payMode)+"\n");
-    if(ticketADepot(v)) pushText("Depot-vente : Regime particulier\n- Biens d'occasion\n");
+    if(ticketADepot(v)) pushText("Depot-vente : Regime particulier\n- Biens d'occasion\nNi repris ni echanges\n");
     artisansMandatTicket(v).forEach(([n]) => pushText("Vendu au nom et pour le compte\nde "+n+"\n"));
     pushText("\nMerci de votre visite !\n");
     pushText("Belle&Jolie\n");
