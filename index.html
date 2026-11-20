@@ -107,7 +107,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "20/11 · v216 (Black Friday : remises manuelles réservées à Élodie, cumulables)";
+const APP_VERSION = "20/11 · v217 (pas de remise réseaux sociaux pendant le Black Friday)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -5900,6 +5900,7 @@ window.appliquerRemiseReseaux = () => {
       STATE._remiseReseauxAccordeeEnCours = false;
     }
   } else {
+    if(bfEnCours()) { alert("Pas de remise réseaux sociaux pendant le Black Friday (non cumulable). La cliente pourra en profiter après le 30 novembre."); return; }
     if(STATE.client?.remiseReseauxAccordee) {
       alert("⚠️ Cette cliente a déjà bénéficié de la remise réseaux sociaux (-5€) précédemment. Elle ne peut être accordée qu'une seule fois par cliente.");
       return;
