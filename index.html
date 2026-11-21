@@ -46,6 +46,13 @@
     #etiquette-print-area,#etiquette-print-area *{visibility:visible;}
     #etiquette-print-area{position:absolute;top:20px;left:20px;}
   }
+
+/* Téléphone : la caisse passe sur une seule colonne (recherche article en haut, panier en dessous) */
+@media (max-width: 820px) {
+  .caisse-grid { grid-template-columns: 1fr !important; height: auto !important; }
+  .caisse-gauche { overflow-y: visible !important; }
+  .caisse-gauche .card > div[style*="grid-template-columns:1fr 1fr"] { grid-template-columns: 1fr !important; }
+}
 </style>
 <!-- Firebase : sauvegarde cloud automatique en complément du stockage local -->
 <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
@@ -107,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "21/11 · v229 (coffrets : étiquette directe, recherche sur téléphone)";
+const APP_VERSION = "21/11 · v230 (caisse lisible sur téléphone : recherche article accessible)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -5071,10 +5078,10 @@ function renderCaisse() {
   <button onclick="ouvrirTicketsDuJour()" style="width:100%;text-align:left;background:#eef4fd;border:1px solid #b3d0f0;border-radius:9px;padding:9px 14px;cursor:pointer;font-size:12px;color:#185fa5;font-weight:500;margin-bottom:10px;">🧾 Voir les tickets du jour</button>
   ${window._syncRecente?`<div style="width:100%;background:#eaf3de;border:1px solid #b5d89a;border-radius:9px;padding:9px 14px;font-size:12px;color:#3b6d11;font-weight:500;margin-bottom:10px;">☁️ Données mises à jour depuis un autre appareil</div>`:""}
   <button id="btn-verif-maj" onclick="verifierMAJCloud()" style="width:100%;text-align:left;background:#f2ede6;border:1px solid #d9c5a0;border-radius:9px;padding:9px 14px;cursor:pointer;font-size:12px;color:#854f0b;font-weight:500;margin-bottom:10px;">☁️ Vérifier les mises à jour (autre appareil)${window._etatSync&&window._etatSync.recu?` <span style="font-weight:400;color:#a08a5a;">· dernière réception du cloud ${new Date(window._etatSync.recu).toLocaleTimeString("fr-FR",{hour:"2-digit",minute:"2-digit"})}</span>`:""}</button>
-  <div style="display:grid;grid-template-columns:1fr 360px;gap:14px;height:calc(100vh - 140px);">
+  <div class="caisse-grid" style="display:grid;grid-template-columns:1fr 360px;gap:14px;height:calc(100vh - 140px);">
 
     <!-- GAUCHE -->
-    <div style="display:flex;flex-direction:column;gap:11px;overflow-y:auto;">
+    <div class="caisse-gauche" style="display:flex;flex-direction:column;gap:11px;overflow-y:auto;">
 
       <!-- Scan -->
       <div class="card">
