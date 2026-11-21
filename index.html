@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "21/11 · v230 (caisse lisible sur téléphone : recherche article accessible)";
+const APP_VERSION = "21/11 · v231 (connexion : codes PIN rechargés depuis le cloud si refusés)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -2373,6 +2373,13 @@ window.selectVendeur = (id) => {
   render();
 };
 
+// Code refusé : on recharge une fois les codes depuis le cloud (appareil dont les données locales ont été vidées ou pas à jour)
+async function rechargerCodesDepuisCloud() {
+  if(!_fbDb) return false;
+  try { const d = await _fbDb.collection("bellejolie").doc(cleFirestore("bj_vendeurs")).get();
+    if(d.exists) { const val = d.data().value||[]; val.forEach((sv,i)=>{ if(VENDEURS[i]&&sv.code) VENDEURS[i].code=sv.code; }); try { localStorage.setItem(cleFirestore("bj_vendeurs"), JSON.stringify(val)); } catch{} return true; } } catch(e) { console.error(e); }
+  return false;
+}
 window.pinKey = (k) => {
   if (k === "⌫") {
     STATE.loginPin = STATE.loginPin.slice(0,-1);
@@ -2400,7 +2407,10 @@ window.pinKey = (k) => {
       if (v && STATE.loginPin === v.code) {
         setTimeout(()=>setState({ vendeur: v, loginPin:"", loginError:"", loginSelected:null, tab:"caisse" }), 300);
       } else {
-        setTimeout(()=>{ STATE.loginError="Code PIN incorrect"; STATE.loginPin=""; render(); }, 300);
+        const essai = STATE.loginPin;
+        setTimeout(async ()=>{
+          if(await rechargerCodesDepuisCloud()) { const v2 = VENDEURS.find(x=>x.id===STATE.loginSelected); if(v2 && essai===v2.code) { setState({ vendeur: v2, loginPin:"", loginError:"", loginSelected:null, tab:"caisse" }); resetTimerVerrouillage(); return; } }
+          STATE.loginError="Code PIN incorrect"; STATE.loginPin=""; render(); }, 300);
       }
     }
     render();
