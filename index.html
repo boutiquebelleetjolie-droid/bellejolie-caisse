@@ -107,7 +107,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "20/11 · v225 (opérations : taux de marge)";
+const APP_VERSION = "21/11 · v226 (coffrets cadeaux : 1 étiquette, partagés automatiquement)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -4639,6 +4639,7 @@ function calcPanier() {
         if(x.retour || x.avoirId) return;
         if(x.ref==="SAC-CAISSE" || x.name==="Sac" || x.ref==="RETOUCHE-CAISSE" || estArticleSac(x) || (parseFloat(x.price)||0) < 1) return; // sacs et petits articles à moins d'1 € : jamais dans l'offre
         if(estLigneDepot(x)) return; // dépôt-vente : pas de remise progressive
+        if(x.coffretDe) return; // coffrets : prix déjà fixé, pas de remise progressive
         { const pA = (STATE.products||[]).find(p=>p.id===(x.prodIdOriginal||x.id)) || {}; if(estLigneArtisan(x, pA)) return; } // artisans : exclus
         const remManuelle = parseFloat(x.remise||0)>0 && !x._promoAuto;
         const cumulElodie = remManuelle && STATE.vendeur?.id==="V1"; // Élodie : sa remise manuelle se cumule avec le Black Friday
@@ -7212,6 +7213,49 @@ function parseFormulePrix(txt) {
     window._ajouterLignePrixLibre(id, taille, couleur, rest, prix, "");
   };
 })();
+// ── Coffrets : 1 étiquette, 1 prix ; à la vente le coffret se sépare en ses articles (part de chacun, artisan compris) ──
+(function(){
+  const base = window.addToCart;
+  window.addToCart = (id, ...rest) => {
+    const cof = (STATE.products||[]).find(x=>x.id===id);
+    if(!cof || !(cof.composants||[]).length) return base(id, ...rest);
+    cof.composants.forEach(c => {
+      const comp = (STATE.products||[]).find(x=>x.id===c.pid);
+      if(!comp) { alert("⚠️ Un article du coffret n'existe plus (réf. "+(c.ref||c.pid)+")."); return; }
+      const lid = comp.id+"_cof_"+cof.id+(c.taille?"_"+c.taille:"");
+      const q = c.qty||1;
+      if(STATE.panier.some(x=>x.id===lid)) STATE.panier = STATE.panier.map(x=>x.id===lid?{...x, qty:x.qty+q}:x);
+      else STATE.panier = [...STATE.panier, {...comp, id:lid, varKey:lid, prodIdOriginal:comp.id, qty:q, price:+(c.prix/q).toFixed(2), prixOriginal:undefined,
+        remise:"", remiseType:"", _promoAuto:false, taille:c.taille||((comp.tailles||[]).filter(Boolean).length===1?comp.tailles.filter(Boolean)[0]:""), couleur:"",
+        name: comp.name+" · 🎁 "+cof.name, coffretDe:cof.id, coffretNom:cof.name, photo:undefined}];
+    });
+    STATE.searchProd=""; STATE.searchBC="";
+    const inp = document.getElementById("prod-search"); if(inp) inp.value="";
+    render();
+  };
+})();
+window.creerCoffret = () => {
+  const nom = prompt("🎁 Nom du coffret (ex. Coffret douceur) :", ""); if(!nom || !nom.trim()) return;
+  const composants = [];
+  for(let n=1; n<=6; n++) {
+    const q = prompt("Article n°"+n+" du coffret : tape sa RÉFÉRENCE ou son CODE-BARRES"+(n>1?"\n(laisse vide pour terminer)":""), ""); if(q===null) return;
+    if(!q.trim()) { if(n===1) return; break; }
+    const t = normStr(q.trim());
+    const p = (STATE.products||[]).find(x => normStr(x.ref||"")===t || normStr(x.barcode||"")===t) || (STATE.products||[]).find(x => normStr(x.name||"").includes(t));
+    if(!p) { alert("Article introuvable : "+q); n--; continue; }
+    const pr = prompt("« "+p.name+" »"+(p.artisanat?" (artisan : "+(p.nomArtisan||"")+")":"")+"\nPrix de cet article DANS le coffret (€) :", String(p.price||"")); if(pr===null) return;
+    const prix = parseFloat(String(pr).replace(",", ".")); if(!(prix>=0)) { alert("Prix invalide."); n--; continue; }
+    composants.push({pid:p.id, ref:p.ref||"", nom:p.name, prix, qty:1, artisan:!!p.artisanat});
+  }
+  if(!composants.length) return;
+  const total = Math.round(composants.reduce((s,c)=>s+c.prix,0)*100)/100;
+  if(!confirm("Créer « "+nom.trim()+" » à "+eur(total)+" ?\n\n"+composants.map(c=>"• "+c.nom+" : "+eur(c.prix)+(c.artisan?" (artisan)":"")).join("\n")+"\n\nTu pourras imprimer son étiquette comme pour un article.")) return;
+  const code = genBC();
+  const cof = {id:uid("PROD"), name:nom.trim(), ref:"COF-"+String(Date.now()).slice(-6), barcode:code, price:total, prixAchat:null, category:"Coffrets",
+    stock:99, composants, tailles:[], couleurs:[], creeLe:new Date().toISOString(), majLe:new Date().toISOString()};
+  STATE.products = [...STATE.products, cof]; lsSet("bj_products", STATE.products); render();
+  alert("✅ Coffret créé : "+cof.ref+". Imprime son étiquette depuis le Stock (🏷️).");
+};
 window.choisirFormulePrix = (index) => {
   const c = STATE.choixPrixLibre; if(!c) return;
   const p = (STATE.products||[]).find(x=>x.id===c.id); if(!p) return;
@@ -9345,6 +9389,7 @@ function renderStock() {
   { const nbOR = STATE.products.filter(estOR).length;
     html += '<button onclick="STATE.filtreOctobreRose=!STATE.filtreOctobreRose;STATE.filtreArtisans=false;render()" class="btn-ghost" style="white-space:nowrap;'+(STATE.filtreOctobreRose?'background:#c2185b;color:#fff;border-color:#c2185b;':'color:#c2185b;border-color:#f3a6c3;')+'">🎀 Octobre Rose ('+nbOR+')</button>'; }
   if(STATE.vendeur.role!=="apprenti") html += '<button onclick="openProdModal(null)" class="btn-primary" style="width:auto;padding:8px 16px;">+ Nouvel article</button>';
+  if(STATE.vendeur.id==="V1" || peutGererArtisans()) html += '<button onclick="creerCoffret()" class="btn-ghost" style="width:auto;padding:8px 14px;">🎁 Créer un coffret</button>';
   if(BOUTIQUES.length>1) html += '<button onclick="ouvrirStockAutreBoutique()" class="btn-ghost" style="white-space:nowrap;">🔍 Stock de l\'autre boutique</button>';
   if(BOUTIQUES.length>1) html += '<button onclick="setState({showHistoriqueTransferts:true})" class="btn-ghost" style="white-space:nowrap;">📦↔️ Transferts</button>';
   if(isV1) html += '<button onclick="STATE.stockTab=\'reception\';render()" class="btn-ghost" style="white-space:nowrap;">📦 Réception facture</button>';
