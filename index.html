@@ -107,7 +107,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "21/11 · v228 (Sabrina : stock artisans sans code)";
+const APP_VERSION = "21/11 · v229 (coffrets : étiquette directe, recherche sur téléphone)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -1398,7 +1398,7 @@ const INITIAL_CLIENTS = [
   {id:"C001",nom:"Dupont", prenom:"Marie", tel:"0612345678",email:"",cp:"75001",totalAchats:0,montantCumule:0},
   {id:"C002",nom:"Martin",prenom:"Sophie",tel:"0623456789",email:"",cp:"75008",totalAchats:0,montantCumule:0},
 ];
-const CATEGORIES = ["Robes","Hauts","Pantalons","Jupes","Shorts","Vestes","Manteaux","Pulls & Gilets","Ensembles","Combinaisons","Accessoires","Sacs","Chaussures","Bijoux","Chaussettes","Foulards","Beauté","Décoration"];
+const CATEGORIES = ["Robes","Hauts","Pantalons","Jupes","Shorts","Vestes","Manteaux","Pulls & Gilets","Ensembles","Combinaisons","Accessoires","Sacs","Chaussures","Bijoux","Chaussettes","Foulards","Beauté","Décoration","Coffrets"];
 // Regroupement "vêtements" utilisé pour les segments croisés (ex: achète des vêtements mais jamais de chaussures)
 const CATEGORIES_VETEMENTS = ["Robes","Hauts","Pantalons","Jupes","Shorts","Vestes","Manteaux","Pulls & Gilets","Ensembles","Combinaisons"];
 
@@ -7244,6 +7244,11 @@ function chercherArticlesCoffret(q) {
     normStr(p.ref||"")===t || normStr(p.ref||"").replace(/^ref-?/,"")===sansRef || normStr(p.ref||"").includes(sansRef) ||
     normStr(p.name||"").includes(t) || normStr(p.nomArtisan||"").includes(t))).slice(0,8);
 }
+function htmlResultatsCoffret(q) {
+  const res = chercherArticlesCoffret(q);
+  return res.length ? `<div style="border:0.5px solid #e8e0e4;border-radius:8px;margin-top:4px;max-height:200px;overflow:auto;">${res.map(p=>`<div onclick="ajouterAuCoffret('${p.id}')" style="padding:10px;border-bottom:0.5px solid #f0ebee;cursor:pointer;font-size:14px;">${p.name} <span style="color:#888;font-size:12px;">${p.ref||""} · ${eur(p.price)}${p.artisanat?" · artisan "+(p.nomArtisan||""):""}</span></div>`).join("")}</div>`
+    : (String(q||"").trim().length>=2 ? `<div style="font-size:12px;color:#a32d2d;margin-top:4px;">Aucun article trouvé.</div>` : "");
+}
 function renderCoffretModal() {
   const f = STATE.showCoffret, total = f.composants.reduce((s,c)=>s+(parseFloat(c.prix)||0),0);
   const res = chercherArticlesCoffret(f.recherche);
@@ -7253,9 +7258,9 @@ function renderCoffretModal() {
       <label style="font-size:12px;color:#888;">Nom du coffret</label>
       <input id="cof-nom" value="${f.nom.replace(/"/g,"&quot;")}" oninput="STATE.showCoffret.nom=this.value" placeholder="ex. Coffret douceur" style="width:100%;box-sizing:border-box;margin-bottom:12px;"/>
       <label style="font-size:12px;color:#888;">Ajouter un article : scanne-le ou tape sa référence / son nom</label>
-      <input id="cof-rech" value="${f.recherche.replace(/"/g,"&quot;")}" oninput="STATE.showCoffret.recherche=this.value;clearTimeout(window._cofT);window._cofT=setTimeout(()=>{render();const i=document.getElementById('cof-rech');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}},250)"
+      <input id="cof-rech" type="search" autocomplete="off" value="${f.recherche.replace(/"/g,"&quot;")}" oninput="STATE.showCoffret.recherche=this.value;const z=document.getElementById('cof-res');if(z)z.innerHTML=htmlResultatsCoffret(this.value)"
         onkeydown="if(event.key==='Enter'){event.preventDefault();event.stopPropagation();const r=chercherArticlesCoffret(this.value);if(r.length===1)ajouterAuCoffret(r[0].id);}" placeholder="Référence, code-barres ou nom…" style="width:100%;box-sizing:border-box;"/>
-      ${res.length?`<div style="border:0.5px solid #e8e0e4;border-radius:8px;margin-top:4px;max-height:180px;overflow:auto;">${res.map(p=>`<div onclick="ajouterAuCoffret('${p.id}')" style="padding:7px 10px;border-bottom:0.5px solid #f0ebee;cursor:pointer;font-size:13px;">${p.name} <span style="color:#888;font-size:11px;">${p.ref||""} · ${eur(p.price)}${p.artisanat?" · artisan "+(p.nomArtisan||""):""}</span></div>`).join("")}</div>`:(f.recherche.trim().length>=2?`<div style="font-size:12px;color:#a32d2d;margin-top:4px;">Aucun article trouvé.</div>`:"")}
+      <div id="cof-res">${htmlResultatsCoffret(f.recherche)}</div>
       <div style="margin-top:14px;font-size:12px;color:#888;">Contenu du coffret et prix de chaque article DANS le coffret :</div>
       ${f.composants.map((c,i)=>`<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:0.5px solid #f0ebee;font-size:13px;">
         <span style="flex:1;">${c.nom}${c.artisan?` <span style="font-size:10px;background:#faeeda;color:#854f0b;padding:1px 5px;border-radius:5px;">artisan</span>`:""}</span>
@@ -7276,8 +7281,9 @@ window.validerCoffret = () => {
   const cof = {id:uid("PROD"), name:f.nom.trim(), ref:"COF-"+String(Date.now()).slice(-6), barcode:genBC(), price:total, prixAchat:null, category:"Coffrets",
     stock:99, composants:f.composants.map(c=>({...c, prix:parseFloat(c.prix)||0})), tailles:[], couleurs:[], creeLe:new Date().toISOString(), majLe:new Date().toISOString()};
   STATE.products = [...STATE.products, cof]; lsSet("bj_products", STATE.products);
-  STATE.showCoffret = null; render();
-  alert("✅ Coffret « "+cof.name+" » créé à "+eur(total)+" (réf. "+cof.ref+"). Imprime son étiquette depuis le Stock (🏷️).");
+  STATE.showCoffret = null;
+  alert("✅ Coffret « "+cof.name+" » créé à "+eur(total)+" (réf. "+cof.ref+"). Imprime maintenant son étiquette.");
+  openBCModal(cof.id);
 };
 window.choisirFormulePrix = (index) => {
   const c = STATE.choixPrixLibre; if(!c) return;
