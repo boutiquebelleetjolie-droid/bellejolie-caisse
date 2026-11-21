@@ -107,7 +107,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "21/11 · v227 (coffret : fenêtre de création avec recherche)";
+const APP_VERSION = "21/11 · v228 (Sabrina : stock artisans sans code)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -9936,7 +9936,7 @@ window.openProdModal = id => {
 };
 window.openBCModal  = id => { STATE.showBCModal=STATE.products.find(p=>p.id===id); STATE.etiquetteTailleVal=''; STATE.etiquetteCouleurVal=''; render(); };
 window.openStkModal = id => { STATE.showStkModal=STATE.products.find(p=>p.id===id); STATE.mvtType="entree"; STATE.mvtQty="1"; STATE.mvtTaille=""; STATE.mvtCouleur=""; STATE.mvtDefectueux=false; render(); };
-window.deleteProd   = id => { if(STATE.vendeur?.id!=="V1") { alert("Seule la gérante peut supprimer un article."); return; } if(confirm("Supprimer cet article ?"))setState({products:STATE.products.filter(p=>p.id!==id)}); };
+window.deleteProd   = id => { const pd = STATE.products.find(p=>p.id===id); if(STATE.vendeur?.id!=="V1" && !(pd && pd.artisanat && peutGererArtisans())) { alert("Seule la gérante peut supprimer un article."); return; } if(confirm("Supprimer cet article ?"))setState({products:STATE.products.filter(p=>p.id!==id)}); };
 
 function renderProdModal() {
   const f = STATE.prodForm;
@@ -10621,11 +10621,11 @@ window.saveMvt = () => {
   // Sécurité : les vendeuses peuvent librement faire une entrée, mais une sortie n'est possible
   // que si elle est signalée comme article défectueux (jamais une sortie libre/non tracée).
   if(STATE.mvtType==="sortie" && SANS_BAISSE_STOCK_IDS.includes(STATE.vendeur.id)) { alert("Tu ne peux pas sortir de stock. Préviens Élodie."); return; }
-  if(STATE.mvtType==="sortie" && ACCORD_STOCK_IDS.includes(STATE.vendeur.id) && !STATE._accordStockOK) {
+  if(STATE.mvtType==="sortie" && ACCORD_STOCK_IDS.includes(STATE.vendeur.id) && !STATE._accordStockOK && !(p.artisanat && peutGererArtisans())) {
     demanderAccordElodie(`<strong>${p.name}</strong> (réf. ${p.ref||"—"})${STATE.mvtTaille?" taille "+STATE.mvtTaille:""} : sortie de <strong>${q}</strong> article(s)${STATE.mvtDefectueux?" (défectueux)":""}`).then(ok => { if(ok) { STATE._accordStockOK = true; try { saveMvt(); } finally { STATE._accordStockOK = false; } } });
     return;
   }
-  if(STATE.vendeur.id!=="V1" && STATE.mvtType==="sortie") STATE.mvtDefectueux=true;
+  if(STATE.vendeur.id!=="V1" && STATE.mvtType==="sortie" && !(p.artisanat && peutGererArtisans())) STATE.mvtDefectueux=true;
   const delta = STATE.mvtType==="entree"?q:-q;
   STATE.products = ajusterStock(STATE.products, p.id, delta, STATE.mvtTaille, STATE.mvtCouleur);
   let msgDefectueux = "";
