@@ -107,7 +107,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "21/11 · v226 (coffrets cadeaux : 1 étiquette, partagés automatiquement)";
+const APP_VERSION = "21/11 · v227 (coffret : fenêtre de création avec recherche)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -3435,6 +3435,7 @@ function renderApp() {
   ${STATE.showPay          ? renderPayModal()        : ""}
   ${STATE.showTicket       ? renderTicketModal()     : ""}
   ${STATE.showNewClient    ? renderNewClientModal()  : ""}
+  ${STATE.showCoffret      ? renderCoffretModal()    : ""}
   ${STATE.showBCModal      ? renderBCModal()         : ""}
   ${STATE.showStkModal     ? renderStkModal()        : ""}
   ${STATE.showDefectueux   ? renderDefectueuxModal() : ""}
@@ -7234,27 +7235,49 @@ function parseFormulePrix(txt) {
     render();
   };
 })();
-window.creerCoffret = () => {
-  const nom = prompt("🎁 Nom du coffret (ex. Coffret douceur) :", ""); if(!nom || !nom.trim()) return;
-  const composants = [];
-  for(let n=1; n<=6; n++) {
-    const q = prompt("Article n°"+n+" du coffret : tape sa RÉFÉRENCE ou son CODE-BARRES"+(n>1?"\n(laisse vide pour terminer)":""), ""); if(q===null) return;
-    if(!q.trim()) { if(n===1) return; break; }
-    const t = normStr(q.trim());
-    const p = (STATE.products||[]).find(x => normStr(x.ref||"")===t || normStr(x.barcode||"")===t) || (STATE.products||[]).find(x => normStr(x.name||"").includes(t));
-    if(!p) { alert("Article introuvable : "+q); n--; continue; }
-    const pr = prompt("« "+p.name+" »"+(p.artisanat?" (artisan : "+(p.nomArtisan||"")+")":"")+"\nPrix de cet article DANS le coffret (€) :", String(p.price||"")); if(pr===null) return;
-    const prix = parseFloat(String(pr).replace(",", ".")); if(!(prix>=0)) { alert("Prix invalide."); n--; continue; }
-    composants.push({pid:p.id, ref:p.ref||"", nom:p.name, prix, qty:1, artisan:!!p.artisanat});
-  }
-  if(!composants.length) return;
-  const total = Math.round(composants.reduce((s,c)=>s+c.prix,0)*100)/100;
-  if(!confirm("Créer « "+nom.trim()+" » à "+eur(total)+" ?\n\n"+composants.map(c=>"• "+c.nom+" : "+eur(c.prix)+(c.artisan?" (artisan)":"")).join("\n")+"\n\nTu pourras imprimer son étiquette comme pour un article.")) return;
-  const code = genBC();
-  const cof = {id:uid("PROD"), name:nom.trim(), ref:"COF-"+String(Date.now()).slice(-6), barcode:code, price:total, prixAchat:null, category:"Coffrets",
-    stock:99, composants, tailles:[], couleurs:[], creeLe:new Date().toISOString(), majLe:new Date().toISOString()};
-  STATE.products = [...STATE.products, cof]; lsSet("bj_products", STATE.products); render();
-  alert("✅ Coffret créé : "+cof.ref+". Imprime son étiquette depuis le Stock (🏷️).");
+window.creerCoffret = () => { setState({showCoffret:{nom:"", recherche:"", composants:[]}}); setTimeout(()=>document.getElementById("cof-nom")?.focus(), 50); };
+function chercherArticlesCoffret(q) {
+  const t = normStr(String(q||"").trim()); if(t.length<2) return [];
+  const sansRef = t.replace(/^ref-?/,"");
+  return (STATE.products||[]).filter(p => !p.composants && !p.retire && (
+    normStr(p.barcode||"")===t || Object.values(p.barcodeVariantes||{}).some(c=>normStr(c)===t) ||
+    normStr(p.ref||"")===t || normStr(p.ref||"").replace(/^ref-?/,"")===sansRef || normStr(p.ref||"").includes(sansRef) ||
+    normStr(p.name||"").includes(t) || normStr(p.nomArtisan||"").includes(t))).slice(0,8);
+}
+function renderCoffretModal() {
+  const f = STATE.showCoffret, total = f.composants.reduce((s,c)=>s+(parseFloat(c.prix)||0),0);
+  const res = chercherArticlesCoffret(f.recherche);
+  return `<div class="modal-bg" onclick="if(event.target===this)setState({showCoffret:null})"><div class="modal" style="max-width:520px;">
+    <div class="modal-header"><span style="font-weight:500;">🎁 Créer un coffret</span><button onclick="setState({showCoffret:null})" style="background:none;border:none;font-size:24px;color:#aaa;">×</button></div>
+    <div class="modal-body">
+      <label style="font-size:12px;color:#888;">Nom du coffret</label>
+      <input id="cof-nom" value="${f.nom.replace(/"/g,"&quot;")}" oninput="STATE.showCoffret.nom=this.value" placeholder="ex. Coffret douceur" style="width:100%;box-sizing:border-box;margin-bottom:12px;"/>
+      <label style="font-size:12px;color:#888;">Ajouter un article : scanne-le ou tape sa référence / son nom</label>
+      <input id="cof-rech" value="${f.recherche.replace(/"/g,"&quot;")}" oninput="STATE.showCoffret.recherche=this.value;clearTimeout(window._cofT);window._cofT=setTimeout(()=>{render();const i=document.getElementById('cof-rech');if(i){i.focus();i.setSelectionRange(i.value.length,i.value.length);}},250)"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();event.stopPropagation();const r=chercherArticlesCoffret(this.value);if(r.length===1)ajouterAuCoffret(r[0].id);}" placeholder="Référence, code-barres ou nom…" style="width:100%;box-sizing:border-box;"/>
+      ${res.length?`<div style="border:0.5px solid #e8e0e4;border-radius:8px;margin-top:4px;max-height:180px;overflow:auto;">${res.map(p=>`<div onclick="ajouterAuCoffret('${p.id}')" style="padding:7px 10px;border-bottom:0.5px solid #f0ebee;cursor:pointer;font-size:13px;">${p.name} <span style="color:#888;font-size:11px;">${p.ref||""} · ${eur(p.price)}${p.artisanat?" · artisan "+(p.nomArtisan||""):""}</span></div>`).join("")}</div>`:(f.recherche.trim().length>=2?`<div style="font-size:12px;color:#a32d2d;margin-top:4px;">Aucun article trouvé.</div>`:"")}
+      <div style="margin-top:14px;font-size:12px;color:#888;">Contenu du coffret et prix de chaque article DANS le coffret :</div>
+      ${f.composants.map((c,i)=>`<div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:0.5px solid #f0ebee;font-size:13px;">
+        <span style="flex:1;">${c.nom}${c.artisan?` <span style="font-size:10px;background:#faeeda;color:#854f0b;padding:1px 5px;border-radius:5px;">artisan</span>`:""}</span>
+        <input type="text" inputmode="decimal" value="${String(c.prix).replace(".",",")}" onchange="STATE.showCoffret.composants[${i}].prix=parseFloat(this.value.replace(',','.'))||0;render()" style="width:70px;text-align:right;"/> €
+        <button onclick="STATE.showCoffret.composants.splice(${i},1);render()" style="background:none;border:none;color:#a32d2d;cursor:pointer;">✕</button></div>`).join("")||`<div style="font-size:12px;color:#aaa;padding:6px 0;">Aucun article pour l'instant.</div>`}
+      <div style="display:flex;justify-content:space-between;font-weight:600;margin-top:10px;"><span>Prix du coffret</span><span style="color:#993556;">${eur(total)}</span></div>
+      <button onclick="validerCoffret()" class="btn-primary" style="width:100%;margin-top:12px;" ${f.composants.length&&f.nom.trim()?"":"disabled"}>✅ Créer le coffret</button>
+    </div></div></div>`;
+}
+window.ajouterAuCoffret = (pid) => {
+  const p = STATE.products.find(x=>x.id===pid); if(!p) return;
+  STATE.showCoffret.composants.push({pid:p.id, ref:p.ref||"", nom:p.name, prix:p.price||0, qty:1, artisan:!!p.artisanat});
+  STATE.showCoffret.recherche = ""; render(); setTimeout(()=>document.getElementById("cof-rech")?.focus(), 30);
+};
+window.validerCoffret = () => {
+  const f = STATE.showCoffret; if(!f || !f.composants.length || !f.nom.trim()) return;
+  const total = Math.round(f.composants.reduce((s,c)=>s+(parseFloat(c.prix)||0),0)*100)/100;
+  const cof = {id:uid("PROD"), name:f.nom.trim(), ref:"COF-"+String(Date.now()).slice(-6), barcode:genBC(), price:total, prixAchat:null, category:"Coffrets",
+    stock:99, composants:f.composants.map(c=>({...c, prix:parseFloat(c.prix)||0})), tailles:[], couleurs:[], creeLe:new Date().toISOString(), majLe:new Date().toISOString()};
+  STATE.products = [...STATE.products, cof]; lsSet("bj_products", STATE.products);
+  STATE.showCoffret = null; render();
+  alert("✅ Coffret « "+cof.name+" » créé à "+eur(total)+" (réf. "+cof.ref+"). Imprime son étiquette depuis le Stock (🏷️).");
 };
 window.choisirFormulePrix = (index) => {
   const c = STATE.choixPrixLibre; if(!c) return;
