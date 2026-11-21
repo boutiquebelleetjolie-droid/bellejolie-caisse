@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "21/11 · v231 (connexion : codes PIN rechargés depuis le cloud si refusés)";
+const APP_VERSION = "22/11 · v232 (opération : comparer à la semaine dernière ou à la moyenne 4 semaines)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -12069,7 +12069,7 @@ function renderSuiviOperation() {
   const joursOp = []; for(let d=new Date(d0); d<=d1; d.setDate(d.getDate()+1)) joursOp.push(jourStr(d));
   const ouvertsOp = new Set(ventes.filter(v=>joursOp.includes(dateLocaleStr(new Date(v.date)))).map(v=>dateLocaleStr(new Date(v.date))));
   // Période de comparaison : les mêmes jours de la semaine, sur les 4 semaines avant l'opération
-  const ref = new Set(); joursOp.forEach(j => { for(let w=1; w<=4; w++) { const d = new Date(j+"T12:00:00"); d.setDate(d.getDate()-7*w); if(d < d0) ref.add(jourStr(d)); } });
+  const ref = new Set(); const nbSem = STATE._opRefSem||4; joursOp.forEach(j => { for(let w=1; w<=nbSem; w++) { const d = new Date(j+"T12:00:00"); d.setDate(d.getDate()-7*w); if(d < d0) ref.add(jourStr(d)); } });
   const agg = (jours) => { const vs = ventes.filter(v=>jours.has(dateLocaleStr(new Date(v.date))));
     const tk = vs.filter(v=>v.total>0), g = statsGroupeVentes(tk);
     let marge = 0, sansPA = 0, caConnu = 0; vs.forEach(v => { const m = margeVenteHT(v); marge += m.marge; sansPA += m.sansPA; caConnu += m.caConnu; });
@@ -12085,7 +12085,9 @@ function renderSuiviOperation() {
   const gainMarge = (pj(A,"marge") - pj(R,"marge")) * A.nbJ;
   return back+`<div class="card" style="margin-bottom:12px;">
     <div style="font-weight:600;font-size:15px;">🎯 ${rp.nom||"Opération"} — du ${d0.toLocaleDateString("fr-FR")} au ${fin.toLocaleDateString("fr-FR")}</div>
-    <div style="font-size:11px;color:#888;margin:2px 0 10px;">${now>fin?"✅ Opération terminée · ":""}${A.nbJ} jour(s) d'opération avec ventes · comparé aux mêmes jours de la semaine des 4 semaines précédentes (${R.nbJ} jour(s)).</div>
+    <div style="font-size:11px;color:#888;margin:2px 0 10px;">${now>fin?"✅ Opération terminée · ":""}${A.nbJ} jour(s) d'opération avec ventes · comparé aux mêmes jours de la semaine ${(STATE._opRefSem||4)===1?"de la semaine dernière":"des 4 semaines précédentes (moyenne)"} (${R.nbJ} jour(s)).</div>
+    <div style="display:flex;gap:6px;margin:-4px 0 12px;font-size:12px;">Comparer à :
+      ${[[4,"moyenne des 4 dernières semaines"],[1,"la semaine dernière"]].map(([n,l])=>`<button onclick="STATE._opRefSem=${n};render()" style="padding:3px 10px;border-radius:7px;border:none;cursor:pointer;font-size:12px;background:${(STATE._opRefSem||4)===n?"#993556":"#f5f0f2"};color:${(STATE._opRefSem||4)===n?"#fff":"#333"};">${l}</button>`).join("")}</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:12px;">
       <div style="background:#fcebeb;border-radius:9px;padding:10px;"><div style="font-size:11px;color:#a32d2d;">Ce que la remise t'a coûté</div><div style="font-size:18px;font-weight:700;color:#a32d2d;">${eur(A.remise)}</div><div style="font-size:11px;color:#888;">${A.avecRemise} ticket(s) remisé(s) sur ${A.tickets}</div></div>
       <div style="background:#eef4fd;border-radius:9px;padding:10px;"><div style="font-size:11px;color:#185fa5;">CA en plus (ou en moins)</div><div style="font-size:18px;font-weight:700;color:#185fa5;">${eur((pj(A,"ca")-pj(R,"ca"))*A.nbJ)}</div><div style="font-size:11px;color:#888;">vs un rythme normal sur ${A.nbJ} j</div></div>
