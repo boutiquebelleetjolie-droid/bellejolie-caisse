@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "23/11 · v237 (registre du personnel : Noémie et Clara)";
+const APP_VERSION = "23/11 · v238 (registre : sortie Noëllyne 10/10)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -2902,6 +2902,25 @@ setInterval(() => {
     localStorage.setItem("bj_mig_registre_2311", "ok");
   } catch(e) { console.error("Registre personnel :", e); }
 }, 15000);
+// 23/11/2026 (v238) : sortie de Noëllyne le 10/10/2026 ; contrat de Noémie confirmé (alternance)
+setInterval(() => {
+  try {
+    if(localStorage.getItem("bj_mig_registre_2311b")==="ok") return;
+    if(localStorage.getItem("bj_mig_registre_2311")!=="ok") return;
+    const liste = STATE.registrePersonnel||[];
+    if(!liste.length) return;
+    let modif = false;
+    const nl = liste.map(x => {
+      const p = normStr(x.prenom||"");
+      if(/^no.?llyne$/.test(p) && !x.sortie) { modif = true; return {...x, sortie:"2026-10-10"}; }
+      if(p==="noemie" && normStr(x.nom||"")==="tourneux" && /À vérifier/.test(x.remarques||"")) { modif = true;
+        return {...x, contrat:"Apprentissage", remarques:(x.remarques||"").replace(/ ?À vérifier : type de contrat, fin de contrat\./,"").trim()+" Contrat en alternance (confirmé)."}; }
+      return x;
+    });
+    if(modif) setState({registrePersonnel:nl});
+    localStorage.setItem("bj_mig_registre_2311b", "ok");
+  } catch(e) { console.error("Registre personnel (sortie) :", e); }
+}, 16000);
 // v191 : on sort les photos du stockage local (plein) → IndexedDB, puis on les remet en mémoire
 try {
   for(let i=localStorage.length-1;i>=0;i--) { const k = localStorage.key(i);
