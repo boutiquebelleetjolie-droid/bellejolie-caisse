@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "23/11 · v233 (bilan accessoires : foulards et écharpes)";
+const APP_VERSION = "23/11 · v234 (bilan : toutes les chaussettes réunies)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -13352,7 +13352,7 @@ const FAMILLES_ACCESSOIRES = [
   ["foulards","🧣 Foulards"],["echarpes","🧶 Écharpes"]];
 function familleArticle(nom, categorie) {
   const t = normStr(nom||""), c = normStr(categorie||"");
-  if(/chaussette/.test(t)) return "chaussettes";
+  if(/chau?s+ett?e|socquette|mi-?bas|\bsocks?\b/.test(t) || c==="chaussettes") return "chaussettes"; // toutes les chaussettes, même mal orthographiées ou rangées en catégorie Chaussettes
   if(/echarpe|etole|snood|cheche|tour de cou/.test(t)) return "echarpes";
   if(/foulard|carre de soie|bandana|\bcarre\b/.test(t) || c==="foulards") return "foulards";
   if(/\bsacs?\b|pochette|banane|cabas|besace|cartable/.test(t) || c==="sacs") return "sacs";
