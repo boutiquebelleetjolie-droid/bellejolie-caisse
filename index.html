@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "23/11 · v236 (Sabrina : stock artisans libre même sans case Artisan cochée)";
+const APP_VERSION = "23/11 · v237 (registre du personnel : Noémie et Clara)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -2884,6 +2884,24 @@ try {
     localStorage.setItem(flagBF2, "1");
   }
 } catch(e) { console.error("Réglage Black Friday :", e); }
+// 23/11/2026 : registre du personnel — ajout de Noémie Tourneux et Clara Marques Coadalen (DPAE)
+setInterval(() => {
+  try {
+    if(localStorage.getItem("bj_mig_registre_2311")==="ok") return;
+    const liste = STATE.registrePersonnel||[];
+    if(!liste.length) return; // registre pas encore chargé sur cet appareil : on attend (évite d'écraser le cloud)
+    const existe = (nom, prenom) => liste.some(x => normStr(x.nom||"")===normStr(nom) && normStr(x.prenom||"")===normStr(prenom));
+    const ajouts = [];
+    if(!existe("Tourneux","Noémie")) ajouts.push({id:uid("SAL"), nom:"TOURNEUX", prenom:"Noémie", naissance:"2009-02-12", sexe:"F", nationalite:"Française", emploi:"Vendeuse",
+      contrat:"Apprentissage", entree:"2026-10-13", sortie:"", titre:"", finContrat:"", numSecu:"", adresse:"", complementAdresse:"", codePostal:"", ville:"", email:"",
+      visiteMedicale:"", prochaineVisiteMedicale:"", remarques:"Lieu de naissance : Le Coudray. DPAE réf. 111CC du 13/10/2026. Boutique : Chartres. À vérifier : type de contrat, fin de contrat."});
+    if(!existe("Marques Coadalen","Clara")) ajouts.push({id:uid("SAL"), nom:"MARQUES COADALEN", prenom:"Clara", naissance:"2010-08-05", sexe:"F", nationalite:"Française", emploi:"Vendeuse (alternante)",
+      contrat:"Apprentissage", entree:"2026-11-16", sortie:"", titre:"", finContrat:"2027-08-31", numSecu:"", adresse:"", complementAdresse:"", codePostal:"", ville:"", email:"",
+      visiteMedicale:"", prochaineVisiteMedicale:"", remarques:"Lieu de naissance : Trappes. DPAE réf. 1112J du 23/11/2026. Affectation : 50 % Dreux / 50 % Chartres. Salariée mineure."});
+    if(ajouts.length) setState({registrePersonnel:[...liste, ...ajouts]});
+    localStorage.setItem("bj_mig_registre_2311", "ok");
+  } catch(e) { console.error("Registre personnel :", e); }
+}, 15000);
 // v191 : on sort les photos du stockage local (plein) → IndexedDB, puis on les remet en mémoire
 try {
   for(let i=localStorage.length-1;i>=0;i--) { const k = localStorage.key(i);
