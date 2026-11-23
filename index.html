@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "23/11 · v234 (bilan : toutes les chaussettes réunies)";
+const APP_VERSION = "23/11 · v235 (Sabrina : stock artisans libre, affichage clarifié)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -10577,6 +10577,7 @@ ${etiqsHTML}
 function renderStkModal() {
   const p=STATE.showStkModal;
   const isV1Stk = STATE.vendeur.id==="V1";
+  const libreArtisan = !isV1Stk && p && p.artisanat && peutGererArtisans(); // Sabrina : stock artisan libre
   return `
   <div class="modal-bg" onclick="if(event.target===this)setState({showStkModal:null})">
     <div class="modal" style="max-width:320px;">
@@ -10585,9 +10586,10 @@ function renderStkModal() {
         <div style="display:flex;justify-content:space-between;background:#f5f0f2;padding:10px 14px;border-radius:8px;margin-bottom:12px;font-size:13px;"><span style="color:#888;">Stock actuel</span><span style="font-weight:500;">${p.stock} unités</span></div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
           <div onclick="STATE.mvtType='entree';render()" style="padding:10px;border-radius:8px;cursor:pointer;text-align:center;border:${STATE.mvtType==="entree"?"2px solid #993556":"1px solid #ddd"};color:${STATE.mvtType==="entree"?"#993556":"#555"};font-weight:${STATE.mvtType==="entree"?500:400};">⬆ Entrée</div>
-          <div onclick="if(SANS_BAISSE_STOCK_IDS.includes(STATE.vendeur.id)){alert('Tu ne peux pas sortir de stock. Préviens Élodie.');return;}STATE.mvtType='sortie';if(STATE.vendeur.id!=='V1')STATE.mvtDefectueux=true;render()" style="padding:10px;border-radius:8px;cursor:pointer;text-align:center;border:${STATE.mvtType==="sortie"?"2px solid #993556":"1px solid #ddd"};color:${STATE.mvtType==="sortie"?"#993556":"#555"};font-weight:${STATE.mvtType==="sortie"?500:400};">⬇ Sortie</div>
+          <div onclick="if(SANS_BAISSE_STOCK_IDS.includes(STATE.vendeur.id)){alert('Tu ne peux pas sortir de stock. Préviens Élodie.');return;}STATE.mvtType='sortie';if(STATE.vendeur.id!=='V1'&&!(STATE.showStkModal&&STATE.showStkModal.artisanat&&peutGererArtisans()))STATE.mvtDefectueux=true;render()" style="padding:10px;border-radius:8px;cursor:pointer;text-align:center;border:${STATE.mvtType==="sortie"?"2px solid #993556":"1px solid #ddd"};color:${STATE.mvtType==="sortie"?"#993556":"#555"};font-weight:${STATE.mvtType==="sortie"?500:400};">⬇ Sortie</div>
         </div>
-        ${STATE.mvtType==="sortie"&&STATE.vendeur.id!=="V1"?`
+        ${STATE.mvtType==="sortie"&&libreArtisan?`<div style="background:#faeeda;border-radius:8px;padding:8px 10px;margin-bottom:10px;font-size:12px;color:#854f0b;">🎨 Article d'artisan : sortie libre (article rendu à l'artisan), sans code.</div>`:""}
+        ${STATE.mvtType==="sortie"&&STATE.vendeur.id!=="V1"&&!libreArtisan?`
         <div style="background:#fcebeb;border:1px solid #e8a5a5;border-radius:8px;padding:10px;margin-bottom:10px;text-align:center;">
           <span style="font-size:13px;color:#a32d2d;font-weight:500;">🔧 Signalé comme article défectueux</span>
           <div style="font-size:11px;color:#a32d2d;margin-top:2px;">Une sortie ne peut se faire que pour un article défectueux — la gérante en est informée automatiquement.</div>
