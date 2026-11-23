@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "23/11 · v238 (registre : sortie Noëllyne 10/10)";
+const APP_VERSION = "23/11 · v239 (registre : Sabrina Desgaye)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -2921,6 +2921,25 @@ setInterval(() => {
     localStorage.setItem("bj_mig_registre_2311b", "ok");
   } catch(e) { console.error("Registre personnel (sortie) :", e); }
 }, 16000);
+// 23/11/2026 (v239) : fiche complète de Sabrina Desgaye (CDD 15 h)
+setInterval(() => {
+  try {
+    if(localStorage.getItem("bj_mig_registre_sabrina")==="ok") return;
+    const liste = STATE.registrePersonnel||[];
+    if(!liste.length) return;
+    const infos = {nom:"DESGAYE", prenom:"Sabrina", naissance:"1990-08-09", sexe:"F", emploi:"Vendeuse", contrat:"CDD", entree:"2026-09-23",
+      adresse:"8 rue du 17 Août 1944", codePostal:"28700", ville:"Denonville", email:"sabrinadeghaye@gmail.com",
+      remarques:"CDD à temps partiel : 15 h / semaine. Tél. : 06 27 53 57 24."};
+    const i = liste.findIndex(x => normStr(x.prenom||"")==="sabrina");
+    let nl;
+    if(i>=0) { const x = liste[i]; const m = {...x};
+      Object.keys(infos).forEach(k => { if(k==="remarques") m.remarques = (x.remarques ? x.remarques+" " : "") + infos.remarques; else m[k] = infos[k]; });
+      nl = liste.map((y,j) => j===i ? m : y); }
+    else nl = [...liste, {id:uid("SAL"), nationalite:"", sortie:"", titre:"", finContrat:"", numSecu:"", complementAdresse:"", visiteMedicale:"", prochaineVisiteMedicale:"", ...infos}];
+    setState({registrePersonnel:nl});
+    localStorage.setItem("bj_mig_registre_sabrina", "ok");
+  } catch(e) { console.error("Registre personnel (Sabrina) :", e); }
+}, 17000);
 // v191 : on sort les photos du stockage local (plein) → IndexedDB, puis on les remet en mémoire
 try {
   for(let i=localStorage.length-1;i>=0;i--) { const k = localStorage.key(i);
