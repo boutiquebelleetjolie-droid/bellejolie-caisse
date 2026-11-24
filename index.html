@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "24/11 · v261 (bilan dépôt 2 boutiques : articles transférés comptés une fois)";
+const APP_VERSION = "24/11 · v262 (copie fiches bijoux/accessoires/chaussettes vers Dreux)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -21001,6 +21001,34 @@ window.copierFichesSelection = async () => {
     alert("✅ "+crees+" fiche(s) créée(s) à "+bDest.nom+" (stock 0)."+(liste.length-crees?"\n"+(liste.length-crees)+" existai(en)t déjà là-bas.":""));
   } catch(err) { console.error(err); alert("❌ Erreur : "+(err.message||err)); }
 };
+// v262 : copie (fiches seules, stock 0) de toutes les références d'une ou plusieurs catégories vers l'autre boutique
+window.copierFichesCategories = async (cats) => {
+  const bDest = BOUTIQUES.find(b=>b.id!==BOUTIQUE_ID_ACTUEL);
+  if(!bDest || !_fbDb) { alert("⚠️ Pas de connexion au cloud."); return false; }
+  const liste = (STATE.products||[]).filter(p => cats.includes(p.category) && !p.depotVente && !p.supprime);
+  if(!liste.length) { alert("Aucun article dans : "+cats.join(", ")); return false; }
+  if(!confirm("📋 Copier les fiches de "+liste.length+" article(s) ("+cats.join(", ")+") vers "+bDest.nom+" ?\n\nFiches seules, stock à 0 là-bas. Le stock d'ici ne change pas. Les articles déjà présents là-bas sont ignorés.")) return false;
+  try {
+    const cle = cleFirestorePour(bDest.id, "bj_products"), maint = new Date().toISOString();
+    const doc = await _fbDb.collection("bellejolie").doc(cle).get();
+    const produitsDest = doc.exists ? [...(doc.data().value||[])] : [];
+    let crees = 0;
+    for(const p of liste) { const r = await ficheDestPour(p, produitsDest, bDest, maint); if(r.cree) crees++; }
+    if(crees) await _fbDb.collection("bellejolie").doc(cle).set({value:produitsDest, maj:maint, device: DEVICE_ID+"@"+BOUTIQUE_ID_ACTUEL});
+    alert("✅ "+crees+" fiche(s) créée(s) à "+bDest.nom+" (stock 0)."+(liste.length-crees?"\n"+(liste.length-crees)+" existai(en)t déjà là-bas.":""));
+    return true;
+  } catch(err) { console.error(err); alert("❌ Erreur : "+(err.message||err)); return false; }
+};
+// Demande ponctuelle d'Élodie (24/11) : bijoux, accessoires, chaussettes → Dreux, proposé une fois sur un appareil de Chartres
+setInterval(async () => {
+  try {
+    if(window._copieCats2411 || localStorage.getItem("bj_copie_cats_2411")) return;
+    if(BOUTIQUE_ID_ACTUEL!=="boutique_1" || STATE.vendeur?.id!=="V1" || !_fbDb || !(STATE.products||[]).length) return;
+    window._copieCats2411 = true;
+    const ok = await copierFichesCategories(["Bijoux","Accessoires","Chaussettes"]);
+    localStorage.setItem("bj_copie_cats_2411", ok ? "ok" : "non");
+  } catch(e) { console.error(e); }
+}, 20000);
 // ── Transfert PARTIEL de plusieurs références d'un coup : quantité par taille pour chaque article coché ──
 window.ouvrirTransfertGroupe = () => {
   const liste = articlesCoches().filter(p=>(p.stock||0)>0);
