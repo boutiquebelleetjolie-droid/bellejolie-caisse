@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "24/11 · v241 (calage étiquettes : imprimante HP)";
+const APP_VERSION = "24/11 · v242 (frein quota cloud : relectures complètes 1×/jour)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -208,11 +208,14 @@ try {
 let _idbPhotos = null;
 function idbPhotos() {
   if(_idbPhotos) return _idbPhotos;
-  _idbPhotos = new Promise((res, rej) => { try { const r = indexedDB.open("bj_photos_db", 1);
-    r.onupgradeneeded = () => r.result.createObjectStore("photos");
+  _idbPhotos = new Promise((res, rej) => { try { const r = indexedDB.open("bj_photos_db", 2);
+    r.onupgradeneeded = () => { const db = r.result; if(!db.objectStoreNames.contains("photos")) db.createObjectStore("photos"); if(!db.objectStoreNames.contains("kv")) db.createObjectStore("kv"); };
     r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch(e) { rej(e); } });
   return _idbPhotos;
 }
+// v242 : petit stockage clé → valeur dans IndexedDB (pour les grosses listes qui saturaient le stockage local)
+function idbKVSet(k, v) { return idbPhotos().then(db => new Promise(res => { try { const tx = db.transaction("kv","readwrite"); tx.objectStore("kv").put(v, k); tx.oncomplete = () => res(true); tx.onerror = () => res(false); } catch(e) { res(false); } })).catch(()=>false); }
+function idbKVGet(k) { return idbPhotos().then(db => new Promise(res => { try { const r = db.transaction("kv","readonly").objectStore("kv").get(k); r.onsuccess = () => res(r.result); r.onerror = () => res(undefined); } catch(e) { res(undefined); } })).catch(()=>undefined); }
 function extrairePhotosVersIDB(cle, texte) {
   const liste = JSON.parse(texte); if(!Array.isArray(liste)) return texte;
   const photos = [];
@@ -590,6 +593,12 @@ function majRepereSync(iso, complete) {
     localStorage.setItem(cleRepereSync(), JSON.stringify(o));
   } catch{}
 }
+// v242 : frein anti-quota — une relecture COMPLÈTE au plus 1 fois par jour et par appareil
+function autoriserLectureComplete(quoi) {
+  const jour = new Date().toISOString().slice(0,10), k = "bj_lecture_complete__"+quoi;
+  try { if(localStorage.getItem(k)===jour) { console.warn("Frein quota : relecture complète « "+quoi+" » déjà faite aujourd'hui"); return false; } localStorage.setItem(k, jour); } catch(e) { return true; }
+  return true;
+}
 function repereSyncIncrementale() {
   try {
     const o = JSON.parse(localStorage.getItem(cleRepereSync())||"null");
@@ -801,14 +810,17 @@ function integrerVentesAutres(recues, bId) {
   VENTES_AUTRES = [...m.values()].sort((a,b)=>new Date(a.date)-new Date(b.date));
   allegerVentes(VENTES_AUTRES);
   clearTimeout(_ventesAutresT);
-  _ventesAutresT = setTimeout(() => { try { localStorage.setItem("bj_ventes_autres__"+BOUTIQUE_ID_ACTUEL, JSON.stringify(VENTES_AUTRES)); } catch(e) { console.error("Tickets autre boutique non mémorisés :", e); } render(); }, 1500);
+  _ventesAutresT = setTimeout(() => { try { idbKVSet("bj_ventes_autres__"+BOUTIQUE_ID_ACTUEL, VENTES_AUTRES); try { localStorage.removeItem("bj_ventes_autres__"+BOUTIQUE_ID_ACTUEL); } catch{} } catch(e) { console.error("Tickets autre boutique non mémorisés :", e); } render(); }, 1500);
 }
 async function synchroniserVentesAutres() {
   if(!_fbDb || BOUTIQUES.length<2) return;
+  // v242 : tickets de l'autre boutique gardés dans IndexedDB (stockage local plein → relecture complète à chaque ouverture = quota cloud épuisé)
+  if(!VENTES_AUTRES.length) { const l = await idbKVGet("bj_ventes_autres__"+BOUTIQUE_ID_ACTUEL); if(Array.isArray(l) && l.length) VENTES_AUTRES = l; }
   for(const b of BOUTIQUES.filter(x=>x.id!==BOUTIQUE_ID_ACTUEL)) {
     const cle = "bj_sync_autre__"+BOUTIQUE_ID_ACTUEL+"__"+b.id;
     let o = null; try { o = JSON.parse(localStorage.getItem(cle)||"null"); } catch{}
-    const complet = !o || !o.complete || (Date.now()-new Date(o.complete).getTime() > SYNC_COMPLETE_JOURS*864e5) || !VENTES_AUTRES.some(v=>v._boutique===b.id);
+    let complet = !o || !o.complete || (Date.now()-new Date(o.complete).getTime() > SYNC_COMPLETE_JOURS*864e5) || !VENTES_AUTRES.some(v=>v._boutique===b.id);
+    if(complet && !autoriserLectureComplete("autre_"+b.id)) { complet = false; if(!o || !o.wm) o = {wm: new Date(Date.now()-3*864e5).toISOString()}; }
     const debut = new Date().toISOString();
     try {
       if(complet) {
@@ -22688,7 +22700,10 @@ memoriserSignaturesProduits(STATE.products||[]);
 memoriserSigListe("bj_clients", STATE.clients||[]);
 memoriserSigListe("bj_avoirs", STATE.avoirs||[]);
 setTimeout(() => { if(recupererClientesPerdues()) render(); }, 12000);
-const _repereSync = repereSyncIncrementale();
+const _repereSync = repereSyncIncrementale() || (((STATE.ventes||[]).length && (STATE.clients||[]).length && !autoriserLectureComplete("principal"))
+  ? {v:2, wm:new Date(Date.now()-3*864e5).toISOString(), complete:new Date().toISOString(), secours:true} : null);
+// Relecture complète déjà faite aujourd'hui mais signatures perdues (stockage plein) : on ne renvoie PAS tous les tickets
+if(_repereSync && _repereSync.secours) { try { const sj = sigsJournal(); if(!Object.keys(sj).length) (STATE.ventes||[]).forEach(v => { if(v && v.id) sj[v.id] = signatureJournal(v); }); } catch(e) { console.error(e); } }
 window._debutSyncComplete = new Date().toISOString();
 if(_repereSync) demarrerSyncIncrementale(_repereSync);
 else { ecouterJournalListe("bj_clients"); ecouterJournalListe("bj_avoirs"); }
