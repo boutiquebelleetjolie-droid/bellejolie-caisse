@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "24/11 · v262 (copie fiches bijoux/accessoires/chaussettes vers Dreux)";
+const APP_VERSION = "24/11 · v263 (bandeau : mémoire appareil ≠ quota cloud)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -277,7 +277,9 @@ const CODES_ERREUR_SYNC = ["resource-exhausted","permission-denied","unavailable
   const orig = console.error.bind(console);
   console.error = (...args) => {
     try {
-      const e = args.find(a => a && typeof a === "object" && (CODES_ERREUR_SYNC.includes(a.code) || /quota|exhausted|permission/i.test(String(a.message||""))));
+      // v263 : « stockage local plein » (QuotaExceededError du navigateur) n'est PAS le quota du cloud — avant, il affichait à tort « quota Firebase atteint »
+      if(args.some(a => a && typeof a === "object" && (a.name==="QuotaExceededError" || a.code===22 || /setItem|exceeded the quota/i.test(String(a.message||""))))) { window._etatSync.stockagePlein = Date.now(); orig(...args); return; }
+      const e = args.find(a => a && typeof a === "object" && typeof a.code === "string" && (CODES_ERREUR_SYNC.includes(a.code) || /quota|exhausted|permission/i.test(String(a.message||""))));
       if(e) { const neuf = !window._etatSync.erreur; window._etatSync.erreur = {code: e.code||"", msg: String(e.message||""), date: Date.now()}; if(neuf) setTimeout(()=>{ try{ render(); }catch{} }, 0); }
     } catch{}
     orig(...args);
@@ -294,6 +296,8 @@ function explicationErreurSync(code, msg) {
 function bandeauEtatSync() {
   if(window._etatSync.erreurEcriture) return '<div style="background:#fcebeb;border:1px solid #f09595;border-radius:9px;padding:9px 14px;margin-bottom:6px;font-size:13px;color:#a32d2d;">☁️⚠️ <strong>Des ventes n\'arrivent pas à partir vers le cloud</strong> : '+String(window._etatSync.erreurEcriture).replace(/</g,"&lt;")+' — cliquez sur « Vérifier les mises à jour » et envoyez une capture.</div>';
   const e = window._etatSync.erreur;
+  if((!e || Date.now()-e.date > 30*60*1000) && window._etatSync.stockagePlein && Date.now()-window._etatSync.stockagePlein < 30*60*1000)
+    return '<div style="background:#fff8e6;border:1px solid #f0d28a;border-radius:9px;padding:9px 14px;margin-bottom:6px;font-size:13px;color:#7a5a00;">💾 <strong>Mémoire de cet appareil presque pleine</strong> : la caisse continue de fonctionner et le cloud reçoit bien les données, mais certaines copies locales ne sont plus gardées. Ce n\'est pas un problème de quota du cloud.</div>';
   if(!e || Date.now()-e.date > 30*60*1000) return "";
   return '<div style="background:#fcebeb;border:1px solid #f09595;border-radius:9px;padding:9px 14px;margin-bottom:6px;font-size:13px;color:#a32d2d;">☁️⚠️ <strong>Synchronisation bloquée</strong> : '+explicationErreurSync(e.code, e.msg)+'</div>';
 }
