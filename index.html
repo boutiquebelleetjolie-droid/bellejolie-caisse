@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "24/11 · v246 (code-barres court sur les étiquettes)";
+const APP_VERSION = "24/11 · v247 (HP : barres plus fines, calage 5 mm)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -1843,7 +1843,7 @@ function dateLocaleStr(d) {
 // pour éviter les dessins décoratifs qui ne scannent pas.
 // v244 : encodage Code 128 optimisé — les chiffres sont codés par paires (jeu C) → barres plus larges
 // v245 : imprimante jet d'encre (HP) → l'encre « bave » et épaissit les barres (code flou) : on affine chaque barre de 20 %
-function reductionBarres() { try { return (typeof imprimanteEtiq==="function" && imprimanteEtiq()==="hp") ? 0.2 : 0; } catch(e) { return 0; } }
+function reductionBarres() { try { return (typeof imprimanteEtiq==="function" && imprimanteEtiq()==="hp") ? 0.3 : 0; } catch(e) { return 0; } }
 function codes128(code) {
   const str = String(code||"").slice(0,20);
   const valB = ch => { const cc = ch.charCodeAt(0)-32; return (cc>=0 && cc<96) ? cc : 0; };
@@ -10622,12 +10622,13 @@ window.imprimerToutStock = () => {
 // Dreux : l'imprimante décale ~5 mm vers la gauche et réduit ~2 % → on pousse de 5 mm à droite et on agrandit de 2 %
 // v241 : le calage dépend de l'IMPRIMANTE choisie (HP : +5 mm à droite, +2 %), mémorisé sur l'appareil
 // v243 : plus d'agrandissement (il rendait les codes-barres flous → illisibles au scanner), décalage seul
-const CALAGE_IMPRIMANTES = { standard:{x:0, y:0, s:1}, hp:{x:4.5, y:0, s:1} };
+const CALAGE_IMPRIMANTES = { standard:{x:0, y:0, s:1}, hp:{x:5, y:0, s:1} };
 function imprimanteEtiq() {
   return localStorage.getItem("bj_imprimante_etiq") || (BOUTIQUE_ID_ACTUEL==="boutique_2" ? "hp" : "standard");
 }
 window.choisirImprimanteEtiq = (v) => { localStorage.setItem("bj_imprimante_etiq", v); render(); };
 try { const o = JSON.parse(localStorage.getItem("bj_calage_etiq_hp")||"null"); if(o && o.s && o.s!==1 && !localStorage.getItem("bj_mig_calage243")) localStorage.removeItem("bj_calage_etiq_hp"); localStorage.setItem("bj_mig_calage243","1"); } catch{}
+try { if(!localStorage.getItem("bj_mig_calage247")) { localStorage.removeItem("bj_calage_etiq_hp"); localStorage.setItem("bj_mig_calage247","1"); } } catch{}
 function calageEtiquettes() {
   const imp = imprimanteEtiq();
   const d = CALAGE_IMPRIMANTES[imp] || CALAGE_IMPRIMANTES.standard;
