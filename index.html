@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "24/11 · v250 (étiquette = code de la taille/couleur choisie)";
+const APP_VERSION = "24/11 · v251 (HP : barres affinées de 50 %)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -1843,7 +1843,7 @@ function dateLocaleStr(d) {
 // pour éviter les dessins décoratifs qui ne scannent pas.
 // v244 : encodage Code 128 optimisé — les chiffres sont codés par paires (jeu C) → barres plus larges
 // v245 : imprimante jet d'encre (HP) → l'encre « bave » et épaissit les barres (code flou) : on affine chaque barre de 20 %
-function reductionBarres() { try { return (typeof imprimanteEtiq==="function" && imprimanteEtiq()==="hp") ? 0.4 : 0; } catch(e) { return 0; } }
+function reductionBarres() { try { return (typeof imprimanteEtiq==="function" && imprimanteEtiq()==="hp") ? 0.5 : 0; } catch(e) { return 0; } }
 function codes128(code) {
   const str = String(code||"").slice(0,20);
   const valB = ch => { const cc = ch.charCodeAt(0)-32; return (cc>=0 && cc<96) ? cc : 0; };
@@ -10648,7 +10648,7 @@ function barreCalageHTML() {
   const imp = imprimanteEtiq(), c = calageEtiquettes();
   const v = n => String(n||0).replace(".",",");
   return `<div class="no-print" style="font-family:Arial;font-size:14px;background:#fff4f7;border:2px solid #993556;border-radius:8px;padding:10px;margin:0 0 4mm;display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:center;">
-    <strong>🖨️ Imprimante : ${imp==="hp"?"HP":"Standard"}</strong>
+    <strong>🖨️ Imprimante : ${imp==="hp"?"HP — barres affinées de 50 %":"Standard — barres normales"}</strong>
     <button onclick="try{localStorage.setItem('bj_imprimante_etiq','${imp==="hp"?"standard":"hp"}')}catch(e){};alert('Imprimante changée. Ferme cette fenêtre et relance l\'impression des étiquettes.')" style="font-size:13px;padding:5px 10px;border:1px solid #993556;background:#fff;color:#993556;border-radius:6px;cursor:pointer;">Passer en ${imp==="hp"?"Standard":"HP"}</button>
     <label>➡️ Décalage vers la droite (mm) <input id="cal-x" inputmode="decimal" value="${v(c.x)}" style="width:60px;font-size:15px;padding:4px;"></label>
     <label>⬇️ Décalage vers le bas (mm) <input id="cal-y" inputmode="decimal" value="${v(c.y)}" style="width:60px;font-size:15px;padding:4px;"></label>
