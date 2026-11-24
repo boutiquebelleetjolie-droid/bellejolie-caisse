@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "24/11 · v245 (HP : barres affinées, calage 4,5 mm)";
+const APP_VERSION = "24/11 · v246 (code-barres court sur les étiquettes)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -5904,7 +5904,7 @@ window.addRetourOuVariante = (pid) => {
 
 window.retourBcKeyDown = e => {
   if(e.key!=="Enter") return;
-  const q = STATE.searchRetourBC.trim();
+  const q = codeComplet(STATE.searchRetourBC.trim());
   // Chercher d'abord dans les codes-barres de variantes
   for(const prod of STATE.products) {
     const bv = prod.barcodeVariantes||{};
@@ -6968,7 +6968,7 @@ window.scannerImageCodeBarre = async (input) => {
     const imgUrl = URL.createObjectURL(file);
     const result = await reader.decodeFromImageUrl(imgUrl);
     URL.revokeObjectURL(imgUrl);
-    const code = result.getText();
+    const code = codeComplet(result.getText());
     if(scanAvoir(code)) { STATE.searchBC=""; render(); return; }
     // Chercher dans barcodeVariantes
     let foundVar = false;
@@ -7026,9 +7026,21 @@ window.fermerScannerCamera = () => {
 // ── Lecture des codes-barres : tolère un scanner réglé en clavier QWERTY sur un ordinateur AZERTY
 // (Verr. Maj désactivé → « &é"'(-è_çà » au lieu de « 1234567890 »), les espaces et majuscules/minuscules.
 const AZERTY_CHIFFRES = {"&":"1","é":"2","\"":"3","'":"4","(":"5","-":"6","è":"7","_":"8","ç":"9","à":"0","§":"6","!":"8"};
+// v246 : code-barres COURT imprimé sur les étiquettes (8 derniers chiffres « 0xxxxxxx » des codes 376000xxxxxxx)
+// → barres 2 × plus larges, lisibles par tous les scanners. On reconstitue le code complet à la lecture.
+function codeComplet(q) {
+  q = String(q||"").trim();
+  if(/^0\d{7}$/.test(q)) return "37600"+q;
+  return q;
+}
+function codeCourtEtiquette(code) {
+  const c = String(code||"").trim();
+  return /^376000\d{7}$/.test(c) ? c.slice(5) : c;
+}
 function variantesCodeScan(code) {
   const c = String(code||"").trim();
   const out = [c];
+  if(codeComplet(c)!==c) out.push(codeComplet(c));
   const sansEsp = c.replace(/\s+/g,""); if(sansEsp!==c) out.push(sansEsp);
   if(/[&é"'(\-è_çà§!]/.test(sansEsp)) { const conv = sansEsp.split("").map(ch=>AZERTY_CHIFFRES[ch]??ch).join(""); if(conv!==sansEsp) out.push(conv); }
   return [...new Set(out)].filter(Boolean);
@@ -7337,7 +7349,7 @@ function parseFormulePrix(txt) {
 })();
 window.creerCoffret = () => { setState({showCoffret:{nom:"", recherche:"", composants:[]}}); setTimeout(()=>document.getElementById("cof-nom")?.focus(), 50); };
 function chercherArticlesCoffret(q) {
-  const t = normStr(String(q||"").trim()); if(t.length<2) return [];
+  const t = normStr(codeComplet(String(q||"").trim())); if(t.length<2) return [];
   const sansRef = t.replace(/^ref-?/,"");
   return (STATE.products||[]).filter(p => !p.composants && !p.retire && (
     normStr(p.barcode||"")===t || Object.values(p.barcodeVariantes||{}).some(c=>normStr(c)===t) ||
@@ -10346,7 +10358,7 @@ function renderBCModal() {
     large:  {mmW:100,mmH:60, nomSize:"11pt", prixSize:"18pt", desigSize:"9pt",  refSize:"7pt",  bcH:38, barW:2, label:"Grande  100×60 mm"},
   };
   const cfg = configs[taille];
-  const {rects,svgW,viewBox} = makeBarcodeRects(p.barcode, cfg.bcH, cfg.barW);
+  const {rects,svgW,viewBox} = makeBarcodeRects(codeCourtEtiquette(p.barcode), cfg.bcH, cfg.barW);
 
   // Aperçu proportionnel (1mm ≈ 3.78px)
   const px = v => Math.round(v*3.2);
@@ -10536,7 +10548,7 @@ window.imprimerToutStock = () => {
   };
   const cfg = configs[taille];
 
-  function miniBarcode(code) { return genererSVGBarcode(code); }
+  function miniBarcode(code) { return genererSVGBarcode(codeCourtEtiquette(code)); }
   const btoa_svg = svg => { try{return "data:image/svg+xml;base64,"+btoa(unescape(encodeURIComponent(svg)));}catch(e){return "";} };
 
   let etiqHtml = "";
@@ -10652,7 +10664,7 @@ window.imprimerEtiquettes = () => {
     large:  {mmW:100,mmH:60, nomSize:"11pt", prixSize:"18pt", desigSize:"9pt",  refSize:"7pt",  bcH:38, barW:2},
   };
   const cfg = configs[taille];
-  const {rects,svgW,viewBox} = makeBarcodeRects(p.barcode, cfg.bcH, cfg.barW);
+  const {rects,svgW,viewBox} = makeBarcodeRects(codeCourtEtiquette(p.barcode), cfg.bcH, cfg.barW);
 
   const etiq = `
   <div class="etiq">
@@ -21473,7 +21485,7 @@ window.imprimerLotEtiquettes = () => {
   const lignes = STATE.etiqLignes||[];
   if(!lignes.length) { alert("Aucune ligne à imprimer."); return; }
 
-  function miniBarcode(code) { return genererSVGBarcode(code); }
+  function miniBarcode(code) { return genererSVGBarcode(codeCourtEtiquette(code)); }
   const btoa_svg = svg => { try{return "data:image/svg+xml;base64,"+btoa(unescape(encodeURIComponent(svg)));}catch(e){return "";} };
 
   let etiquettes = [];
@@ -21960,7 +21972,7 @@ window.ouvrirModalReservation = () => {
 
 window.resaBcKeyDown = (e) => {
   if(e.key !== "Enter") return;
-  const q = STATE.resaProdSearch?.trim();
+  const q = codeComplet(STATE.resaProdSearch?.trim());
   if(!q) return;
   // Chercher d'abord dans les codes-barres de variantes (taille/couleur), comme en caisse
   for(const prod of STATE.products) {
