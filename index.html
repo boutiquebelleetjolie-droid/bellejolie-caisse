@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "24/11 · v243 (étiquettes HP : codes-barres nets)";
+const APP_VERSION = "24/11 · v244 (codes-barres plus larges pour scanner laser)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -1841,16 +1841,28 @@ function dateLocaleStr(d) {
 
 // Générateur de vrai code-barres Code128B (lisible par scanner), utilisé partout dans l'app
 // pour éviter les dessins décoratifs qui ne scannent pas.
+// v244 : encodage Code 128 optimisé — les chiffres sont codés par paires (jeu C) → barres plus larges
+function codes128(code) {
+  const str = String(code||"").slice(0,20);
+  const valB = ch => { const cc = ch.charCodeAt(0)-32; return (cc>=0 && cc<96) ? cc : 0; };
+  let cs;
+  const m = str.match(/^(.*?)(\d{4,})$/);
+  if(m) {
+    let pre = m[1], dig = m[2];
+    if(dig.length%2) { pre += dig[0]; dig = dig.slice(1); }
+    if(!pre) cs = [105]; else { cs = [104]; for(const ch of pre) cs.push(valB(ch)); cs.push(99); }
+    for(let i=0;i<dig.length;i+=2) cs.push(parseInt(dig.substr(i,2),10));
+  } else { cs = [104]; for(const ch of str) cs.push(valB(ch)); }
+  let chk = cs[0]; for(let i=1;i<cs.length;i++) chk += cs[i]*i; cs.push(chk%103);
+  return cs;
+}
 function genererSVGBarcode(code) {
   const C128B=[[2,1,2,2,2,2],[2,2,2,1,2,2],[2,2,2,2,2,1],[1,2,1,2,2,3],[1,2,1,3,2,2],[1,3,1,2,2,2],[1,2,2,2,1,3],[1,2,2,3,1,2],[1,3,2,2,1,2],[2,2,1,2,1,3],[2,2,1,3,1,2],[2,3,1,2,1,2],[1,1,2,2,3,2],[1,2,2,1,3,2],[1,2,2,2,3,1],[1,1,3,2,2,2],[1,2,3,1,2,2],[1,2,3,2,2,1],[2,2,3,2,1,1],[2,2,1,1,3,2],[2,2,1,2,3,1],[2,1,3,2,1,2],[2,2,3,1,1,2],[3,1,2,1,3,1],[3,1,1,2,2,2],[3,2,1,1,2,2],[3,2,1,2,2,1],[3,1,2,2,1,2],[3,2,2,1,1,2],[3,2,2,2,1,1],[2,1,2,1,2,3],[2,1,2,3,2,1],[2,3,2,1,2,1],[1,1,1,3,2,3],[1,3,1,1,2,3],[1,3,1,3,2,1],[1,1,2,3,1,3],[1,3,2,1,1,3],[1,3,2,3,1,1],[2,1,1,3,1,3],[2,3,1,1,1,3],[2,3,1,3,1,1],[1,1,2,1,3,3],[1,1,2,3,3,1],[1,3,2,1,3,1],[1,1,3,1,2,3],[1,1,3,3,2,1],[1,3,3,1,2,1],[3,1,3,1,2,1],[2,1,1,3,3,1],[2,3,1,1,3,1],[2,1,3,1,1,3],[2,1,3,3,1,1],[2,1,3,1,3,1],[3,1,1,1,2,3],[3,1,1,3,2,1],[3,3,1,1,2,1],[3,1,2,1,1,3],[3,1,2,3,1,1],[3,3,2,1,1,1],[3,1,4,1,1,1],[2,2,1,4,1,1],[4,3,1,1,1,1],[1,1,1,2,2,4],[1,1,1,4,2,2],[1,2,1,1,2,4],[1,2,1,4,2,1],[1,4,1,1,2,2],[1,4,1,2,2,1],[1,1,2,2,1,4],[1,1,2,4,1,2],[1,2,2,1,1,4],[1,2,2,4,1,1],[1,4,2,1,1,2],[1,4,2,2,1,1],[2,4,1,2,1,1],[2,2,1,1,1,4],[4,1,3,1,1,1],[2,4,1,1,1,2],[1,3,4,1,1,1],[1,1,1,2,4,2],[1,2,1,1,4,2],[1,2,1,2,4,1],[1,1,4,2,1,2],[1,2,4,1,1,2],[1,2,4,2,1,1],[4,1,1,2,1,2],[4,2,1,1,1,2],[4,2,1,2,1,1],[2,1,2,1,4,1],[2,1,4,1,2,1],[4,1,2,1,2,1],[1,1,1,1,4,3],[1,1,1,3,4,1],[1,3,1,1,4,1],[1,1,4,1,1,3],[1,1,4,3,1,1],[4,1,1,1,1,3],[4,1,1,3,1,1],[1,1,3,1,4,1],[1,1,4,1,3,1],[3,1,1,1,4,1],[4,1,1,1,3,1],[2,1,1,4,1,2],[2,1,1,2,1,4],[2,1,1,2,3,2]];
-  const str=String(code||"").slice(0,20);
-  let cs=[104];
-  for(let i=0;i<str.length;i++){const cc=str.charCodeAt(i)-32;cs.push(cc>=0&&cc<96?cc:0);}
-  let chk=104;for(let i=0;i<str.length;i++)chk+=cs[i+1]*(i+1);cs.push(chk%103);
+  const cs = codes128(code);
   const STOP=[2,3,3,1,1,1,2];
   let bars="",x=0;
   const draw=p=>{for(let i=0;i<p.length;i++){const w=p[i]*0.8;if(i%2===0)bars+=`<rect x="${x}" y="0" width="${w}" height="24" fill="#000"/>`;x+=w;}};
-  draw(C128B[104]);cs.slice(1).forEach(c=>{if(C128B[c])draw(C128B[c]);});draw(STOP);
+  draw(C128B[cs[0]]);cs.slice(1).forEach(c=>{if(C128B[c])draw(C128B[c]);});draw(STOP);
   const maxPx = 128;
   const dispW = Math.min(x, maxPx);
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${dispW}" height="24" viewBox="0 0 ${x} 28" preserveAspectRatio="none">${bars}</svg>`;
@@ -10268,18 +10280,25 @@ function makeBarcodeRects(data, h, barW) {
     [2,1,1,2,3,2]
   ];
   // START B=104, STOP=106
-  const START_B = C128B[104];
+  const START_B = C128B[104]; // (le départ réel — B ou C — est codes[0])
   const STOP    = [2,3,3,1,1,1,2]; // Stop spécial
   const str = String(data||"").slice(0,20); // max 20 chars
-  let codes = [104]; // Start B
-  for(let i=0;i<str.length;i++){
-    const cc = str.charCodeAt(i)-32;
-    if(cc>=0 && cc<96) codes.push(cc);
-    else codes.push(0); // fallback espace
+  // v244 : les chiffres sont codés par paires (jeu C) → barres ~45 % plus larges, lisibles par les scanners laser (Netum NT-M1)
+  const valB = ch => { const cc = ch.charCodeAt(0)-32; return (cc>=0 && cc<96) ? cc : 0; };
+  let codes;
+  const m = str.match(/^(.*?)(\d{4,})$/);
+  if(m) {
+    let pre = m[1], dig = m[2];
+    if(dig.length%2) { pre += dig[0]; dig = dig.slice(1); }
+    if(!pre) codes = [105];
+    else { codes = [104]; for(const ch of pre) codes.push(valB(ch)); codes.push(99); }
+    for(let i=0;i<dig.length;i+=2) codes.push(parseInt(dig.substr(i,2),10));
+  } else {
+    codes = [104]; for(const ch of str) codes.push(valB(ch));
   }
   // Checksum
-  let check = 104;
-  for(let i=0;i<str.length;i++) check += (codes[i+1])*(i+1);
+  let check = codes[0];
+  for(let i=1;i<codes.length;i++) check += codes[i]*i;
   codes.push(check%103);
 
   let rects="", x=0;
@@ -10292,7 +10311,7 @@ function makeBarcodeRects(data, h, barW) {
   };
   // Sécurité : si le SVG généré sera trop large, réduire barW
   // (calculé après génération via svgW)
-  draw(START_B);
+  draw(C128B[codes[0]]);
   codes.slice(1,-1).forEach(c=>{ if(C128B[c]) draw(C128B[c]); });
   draw(C128B[codes[codes.length-1]]); // checksum
   draw(STOP);
