@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "23/11 · v239 (registre : Sabrina Desgaye)";
+const APP_VERSION = "24/11 · v240 (calage étiquettes Dreux)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -10405,6 +10405,7 @@ function renderBCModal() {
           🖨️ Imprimer ${qty} étiquette${qty>1?"s":""} (${cfg.label.trim()})
         </button>
         <div id="bloc-tout-imprimer"></div>
+        ${STATE.vendeur?.id==="V1"?`<button onclick="reglerCalageEtiquettes()" style="margin-top:6px;background:none;border:none;color:#888;font-size:11px;text-decoration:underline;cursor:pointer;">⚙️ Calage imprimante (${(()=>{const c=calageEtiquettes();return (c.x>0?"+":"")+c.x+" mm · "+Math.round(c.s*1000)/10+" %";})()})</button>`:""}
       </div>
     </div>
   </div>`;
@@ -10556,7 +10557,7 @@ window.imprimerToutStock = () => {
       .page{margin:10mm;}
       .page-suivante{margin-top:10mm;}
     }
-  </style></head><body>
+  ${cssCalageEtiquettes()}</style></head><body>
   <div class="no-print" onclick="window.print()">🖨️ Cliquer ici pour imprimer — ou Ctrl+P</div>
   ${etiqHtml}
   </body></html>`;
@@ -10568,6 +10569,29 @@ window.imprimerToutStock = () => {
   else setTimeout(()=>URL.revokeObjectURL(url), 10000);
 };
 
+// v240 : calage d'impression des étiquettes, propre à chaque boutique (imprimantes différentes)
+// Dreux : l'imprimante décale ~5 mm vers la gauche et réduit ~2 % → on pousse de 5 mm à droite et on agrandit de 2 %
+const CALAGE_ETIQ_DEFAUT = { boutique_1:{x:0, y:0, s:1}, boutique_2:{x:5, y:0, s:1.02} };
+function calageEtiquettes() {
+  const d = CALAGE_ETIQ_DEFAUT[BOUTIQUE_ID_ACTUEL] || {x:0,y:0,s:1};
+  try { const v = JSON.parse(localStorage.getItem("bj_calage_etiq_"+BOUTIQUE_ID_ACTUEL)||"null"); if(v) return {...d, ...v}; } catch(e) {}
+  return d;
+}
+function cssCalageEtiquettes() {
+  const c = calageEtiquettes();
+  if(!c.x && !c.y && (!c.s || c.s===1)) return "";
+  const s = c.s||1;
+  return `@media print{html{zoom:${s};}body{position:relative;left:${(c.x/s).toFixed(2)}mm;top:${((c.y||0)/s).toFixed(2)}mm;}}`;
+}
+window.reglerCalageEtiquettes = () => {
+  const c = calageEtiquettes();
+  const x = prompt("Décalage horizontal en mm (+ = vers la droite) :", String(c.x).replace(".",",")); if(x===null) return;
+  const y = prompt("Décalage vertical en mm (+ = vers le bas) :", String(c.y||0).replace(".",",")); if(y===null) return;
+  const s = prompt("Agrandissement en % (100 = normal, 102 = +2 %) :", String(Math.round((c.s||1)*1000)/10).replace(".",",")); if(s===null) return;
+  const n = t => parseFloat(String(t).replace(",","."))||0;
+  localStorage.setItem("bj_calage_etiq_"+BOUTIQUE_ID_ACTUEL, JSON.stringify({x:n(x), y:n(y), s:(n(s)||100)/100}));
+  alert("✅ Calage enregistré pour cette boutique.");
+};
 window.imprimerEtiquettes = () => {
   const p = STATE.showBCModal;
   const taille = STATE.etiquetteTaille || "medium";
@@ -10614,7 +10638,7 @@ window.imprimerEtiquettes = () => {
   .bc{font-family:monospace;font-size:${cfg.refSize};color:#555;margin-top:0.5mm;}
   .prix{font-size:${cfg.prixSize};font-weight:700;margin-top:1mm;}
   @media print{@page{margin:3mm 3mm 3mm 4.95mm;size:auto;}.no-print{display:none;}}
-</style>
+${cssCalageEtiquettes()}</style>
 </head><body>
 <div class="no-print" style="text-align:center;padding:10px;background:#993556;color:#fff;font-family:Arial;font-size:14px;cursor:pointer;" onclick="window.print()">
   🖨️ Cliquer ici pour imprimer — ou Ctrl+P
@@ -21483,7 +21507,7 @@ window.imprimerLotEtiquettes = () => {
       .page{margin:10mm;}
       .page-suivante{margin-top:10mm;}
     }
-  </style></head><body>
+  ${cssCalageEtiquettes()}</style></head><body>
   <div class="no-print" onclick="window.print()">🖨️ Cliquer ici pour imprimer — ou Ctrl+P</div>
   ${etiqHtml}
   </body></html>`;
