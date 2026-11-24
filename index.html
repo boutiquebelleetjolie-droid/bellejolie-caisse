@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "24/11 · v258 (HP : écart 99,5 %)";
+const APP_VERSION = "24/11 · v259 (HP : +5 / -5 mm, écart 100)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -10631,7 +10631,7 @@ ${barreCalageHTML()}  ${etiqHtml}
 // Dreux : l'imprimante décale ~5 mm vers la gauche et réduit ~2 % → on pousse de 5 mm à droite et on agrandit de 2 %
 // v241 : le calage dépend de l'IMPRIMANTE choisie (HP : +5 mm à droite, +2 %), mémorisé sur l'appareil
 // v243 : plus d'agrandissement (il rendait les codes-barres flous → illisibles au scanner), décalage seul
-const CALAGE_IMPRIMANTES = { standard:{x:0, y:0, s:1}, hp:{x:5, y:-5, s:0.995} };
+const CALAGE_IMPRIMANTES = { standard:{x:0, y:0, s:1}, hp:{x:5, y:-5, s:1} };
 function imprimanteEtiq() {
   return localStorage.getItem("bj_imprimante_etiq") || (BOUTIQUE_ID_ACTUEL==="boutique_2" ? "hp" : "standard");
 }
@@ -10642,6 +10642,7 @@ try { if(!localStorage.getItem("bj_mig_calage254")) { const o = JSON.parse(local
 try { if(!localStorage.getItem("bj_mig_calage255")) { localStorage.removeItem("bj_calage_etiq_hp"); localStorage.setItem("bj_mig_calage255","1"); } } catch{}
 try { if(!localStorage.getItem("bj_mig_calage257")) { localStorage.removeItem("bj_calage_etiq_hp"); localStorage.setItem("bj_mig_calage257","1"); } } catch{}
 try { if(!localStorage.getItem("bj_mig_calage258")) { localStorage.removeItem("bj_calage_etiq_hp"); localStorage.setItem("bj_mig_calage258","1"); } } catch{}
+try { if(!localStorage.getItem("bj_mig_calage259")) { localStorage.removeItem("bj_calage_etiq_hp"); localStorage.setItem("bj_mig_calage259","1"); } } catch{}
 function calageEtiquettes() {
   const imp = imprimanteEtiq();
   const d = CALAGE_IMPRIMANTES[imp] || CALAGE_IMPRIMANTES.standard;
