@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "24/11 · v244 (codes-barres plus larges pour scanner laser)";
+const APP_VERSION = "24/11 · v245 (HP : barres affinées, calage 4,5 mm)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -1842,6 +1842,8 @@ function dateLocaleStr(d) {
 // Générateur de vrai code-barres Code128B (lisible par scanner), utilisé partout dans l'app
 // pour éviter les dessins décoratifs qui ne scannent pas.
 // v244 : encodage Code 128 optimisé — les chiffres sont codés par paires (jeu C) → barres plus larges
+// v245 : imprimante jet d'encre (HP) → l'encre « bave » et épaissit les barres (code flou) : on affine chaque barre de 20 %
+function reductionBarres() { try { return (typeof imprimanteEtiq==="function" && imprimanteEtiq()==="hp") ? 0.2 : 0; } catch(e) { return 0; } }
 function codes128(code) {
   const str = String(code||"").slice(0,20);
   const valB = ch => { const cc = ch.charCodeAt(0)-32; return (cc>=0 && cc<96) ? cc : 0; };
@@ -1861,7 +1863,8 @@ function genererSVGBarcode(code) {
   const cs = codes128(code);
   const STOP=[2,3,3,1,1,1,2];
   let bars="",x=0;
-  const draw=p=>{for(let i=0;i<p.length;i++){const w=p[i]*0.8;if(i%2===0)bars+=`<rect x="${x}" y="0" width="${w}" height="24" fill="#000"/>`;x+=w;}};
+  const red=reductionBarres()*0.8;
+  const draw=p=>{for(let i=0;i<p.length;i++){const w=p[i]*0.8;if(i%2===0)bars+=`<rect x="${x+red/2}" y="0" width="${w-red}" height="24" fill="#000"/>`;x+=w;}};
   draw(C128B[cs[0]]);cs.slice(1).forEach(c=>{if(C128B[c])draw(C128B[c]);});draw(STOP);
   const maxPx = 128;
   const dispW = Math.min(x, maxPx);
@@ -10305,7 +10308,7 @@ function makeBarcodeRects(data, h, barW) {
   const draw = (pattern) => {
     for(let i=0;i<pattern.length;i++){
       const w=pattern[i]*barW;
-      if(i%2===0) rects+='<rect x="'+x+'" y="0" width="'+w+'" height="'+h+'" fill="#000"/>';
+      if(i%2===0) { const red = reductionBarres()*barW; rects+='<rect x="'+(x+red/2)+'" y="0" width="'+(w-red)+'" height="'+h+'" fill="#000"/>'; }
       x+=w;
     }
   };
@@ -10607,7 +10610,7 @@ window.imprimerToutStock = () => {
 // Dreux : l'imprimante décale ~5 mm vers la gauche et réduit ~2 % → on pousse de 5 mm à droite et on agrandit de 2 %
 // v241 : le calage dépend de l'IMPRIMANTE choisie (HP : +5 mm à droite, +2 %), mémorisé sur l'appareil
 // v243 : plus d'agrandissement (il rendait les codes-barres flous → illisibles au scanner), décalage seul
-const CALAGE_IMPRIMANTES = { standard:{x:0, y:0, s:1}, hp:{x:4, y:0, s:1} };
+const CALAGE_IMPRIMANTES = { standard:{x:0, y:0, s:1}, hp:{x:4.5, y:0, s:1} };
 function imprimanteEtiq() {
   return localStorage.getItem("bj_imprimante_etiq") || (BOUTIQUE_ID_ACTUEL==="boutique_2" ? "hp" : "standard");
 }
