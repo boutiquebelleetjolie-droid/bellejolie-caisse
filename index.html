@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "24/11 · v249 (bandeau de réglage non imprimé)";
+const APP_VERSION = "24/11 · v250 (étiquette = code de la taille/couleur choisie)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -10358,7 +10358,7 @@ function renderBCModal() {
     large:  {mmW:100,mmH:60, nomSize:"11pt", prixSize:"18pt", desigSize:"9pt",  refSize:"7pt",  bcH:38, barW:2, label:"Grande  100×60 mm"},
   };
   const cfg = configs[taille];
-  const {rects,svgW,viewBox} = makeBarcodeRects(codeCourtEtiquette(p.barcode), cfg.bcH, cfg.barW);
+  const {rects,svgW,viewBox} = makeBarcodeRects(codeCourtEtiquette(codeVarianteEtiquette(p, STATE.etiquetteTailleVal, STATE.etiquetteCouleurVal, false)), cfg.bcH, cfg.barW);
 
   // Aperçu proportionnel (1mm ≈ 3.78px)
   const px = v => Math.round(v*3.2);
@@ -10442,7 +10442,7 @@ function renderBCModal() {
             <div class="desig-preview" style="font-size:${cfg.desigSize};color:#444;margin-bottom:2px;font-style:italic;display:${desig?"block":"none"};">${desig}</div>
             <div style="font-size:${cfg.refSize};color:#888;margin-bottom:3px;">${p.ref}${p.category?" · "+p.category:""}${STATE.etiquetteTailleVal?" · T."+STATE.etiquetteTailleVal:""}${STATE.etiquetteCouleurVal?" · "+STATE.etiquetteCouleurVal:""}</div>
             <svg width="${Math.min(svgW,previewW-16)}" height="${cfg.bcH+4}" viewBox="${viewBox||'0 0 '+svgW+' '+cfg.bcH}" style="display:block;margin:0 auto;">${rects}</svg>
-            <div style="font-size:${cfg.refSize};font-family:monospace;margin-top:1px;color:#555;">${p.barcode}</div>
+            <div style="font-size:${cfg.refSize};font-family:monospace;margin-top:1px;color:#555;">${codeVarianteEtiquette(p, STATE.etiquetteTailleVal, STATE.etiquetteCouleurVal, false)}</div>
             <div style="font-size:${cfg.prixSize};font-weight:700;margin-top:2px;color:#111;">${eur(p.price)}</div>
           </div>
         </div>
@@ -10555,7 +10555,7 @@ window.imprimerToutStock = () => {
   lignes.forEach(ligne => {
     const infos = [ligne.taille?'T.'+ligne.taille:'', ligne.couleur&&ligne.couleur!=='_'?ligne.couleur:''].filter(Boolean).join(' · ');
     const bcKey = (ligne.taille||'_')+'_'+(ligne.couleur||'_');
-    const codeLigne = (p.barcodeVariantes&&p.barcodeVariantes[bcKey]) || p.barcode;
+    const codeLigne = (p.barcodeVariantes&&p.barcodeVariantes[bcKey]) || codeVarianteEtiquette(p, ligne.taille&&ligne.taille!=='_'?ligne.taille:'', ligne.couleur&&ligne.couleur!=='_'?ligne.couleur:'', true);
     const bcImg = btoa_svg(miniBarcode(codeLigne, cfg.bcH, cfg.barW));
     for(let i=0;i<ligne.qty;i++) {
       etiqHtml += `<div class="etiq">
@@ -10674,6 +10674,21 @@ window.reglerCalageEtiquettes = () => {
   localStorage.setItem("bj_calage_etiq_"+imprimanteEtiq(), JSON.stringify({x:n(x), y:n(y), s:(n(s)||100)/100}));
   alert("✅ Calage enregistré pour l'imprimante "+(imprimanteEtiq()==="hp"?"HP":"standard")+".");
 };
+// v250 : code-barres de la VARIANTE (taille / couleur) pour l'étiquette, créé s'il n'existe pas encore
+function codeVarianteEtiquette(p, t, c, creer) {
+  if(!p) return "";
+  t = t||""; c = c||"";
+  if(!t && !c) return p.barcode;
+  const bv = p.barcodeVariantes||{};
+  const k1 = (t||"_")+"_"+(c||"_"), k2 = t+"_"+c;
+  if(bv[k1]) return bv[k1]; if(bv[k2]) return bv[k2];
+  if(!creer) return p.barcode;
+  const nouveau = genBC();
+  const prods = (STATE.products||[]).map(x => x.id===p.id ? {...x, barcodeVariantes:{...(x.barcodeVariantes||{}), [k1]:nouveau}} : x);
+  setState({products:prods});
+  p.barcodeVariantes = {...bv, [k1]:nouveau};
+  return nouveau;
+}
 window.imprimerEtiquettes = () => {
   const p = STATE.showBCModal;
   const taille = STATE.etiquetteTaille || "medium";
@@ -10687,7 +10702,8 @@ window.imprimerEtiquettes = () => {
     large:  {mmW:100,mmH:60, nomSize:"11pt", prixSize:"18pt", desigSize:"9pt",  refSize:"7pt",  bcH:38, barW:2},
   };
   const cfg = configs[taille];
-  const {rects,svgW,viewBox} = makeBarcodeRects(codeCourtEtiquette(p.barcode), cfg.bcH, cfg.barW);
+  const codeEtiq = codeVarianteEtiquette(p, tailleVal, couleurVal, true);
+  const {rects,svgW,viewBox} = makeBarcodeRects(codeCourtEtiquette(codeEtiq), cfg.bcH, cfg.barW);
 
   const etiq = `
   <div class="etiq">
@@ -10698,7 +10714,7 @@ window.imprimerEtiquettes = () => {
       : `<div class="ref">${p.marque?p.marque+" · ":""}${p.ref}${p.category?" · "+p.category:""}${tailleVal?" · T."+tailleVal:""}${couleurVal?" · "+couleurVal:""}</div>`
     }
     <svg width="${svgW}" height="${cfg.bcH+4}" viewBox="${viewBox||'0 0 '+svgW+' '+cfg.bcH}" preserveAspectRatio="none" style="display:block;margin:2px auto 0;max-width:100%;">${rects}</svg>
-    <div class="bc">${p.barcode}</div>
+    <div class="bc">${codeEtiq}</div>
     <div class="prix">${eur(p.price)}</div>
   </div>`;
 
@@ -21532,7 +21548,7 @@ window.imprimerLotEtiquettes = () => {
     const varKey = (t||'_')+'_'+(c||'_');
     const varKeyAlt = t+'_'+c;
     const bv = p.barcodeVariantes||{};
-    const bcCode = bv[varKey] || bv[varKeyAlt] || p.barcode || p.ref || p.id;
+    const bcCode = bv[varKey] || bv[varKeyAlt] || ((t||c) ? codeVarianteEtiquette(p, t, c, true) : "") || p.barcode || p.ref || p.id;
     const bc = miniBarcode(bcCode);
     const bcImg = btoa_svg(bc);
     return `<div class="etiq">
