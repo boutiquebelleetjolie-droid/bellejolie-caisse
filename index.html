@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "24/11 · v251 (HP : barres affinées de 50 %)";
+const APP_VERSION = "24/11 · v252 (alerte étiquettes sans taille/couleur)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -21523,6 +21523,14 @@ function renderLotEtiqModal() {
 window.imprimerLotEtiquettes = () => {
   const lignes = STATE.etiqLignes||[];
   if(!lignes.length) { alert("Aucune ligne à imprimer."); return; }
+  // v252 : étiquettes sans taille/couleur pour un article qui en a → au scan, la caisse demandera de choisir
+  const sansVar = lignes.filter(l => { const p = (STATE.products||[]).find(x=>x.id===l.prodId); if(!p) return false;
+    const aT = (p.tailles||[]).filter(Boolean).length>1, aC = (p.couleurs||[]).filter(Boolean).length>1;
+    return (aT && !l.taille) || (aC && !l.couleur); });
+  if(sansVar.length) {
+    const noms = [...new Set(sansVar.map(l => ((STATE.products||[]).find(x=>x.id===l.prodId)||{}).name))].slice(0,6).join("\n• ");
+    if(!confirm("⚠️ "+sansVar.length+" ligne(s) sans taille et/ou couleur choisie :\n• "+noms+"\n\nAu scan, la caisse demandera de choisir la taille/couleur.\nPour que le scan la donne directement, clique sur la taille et la couleur de chaque ligne avant d'imprimer.\n\nImprimer quand même ?")) return;
+  }
 
   function miniBarcode(code) { return genererSVGBarcode(codeCourtEtiquette(code)); }
   const btoa_svg = svg => { try{return "data:image/svg+xml;base64,"+btoa(unescape(encodeURIComponent(svg)));}catch(e){return "";} };
