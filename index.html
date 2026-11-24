@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "24/11 · v252 (alerte étiquettes sans taille/couleur)";
+const APP_VERSION = "24/11 · v253 (planche : taille/couleur choisie reprise)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -10336,10 +10336,19 @@ function makeBarcodeRects(data, h, barW) {
   return {rects, svgW: maxW, viewBox: '0 0 '+finalW+' '+h};
 }
 
+// v253 : si l'article n'a qu'une seule taille/couleur en stock, on la présélectionne sur la ligne d'étiquette
+function varianteUnique(p) {
+  const sv = (p && p.stockVariantes)||{};
+  const ks = Object.keys(sv).filter(k => (parseInt(sv[k])||0) > 0);
+  if(ks.length!==1) return {taille:"", couleur:""};
+  const parts = ks[0].split("_");
+  const t = parts[0]||"", c = parts.slice(1).join("_").replace(/^_/,"");
+  return {taille: t==="_"?"":t, couleur: c==="_"?"":c};
+}
 window.imprimerUnSeulSurPlanche = () => {
   const p = STATE.showBCModal;
   if(!p) return;
-  STATE.etiqLignes = [{ id: p.id+'_solo_'+Date.now(), prodId: p.id, taille:'', couleur:'', qty:1 }];
+  STATE.etiqLignes = [{ id: p.id+'_solo_'+Date.now(), prodId: p.id, taille:STATE.etiquetteTailleVal||varianteUnique(p).taille, couleur:STATE.etiquetteCouleurVal||varianteUnique(p).couleur, qty:1 }];
   STATE.showBCModal = null;
   ouvrirModalLotEtiq();
 };
@@ -21253,7 +21262,7 @@ window.reinitialiserEtiqSimple = () => {
   const sel = STATE.etiqSelection||{};
   STATE.etiqLignes = Object.keys(sel).filter(k=>sel[k]>0).map(id=>({
     id: id+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),
-    prodId: id, taille:'', couleur:'', qty:1
+    prodId: id, taille:varianteUnique(STATE.products.find(x=>x.id===id)).taille, couleur:varianteUnique(STATE.products.find(x=>x.id===id)).couleur, qty:1
   }));
   render();
 };
@@ -21326,7 +21335,7 @@ window.ajouterLigneEtiq = (prodId) => {
   if(!STATE.etiqLignes) STATE.etiqLignes=[];
   STATE.etiqLignes.push({
     id: prodId+'_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),
-    prodId, taille:'', couleur:'', qty:1
+    prodId, taille:varianteUnique(STATE.products.find(x=>x.id===prodId)).taille, couleur:varianteUnique(STATE.products.find(x=>x.id===prodId)).couleur, qty:1
   });
   render();
 };
