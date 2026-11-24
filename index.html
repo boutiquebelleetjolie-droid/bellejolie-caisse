@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "24/11 · v240 (calage étiquettes Dreux)";
+const APP_VERSION = "24/11 · v241 (calage étiquettes : imprimante HP)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -10405,6 +10405,9 @@ function renderBCModal() {
           🖨️ Imprimer ${qty} étiquette${qty>1?"s":""} (${cfg.label.trim()})
         </button>
         <div id="bloc-tout-imprimer"></div>
+        <div style="display:flex;gap:6px;align-items:center;justify-content:center;margin-top:8px;font-size:12px;">🖨️ Imprimante :
+          ${[["standard","Standard"],["hp","HP"]].map(([k,l])=>`<button onclick="choisirImprimanteEtiq('${k}')" style="padding:4px 12px;border-radius:14px;border:1px solid #993556;cursor:pointer;font-size:12px;${imprimanteEtiq()===k?"background:#993556;color:#fff;":"background:#fff;color:#993556;"}">${l}</button>`).join("")}
+        </div>
         ${STATE.vendeur?.id==="V1"?`<button onclick="reglerCalageEtiquettes()" style="margin-top:6px;background:none;border:none;color:#888;font-size:11px;text-decoration:underline;cursor:pointer;">⚙️ Calage imprimante (${(()=>{const c=calageEtiquettes();return (c.x>0?"+":"")+c.x+" mm · "+Math.round(c.s*1000)/10+" %";})()})</button>`:""}
       </div>
     </div>
@@ -10571,10 +10574,16 @@ window.imprimerToutStock = () => {
 
 // v240 : calage d'impression des étiquettes, propre à chaque boutique (imprimantes différentes)
 // Dreux : l'imprimante décale ~5 mm vers la gauche et réduit ~2 % → on pousse de 5 mm à droite et on agrandit de 2 %
-const CALAGE_ETIQ_DEFAUT = { boutique_1:{x:0, y:0, s:1}, boutique_2:{x:5, y:0, s:1.02} };
+// v241 : le calage dépend de l'IMPRIMANTE choisie (HP : +5 mm à droite, +2 %), mémorisé sur l'appareil
+const CALAGE_IMPRIMANTES = { standard:{x:0, y:0, s:1}, hp:{x:5, y:0, s:1.02} };
+function imprimanteEtiq() {
+  return localStorage.getItem("bj_imprimante_etiq") || (BOUTIQUE_ID_ACTUEL==="boutique_2" ? "hp" : "standard");
+}
+window.choisirImprimanteEtiq = (v) => { localStorage.setItem("bj_imprimante_etiq", v); render(); };
 function calageEtiquettes() {
-  const d = CALAGE_ETIQ_DEFAUT[BOUTIQUE_ID_ACTUEL] || {x:0,y:0,s:1};
-  try { const v = JSON.parse(localStorage.getItem("bj_calage_etiq_"+BOUTIQUE_ID_ACTUEL)||"null"); if(v) return {...d, ...v}; } catch(e) {}
+  const imp = imprimanteEtiq();
+  const d = CALAGE_IMPRIMANTES[imp] || CALAGE_IMPRIMANTES.standard;
+  try { const v = JSON.parse(localStorage.getItem("bj_calage_etiq_"+imp)||"null"); if(v) return {...d, ...v}; } catch(e) {}
   return d;
 }
 function cssCalageEtiquettes() {
@@ -10589,8 +10598,8 @@ window.reglerCalageEtiquettes = () => {
   const y = prompt("Décalage vertical en mm (+ = vers le bas) :", String(c.y||0).replace(".",",")); if(y===null) return;
   const s = prompt("Agrandissement en % (100 = normal, 102 = +2 %) :", String(Math.round((c.s||1)*1000)/10).replace(".",",")); if(s===null) return;
   const n = t => parseFloat(String(t).replace(",","."))||0;
-  localStorage.setItem("bj_calage_etiq_"+BOUTIQUE_ID_ACTUEL, JSON.stringify({x:n(x), y:n(y), s:(n(s)||100)/100}));
-  alert("✅ Calage enregistré pour cette boutique.");
+  localStorage.setItem("bj_calage_etiq_"+imprimanteEtiq(), JSON.stringify({x:n(x), y:n(y), s:(n(s)||100)/100}));
+  alert("✅ Calage enregistré pour l'imprimante "+(imprimanteEtiq()==="hp"?"HP":"standard")+".");
 };
 window.imprimerEtiquettes = () => {
   const p = STATE.showBCModal;
