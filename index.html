@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "24/11 · v260 (HP : +5 mm, écart 103 %)";
+const APP_VERSION = "24/11 · v261 (bilan dépôt 2 boutiques : articles transférés comptés une fois)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -12351,8 +12351,15 @@ function renderBilanDepotDeuxModal() {
   const st = STATE.showBilanDepotDeux, ici = BOUTIQUE_ID_ACTUEL;
   const tous = [...(STATE.depotsVente||[]).filter(l=>!l.supprime).map(l=>({...l,_boutique:ici})), ...(st.lotsAutres||[])];
   const pct = (100-DEPOT_COMMISSION_PCT)/100, g = {};
-  tous.forEach(l => { const k = cleClienteDepot(l); const x = (g[k] = g[k] || {nom:(l.clientPrenom||"")+" "+(l.clientNom||""), par:{}});
-    const ids = [...new Set(l.articleIds||[])]; let vendus = 0, ca = 0;
+  // v261 : un article transféré garde le même identifiant dans les deux boutiques → on ne le compte que dans la boutique où il est réellement
+  const idsIci = new Set(), idsAutres = new Set();
+  tous.forEach(l => (l.articleIds||[]).forEach(id => (l._boutique===ici ? idsIci : idsAutres).add(id)));
+  const partiDIci = pid => { const p = (STATE.products||[]).find(x=>x.id===pid); return !p || (!!p.depotTransfereVers && p.depotTransfereVers!==ici && !(p.stock>0)); };
+  const garder = (l, pid) => l._boutique===ici ? !(idsAutres.has(pid) && partiDIci(pid)) : !(idsIci.has(pid) && !partiDIci(pid));
+  tous.forEach(l => { const ids = [...new Set(l.articleIds||[])].filter(pid => garder(l, pid));
+    if(!ids.length && (l.articleIds||[]).length && !bonsDuLot(l).length) return;
+    const k = cleClienteDepot(l); const x = (g[k] = g[k] || {nom:(l.clientPrenom||"")+" "+(l.clientNom||""), par:{}});
+    let vendus = 0, ca = 0;
     ids.forEach(pid => { const i = getVenteInfoArticleDepot(pid); if(i.vendu) { vendus++; ca += i.montant; } });
     const b = (x.par[l._boutique] = x.par[l._boutique] || {lots:0, articles:0, vendus:0, ca:0, bons:0});
     b.lots++; b.articles += ids.length; b.vendus += vendus; b.ca += ca; b.bons += bonsDuLot(l).reduce((s,bn)=>s+(bn.montant||0),0); });
