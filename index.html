@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "25/11 · v269 (couleurs à cocher)";
+const APP_VERSION = "25/11 · v270 (Blouse feuilles recréée à Chartres)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -2971,6 +2971,24 @@ setInterval(() => {
     localStorage.setItem("bj_mig_registre_sabrina", "ok");
   } catch(e) { console.error("Registre personnel (Sabrina) :", e); }
 }, 17000);
+// 25/11/2026 (v270) : article « Blouse feuilles » (Christy, T.44, GT) disparu du stock de Chartres → recréé avec SA référence et SON code-barres
+setInterval(() => {
+  try {
+    if(BOUTIQUE_ID_ACTUEL!=="boutique_1" || localStorage.getItem("bj_mig_blouse_2511")) return;
+    const prods = STATE.products||[];
+    if(prods.length < 20) return;
+    const REF = "REF-MWKLEF422R", BC = "3760008071675";
+    const existe = prods.some(x => x.ref===REF || x.barcode===BC || Object.values(x.barcodeVariantes||{}).includes(BC));
+    if(!existe) {
+      const maint = new Date().toISOString();
+      const prod = { id: uid("P"), name:"Blouse feuilles", marque:"Christy", category:"Hauts", price:24, prixAchat:"", ref:REF, barcode:BC,
+        tailles:["44"], couleurs:[], stock:1, stockVariantes:{"44__":1}, barcodeVariantes:{"44__":BC}, grandeTaille:true,
+        photo:"", dateAjout:"2026-11-17T11:11:53.000Z", majLe:maint, etiqImpLe:maint, recreeLe:maint };
+      setState({products:[...prods, prod]});
+    }
+    localStorage.setItem("bj_mig_blouse_2511", "ok");
+  } catch(e) { console.error("Recréation blouse :", e); }
+}, 12000);
 // v191 : on sort les photos du stockage local (plein) → IndexedDB, puis on les remet en mémoire
 try {
   for(let i=localStorage.length-1;i>=0;i--) { const k = localStorage.key(i);
