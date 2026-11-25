@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "25/11 · v265 (étiquettes du jour : seulement les non imprimées)";
+const APP_VERSION = "25/11 · v266 (étiquettes du jour : articles transférés modifiés / stock ajouté)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -9515,7 +9515,7 @@ function renderStock() {
     return motsStock.every(m=>texte.includes(m));
   });
   if(filtreDateStock) {
-    filtered = filtered.filter(p => (p.dateAjout||"").slice(0,10)===filtreDateStock);
+    filtered = filtered.filter(p => estArticleEtiqDuJour(p, filtreDateStock));
   }
   const estOR = p => p.octobreRose===true || (Array.isArray(p.octobreRose) && p.octobreRose.length>0);
   if(STATE.filtreOctobreRose) filtered = filtered.filter(estOR);
@@ -9542,7 +9542,7 @@ function renderStock() {
   if(isV1) html += '<button onclick="setState({showFusionArticles:true,fusionIdA:null,fusionIdB:null,fusionRecherche:\'\'})" class="btn-ghost" style="white-space:nowrap;">🔗 Fusionner des articles</button>';
   if(isV1) html += '<button onclick="STATE.showDefectueux=true;render()" class="btn-ghost" style="white-space:nowrap;color:#a32d2d;border-color:#f0959599;">🔧 Défectueux</button>';
   const dateEtiq = STATE.dateEtiq || dateLocaleStr();
-  const articlesJour = STATE.products.filter(p => (p.dateAjout||"").slice(0,10)===dateEtiq && (!p.etiqImpLe || p.etiqImpLe < (p.dateAjout||"")));
+  const articlesJour = STATE.products.filter(p => estArticleEtiqDuJour(p, dateEtiq) && !etiqDejaImprimee(p));
   html += '<div style="display:flex;align-items:center;gap:6px;background:#fff8e1;border:1px solid #fac775;border-radius:8px;padding:6px 10px;">';
   html += '<label style="font-size:11px;color:#854f0b;white-space:nowrap;">📅 Entrés le</label>';
   html += '<input type="date" value="'+dateEtiq+'" onchange="STATE.dateEtiq=this.value;render()" style="border:1px solid #ddd;border-radius:7px;padding:6px;font-size:13px;cursor:pointer;"/>';
@@ -10011,7 +10011,7 @@ window.saveProd = () => {
   };
 
   if(STATE.editProdId) {
-    STATE.products = STATE.products.map(p=>p.id===STATE.editProdId?{...p, ...prod}:p); // garde les infos propres à l'article (dépôt-vente, etc.)
+    STATE.products = STATE.products.map(p=>p.id===STATE.editProdId?{...p, ...prod, ...((p.copieDe || stockAugmente) ? {dateEtiqJour:new Date().toISOString()} : {})}:p); // garde les infos propres à l'article (dépôt-vente, etc.) — v266 : article transféré modifié ou stock augmenté = « article du jour » pour les étiquettes
   } else {
     STATE.products = [...STATE.products, prod];
   }
@@ -10858,6 +10858,7 @@ window.saveMvt = () => {
   if(STATE.vendeur.id!=="V1" && STATE.mvtType==="sortie" && !(estProduitArtisan(p) && peutGererArtisans())) STATE.mvtDefectueux=true;
   const delta = STATE.mvtType==="entree"?q:-q;
   STATE.products = ajusterStock(STATE.products, p.id, delta, STATE.mvtTaille, STATE.mvtCouleur);
+  if(delta>0) STATE.products = STATE.products.map(x=>x.id===p.id?{...x, dateEtiqJour:new Date().toISOString()}:x); // v266 : entrée de stock = étiquettes à imprimer aujourd'hui
   let msgDefectueux = "";
   if(STATE.mvtType==="sortie" && STATE.mvtDefectueux && q>0) {
     const coutUnitaire = parseFloat(p.prixAchat)||0;
@@ -21282,15 +21283,19 @@ window.imprimerEtiquettesCat = (cat) => {
 
 window.toggleCatStock = (key) => { STATE[key] = !STATE[key]; render(); };
 
+// v266 : « article du jour » pour les étiquettes = créé ce jour OU (article transféré modifié / stock ajouté) ce jour
+function dateRefEtiq(p) { const a = p.dateAjout||"", b = p.dateEtiqJour||""; return b > a ? b : a; }
+function estArticleEtiqDuJour(p, jour) { return (p.dateAjout||"").slice(0,10)===jour || (p.dateEtiqJour||"").slice(0,10)===jour; }
+function etiqDejaImprimee(p) { return !!p.etiqImpLe && p.etiqImpLe >= dateRefEtiq(p); }
 window.imprimerEtiquettesJour = () => {
   const dateEtiq = STATE.dateEtiq || dateLocaleStr();
-  let articlesJour = STATE.products.filter(p => (p.dateAjout||"").slice(0,10)===dateEtiq);
+  let articlesJour = STATE.products.filter(p => estArticleEtiqDuJour(p, dateEtiq));
   if(!articlesJour.length) {
     setState({showLotEtiq:true});
     return;
   }
   // v265 : seulement les articles dont l'étiquette n'a pas encore été imprimée
-  const nonImp = articlesJour.filter(p => !p.etiqImpLe || p.etiqImpLe < (p.dateAjout||""));
+  const nonImp = articlesJour.filter(p => !etiqDejaImprimee(p));
   if(!nonImp.length) {
     if(!confirm("✅ Les étiquettes des "+articlesJour.length+" article(s) entrés ce jour ont déjà toutes été imprimées.\n\nLes réimprimer quand même ?")) return;
   } else articlesJour = nonImp;
