@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "25/11 · v267 (étiquettes : bouton « Déjà imprimées »)";
+const APP_VERSION = "25/11 · v268 (étiquettes déjà imprimées : correctif)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -21288,7 +21288,10 @@ window.toggleCatStock = (key) => { STATE[key] = !STATE[key]; render(); };
 // v266 : « article du jour » pour les étiquettes = créé ce jour OU (article transféré modifié / stock ajouté) ce jour
 function dateRefEtiq(p) { const a = p.dateAjout||"", b = p.dateEtiqJour||""; return b > a ? b : a; }
 function estArticleEtiqDuJour(p, jour) { return (p.dateAjout||"").slice(0,10)===jour || (p.dateEtiqJour||"").slice(0,10)===jour; }
-function etiqDejaImprimee(p) { return !!p.etiqImpLe && p.etiqImpLe >= dateRefEtiq(p); }
+// v268 : la date d'entrée saisie dans la fiche est enregistrée à MIDI → avant midi, une étiquette imprimée paraissait « plus ancienne » que l'article. On compare donc l'entrée au JOUR près.
+function etiqDejaImprimee(p) { const i = p.etiqImpLe||""; if(!i) return false;
+  if(p.dateEtiqJour && i < p.dateEtiqJour) return false;
+  return i.slice(0,10) >= (p.dateAjout||"").slice(0,10); }
 window.marquerEtiqJourImprimees = () => {
   const jour = STATE.dateEtiq || dateLocaleStr();
   const ids = new Set((STATE.products||[]).filter(p => estArticleEtiqDuJour(p, jour) && !etiqDejaImprimee(p)).map(p=>p.id));
