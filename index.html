@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "25/11 · v268 (étiquettes déjà imprimées : correctif)";
+const APP_VERSION = "25/11 · v269 (couleurs à cocher)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -9867,6 +9867,14 @@ window.toggleTaille = (t, checked) => {
 };
 
 // Couleurs
+const COULEURS_RAPIDES = [["Noir","#111"],["Blanc","#fff"],["Écru","#f3ecd9"],["Beige","#d9c3a0"],["Camel","#c19a6b"],["Chocolat","#5a3825"],["Marron","#7b4b2a"],["Bordeaux","#6d1a2e"],["Rouge","#c62828"],["Rose","#f2a6bd"],["Fuchsia","#d81b7a"],["Prune","#5e2750"],["Violet","#7b3fa0"],["Bleu","#1e5bb8"],["Bleu marine","#1b2a4a"],["Bleu ciel","#9cc9ee"],["Turquoise","#2bb3b1"],["Vert","#2e7d32"],["Kaki","#6b6b3a"],["Vert sauge","#a3b18a"],["Jaune","#f2c230"],["Moutarde","#c9a227"],["Orange","#ef7d22"],["Gris","#8c8c8c"],["Anthracite","#3d3d3d"],["Doré","#d4af37"],["Argenté","#c0c0c0"],["Léopard","repeating-linear-gradient(45deg,#c69c5d 0 3px,#3b2a1a 3px 5px)"],["Multicolore","conic-gradient(red,orange,yellow,green,blue,violet,red)"]];
+window.basculerCouleur = (c) => {
+  const m = document.querySelector('.modal-body'), st = m ? m.scrollTop : 0;
+  const l = STATE.prodForm.couleurs||[];
+  STATE.prodForm.couleurs = l.includes(c) ? l.filter(x=>x!==c) : [...l, c];
+  render();
+  requestAnimationFrame(() => { const m2 = document.querySelector('.modal-body'); if(m2) m2.scrollTop = st; setTimeout(()=>{ const m3 = document.querySelector('.modal-body'); if(m3) m3.scrollTop = st; }, 60); });
+};
 window.addCouleur = () => {
   const modal = document.querySelector('.modal-body');
   const scrollTop = modal ? modal.scrollTop : 0;
@@ -10254,7 +10262,11 @@ function renderProdModal() {
     +'<div style="display:flex;gap:6px;margin-bottom:4px;">'
     +"<input data-focus-key=\"newCouleur\" type=\"text\" value=\""+( STATE._newCouleur||"")+"\" placeholder=\"Ajouter une couleur...\" style=\"flex:1;\" oninput=\"STATE._newCouleur=this.value\" onkeydown=\"if(event.key==='Enter'){event.preventDefault();addCouleur();}\"/>"
     +'<button onclick="addCouleur()" class="btn-ghost" style="font-size:18px;font-weight:700;padding:0 12px;">+</button>'
-    +'</div></div>'
+    +'</div>'
+    // v269 : couleurs courantes à cocher (le champ libre reste pour les autres)
+    +'<div style="display:flex;flex-wrap:wrap;gap:5px;margin:4px 0 2px;">'+COULEURS_RAPIDES.map(([c,hex])=>{ const on=(f.couleurs||[]).includes(c);
+        return '<label style="display:flex;align-items:center;gap:4px;font-size:12px;padding:3px 8px;border-radius:14px;cursor:pointer;border:1px solid '+(on?'#993556':'#ddd')+';background:'+(on?'#fbeaf0':'#fff')+';"><input type="checkbox" '+(on?'checked':'')+' onchange="basculerCouleur(\''+c+'\')" style="width:13px;height:13px;margin:0;"/><span style="width:11px;height:11px;border-radius:50%;background:'+hex+';border:1px solid #ccc;display:inline-block;"></span>'+c+'</label>'; }).join('')+'</div>'
+    +'</div>'
     // Variantes stock
     +blocVariantes
     // Photo
