@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "25/11 · v270 (Blouse feuilles recréée à Chartres)";
+const APP_VERSION = "25/11 · v271 (relier une vente sans réf. à un article)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -3566,6 +3566,7 @@ function renderApp() {
   ${STATE.showFusionArticles ? renderFusionArticlesModal() : ""}
   ${STATE.showVueBoutiques ? renderVueBoutiquesModal() : ""}
   ${STATE.showStockAutreBoutique ? renderStockAutreBoutiqueModal() : ""}
+  ${STATE.showLienSansRef ? renderLienSansRefModal() : ""}
   ${STATE.showTransfertBoutique ? renderTransfertBoutiqueModal() : ""}
   ${STATE.showTransfertGroupe ? renderTransfertGroupeModal() : ""}
   ${STATE.showHistoriqueTransferts ? renderHistoriqueTransfertsModal() : ""}
@@ -3919,6 +3920,64 @@ window.ajouterArticleSansRef = () => {
     prixSaisi: true, sansRef: true, saisiPar: STATE.vendeur?.nom||STATE.vendeur?.id||"",
   }];
   render();
+};
+
+
+// ─── v271 : relier après coup une vente « sans référence » à l'article retrouvé (stock décompté, ticket inchangé) ───
+function liensSansRef() { const m = new Set(); (STATE.products||[]).forEach(p => (p.ventesSansRefLiees||[]).forEach(l => m.add(l.cle))); return m; }
+function lignesSansRefALier() {
+  const lies = liensSansRef(), lim = Date.now() - 120*864e5, out = [];
+  (STATE.ventes||[]).forEach(v => { if(v.test || v.annulee || new Date(v.date).getTime() < lim) return;
+    (v.panier||[]).forEach((i, n) => { if(!i.sansRef || i.retour) return; const cle = v.id+"#"+(i.id||n);
+      if(!lies.has(cle)) out.push({cle, venteId:v.id, date:v.date, nom:i.name, prix:i.price, qty:i.qty||1}); }); });
+  return out.sort((a,b)=>String(b.date).localeCompare(String(a.date)));
+}
+function renderLienSansRefModal() {
+  const st = STATE.showLienSansRef, lignes = lignesSansRefALier();
+  const ferme = `setState({showLienSansRef:null})`;
+  let corps = "";
+  if(!st.cle) {
+    corps = lignes.length ? lignes.map(l => `<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid #f0ebee;">
+        <div><div style="font-weight:500;">${l.nom}</div><div style="font-size:11px;color:#888;">${new Date(l.date).toLocaleDateString("fr-FR")} · ${eur(l.prix)}${l.qty>1?" × "+l.qty:""}</div></div>
+        <button onclick="setState({showLienSansRef:{cle:'${l.cle}',q:''}})" style="background:#993556;color:#fff;border:none;border-radius:7px;padding:6px 12px;cursor:pointer;">🔗 Relier</button></div>`).join("")
+      : `<div style="color:#888;padding:20px;text-align:center;">✅ Toutes les ventes sans référence sont reliées.</div>`;
+  } else {
+    const l = lignes.find(x=>x.cle===st.cle);
+    if(!l) { corps = `<div style="padding:20px;">Vente déjà reliée.</div>`; }
+    else {
+      const p = st.prodId ? (STATE.products||[]).find(x=>x.id===st.prodId) : null;
+      if(!p) {
+        const q = normStr(codeComplet(st.q||""));
+        const res = q.length<2 ? [] : (STATE.products||[]).filter(x => !x.isService && !x.depotVente && (normStr(x.name||"").includes(q) || normStr(x.ref||"").includes(q) || String(x.barcode||"").includes(q) || Object.values(x.barcodeVariantes||{}).some(b=>String(b).includes(q)))).slice(0,25);
+        corps = `<div style="background:#fff8e1;border-radius:8px;padding:8px 10px;margin-bottom:10px;font-size:13px;">Vente du ${new Date(l.date).toLocaleDateString("fr-FR")} : <strong>${l.nom}</strong> — ${eur(l.prix)}</div>
+          <input id="lsr-q" value="${String(st.q||"").replace(/"/g,"&quot;")}" placeholder="Nom, référence ou code-barres de l'article…" oninput="STATE.showLienSansRef.q=this.value;majResLienSansRef()" style="width:100%;box-sizing:border-box;font-size:15px;padding:8px;margin-bottom:8px;" autofocus>
+          <div id="lsr-res">${res.map(x=>`<div onclick="choisirProdLienSansRef('${x.id}')" style="padding:8px;border-bottom:1px solid #f0ebee;cursor:pointer;display:flex;justify-content:space-between;"><span>${x.name}${x.marque?" <i style='color:#888;'>("+x.marque+")</i>":""}<br><span style="font-size:11px;color:#888;">${x.ref||""} · stock ${x.stock||0}</span></span><strong>${eur(x.price)}</strong></div>`).join("") || (q.length>=2?'<div style="color:#888;font-size:13px;">Aucun article trouvé.</div>':'')}</div>`;
+      } else {
+        const vs = variantesEnStock(p);
+        corps = `<div style="background:#fff8e1;border-radius:8px;padding:8px 10px;margin-bottom:10px;font-size:13px;">Vente du ${new Date(l.date).toLocaleDateString("fr-FR")} : <strong>${l.nom}</strong> — ${eur(l.prix)}<br>➡️ Article : <strong>${p.name}</strong> (${p.ref||""}) · ${eur(p.price)}</div>
+          ${vs.length ? `<div style="font-size:13px;margin-bottom:6px;">Quelle taille / couleur a été vendue ?</div><div style="display:flex;flex-wrap:wrap;gap:6px;">${vs.map(v=>`<button onclick="validerLienSansRef('${v.t||""}','${v.c||""}')" style="padding:8px 12px;border:1px solid #993556;background:#fff;color:#993556;border-radius:8px;cursor:pointer;">${[v.t,v.c].filter(Boolean).join(" · ")} <span style="color:#888;font-size:11px;">(stock ${v.n})</span></button>`).join("")}</div>`
+                     : `<button onclick="validerLienSansRef('','')" style="background:#993556;color:#fff;border:none;border-radius:8px;padding:10px 16px;cursor:pointer;">✅ Relier et retirer ${l.qty} pièce${l.qty>1?"s":""} du stock</button>`}
+          <div style="margin-top:10px;"><button onclick="STATE.showLienSansRef.prodId=null;render()" class="btn-ghost">← Choisir un autre article</button></div>`;
+      }
+      corps = `<button onclick="setState({showLienSansRef:{q:''}})" class="btn-ghost" style="margin-bottom:10px;">← Retour à la liste</button>` + corps;
+    }
+  }
+  return `<div class="modal-bg" onclick="if(event.target===this)${ferme}"><div class="modal" style="max-width:560px;max-height:85vh;display:flex;flex-direction:column;">
+    <div class="modal-header"><span style="font-weight:500;">🔗 Relier les ventes sans référence</span><button onclick="${ferme}" style="background:none;border:none;font-size:24px;color:#aaa;">×</button></div>
+    <div class="modal-body" style="overflow-y:auto;flex:1;"><div style="font-size:11px;color:#888;margin-bottom:8px;">Quand tu retrouves l'article, relie-le à sa vente : le stock est décompté. Le ticket et le Z ne changent pas.</div>${corps}</div></div></div>`;
+}
+window.majResLienSansRef = () => { const el = document.getElementById("lsr-res"); if(!el) return;
+  const tmp = document.createElement("div"); tmp.innerHTML = renderLienSansRefModal(); const n = tmp.querySelector("#lsr-res"); if(n) el.innerHTML = n.innerHTML; };
+window.choisirProdLienSansRef = (id) => { STATE.showLienSansRef.prodId = id; render(); };
+window.validerLienSansRef = (t, c) => {
+  const st = STATE.showLienSansRef, l = lignesSansRefALier().find(x=>x.cle===st.cle), p = (STATE.products||[]).find(x=>x.id===st.prodId);
+  if(!l || !p) return;
+  if(!confirm("Relier « "+l.nom+" » ("+eur(l.prix)+") à l'article « "+p.name+(t||c?" — "+[t,c].filter(Boolean).join(" · "):"")+" » ?\n\n"+l.qty+" pièce(s) seront retirées du stock.")) return;
+  const maint = new Date().toISOString();
+  let prods = ajusterStock(STATE.products, p.id, -l.qty, t||"", c||"");
+  prods = prods.map(x => x.id===p.id ? {...x, majLe:maint, ventesSansRefLiees:[...(x.ventesSansRefLiees||[]), {cle:l.cle, venteId:l.venteId, date:l.date, prix:l.prix, qty:l.qty, taille:t||"", couleur:c||"", le:maint, par:STATE.vendeur?.nom||""}]} : x);
+  setState({products:prods, showLienSansRef:{q:''}});
+  alert("✅ Vente reliée à « "+p.name+" ». Stock mis à jour.");
 };
 
 // ─── Chèque cadeau (vente) ──────────────────────────────────────
@@ -9554,6 +9613,7 @@ function renderStock() {
   if(STATE.vendeur.role!=="apprenti") html += '<button onclick="openProdModal(null)" class="btn-primary" style="width:auto;padding:8px 16px;">+ Nouvel article</button>';
   if(STATE.vendeur.id==="V1" || peutGererArtisans()) html += '<button onclick="creerCoffret()" class="btn-ghost" style="width:auto;padding:8px 14px;">🎁 Créer un coffret</button>';
   if(BOUTIQUES.length>1) html += '<button onclick="ouvrirStockAutreBoutique()" class="btn-ghost" style="white-space:nowrap;">🔍 Stock de l\'autre boutique</button>';
+  if(peutGererArtisans()) { const nSR = lignesSansRefALier().length; if(nSR) html += '<button onclick="setState({showLienSansRef:{q:\'\'}})" class="btn-ghost" style="white-space:nowrap;border-color:#ba7517;color:#854f0b;">🔗 Ventes sans réf. à relier ('+nSR+')</button>'; }
   if(BOUTIQUES.length>1) html += '<button onclick="setState({showHistoriqueTransferts:true})" class="btn-ghost" style="white-space:nowrap;">📦↔️ Transferts</button>';
   if(isV1) html += '<button onclick="STATE.stockTab=\'reception\';render()" class="btn-ghost" style="white-space:nowrap;">📦 Réception facture</button>';
   if(isV1) html += '<button onclick="ouvrirApercuExtractionMarque()" class="btn-ghost" style="white-space:nowrap;">🔧 Extraire les marques</button>';
