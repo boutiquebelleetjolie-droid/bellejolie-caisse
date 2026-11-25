@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "25/11 · v266 (étiquettes du jour : articles transférés modifiés / stock ajouté)";
+const APP_VERSION = "25/11 · v267 (étiquettes : bouton « Déjà imprimées »)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -9548,6 +9548,7 @@ function renderStock() {
   html += '<input type="date" value="'+dateEtiq+'" onchange="STATE.dateEtiq=this.value;render()" style="border:1px solid #ddd;border-radius:7px;padding:6px;font-size:13px;cursor:pointer;"/>';
   html += '<label style="display:flex;align-items:center;gap:4px;font-size:11px;color:#854f0b;cursor:pointer;white-space:nowrap;"><input type="checkbox" '+(STATE.dateEtiqFiltreActif?'checked':'')+' onchange="STATE.dateEtiqFiltreActif=this.checked;render()" style="width:14px;height:14px;"/> Filtrer la liste</label>';
   html += '<button onclick="imprimerEtiquettesJour()" style="padding:8px 14px;background:#3b6d11;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:500;white-space:nowrap;">🏷️ Étiquettes'+(articlesJour.length?' ('+articlesJour.length+' à imprimer)':'')+'</button>';
+  if(articlesJour.length) html += '<button onclick="marquerEtiqJourImprimees()" title="Marquer ces articles comme déjà imprimés" style="padding:8px 10px;background:#fff;color:#3b6d11;border:1px solid #3b6d11;border-radius:8px;cursor:pointer;font-size:12px;white-space:nowrap;">✔ Déjà imprimées</button>';
   html += '</div>';
   html += '</div>';
 
@@ -10011,7 +10012,7 @@ window.saveProd = () => {
   };
 
   if(STATE.editProdId) {
-    STATE.products = STATE.products.map(p=>p.id===STATE.editProdId?{...p, ...prod, ...((p.copieDe || stockAugmente) ? {dateEtiqJour:new Date().toISOString()} : {})}:p); // garde les infos propres à l'article (dépôt-vente, etc.) — v266 : article transféré modifié ou stock augmenté = « article du jour » pour les étiquettes
+    STATE.products = STATE.products.map(p=>p.id===STATE.editProdId?{...p, ...prod, ...((stockAugmente || (p.copieDe && !(p.etiqImpLe||"").startsWith(dateLocaleStr()) && !(p.dateEtiqJour||"").startsWith(dateLocaleStr()))) ? {dateEtiqJour:new Date().toISOString()} : {})}:p); // garde les infos propres à l'article (dépôt-vente, etc.) — v266 : article transféré modifié ou stock augmenté = « article du jour » pour les étiquettes
   } else {
     STATE.products = [...STATE.products, prod];
   }
@@ -10716,6 +10717,7 @@ function codeVarianteEtiquette(p, t, c, creer) {
 }
 window.imprimerEtiquettes = () => {
   const p = STATE.showBCModal;
+  if(p) setTimeout(() => { try { const maint = new Date().toISOString(); setState({products:(STATE.products||[]).map(x => x.id===p.id ? {...x, etiqImpLe:maint, majLe:maint} : x)}); } catch(e) {} }, 1500); // v267
   const taille = STATE.etiquetteTaille || "medium";
   const desig  = STATE.etiquetteDesig || "";
   const qty    = STATE.etiquetteQty   || 1;
@@ -21287,6 +21289,13 @@ window.toggleCatStock = (key) => { STATE[key] = !STATE[key]; render(); };
 function dateRefEtiq(p) { const a = p.dateAjout||"", b = p.dateEtiqJour||""; return b > a ? b : a; }
 function estArticleEtiqDuJour(p, jour) { return (p.dateAjout||"").slice(0,10)===jour || (p.dateEtiqJour||"").slice(0,10)===jour; }
 function etiqDejaImprimee(p) { return !!p.etiqImpLe && p.etiqImpLe >= dateRefEtiq(p); }
+window.marquerEtiqJourImprimees = () => {
+  const jour = STATE.dateEtiq || dateLocaleStr();
+  const ids = new Set((STATE.products||[]).filter(p => estArticleEtiqDuJour(p, jour) && !etiqDejaImprimee(p)).map(p=>p.id));
+  if(!ids.size || !confirm("Marquer les étiquettes de "+ids.size+" article(s) comme déjà imprimées ?\n\nIls ne seront plus proposés par le bouton 🏷️ Étiquettes.")) return;
+  const maint = new Date().toISOString();
+  setState({products:(STATE.products||[]).map(x => ids.has(x.id) ? {...x, etiqImpLe:maint, majLe:maint} : x)});
+};
 window.imprimerEtiquettesJour = () => {
   const dateEtiq = STATE.dateEtiq || dateLocaleStr();
   let articlesJour = STATE.products.filter(p => estArticleEtiqDuJour(p, dateEtiq));
