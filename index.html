@@ -116,7 +116,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "26/11 · v282 (stats : ouverture sur le jour)";
+const APP_VERSION = "26/11 · v283 (objectifs : juillet 10 000 €, report sur mai/juin)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -1511,7 +1511,12 @@ const OBJECTIFS_BOOST_CHARTRES = {
   10:22324,
   11:29765,
 };
-for(const m in OBJECTIFS_BOOST_CHARTRES) OBJECTIFS_BOOST_CHARTRES[m] = Math.round(OBJECTIFS_BOOST_CHARTRES[m]*0.95); // Total annuel objectif secondaire : 210 834€
+for(const m in OBJECTIFS_BOOST_CHARTRES) OBJECTIFS_BOOST_CHARTRES[m] = Math.round(OBJECTIFS_BOOST_CHARTRES[m]*0.95);
+// v283 (26/11/2026) : juillet ramené à 10 000 €, la différence reportée moitié sur mai, moitié sur juin (total inchangé)
+(function() { const diff = OBJECTIFS_CHARTRES[6] - 10000; if(diff <= 0) return;
+  const r = [4,5,6].map(m => (OBJECTIFS_BOOST_CHARTRES[m]||0)/(OBJECTIFS_CHARTRES[m]||1));
+  OBJECTIFS_CHARTRES[6] = 10000; OBJECTIFS_CHARTRES[4] += Math.floor(diff/2); OBJECTIFS_CHARTRES[5] += Math.ceil(diff/2);
+  [4,5,6].forEach((m,i) => OBJECTIFS_BOOST_CHARTRES[m] = Math.round(OBJECTIFS_CHARTRES[m]*r[i])); })(); // Total annuel objectif secondaire : 210 834€
 
 // ── Objectifs de Dreux (ouverture le 25/11/2026) ──
 // Objectif = celui de Chartres −5 % (même saisonnalité, août fermé) ; boost = boost de Chartres −5 %.
