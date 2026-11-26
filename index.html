@@ -116,7 +116,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "26/11 · v279 (en-tete : onglets defilants, boutons boutique toujours visibles)";
+const APP_VERSION = "26/11 · v280 (objectifs jour Chartres recales sur le mois)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -1677,8 +1677,19 @@ function objSemCalc(dateQuelconque) {
   return total;
 }
 
+// v280 : les objectifs du jour de Chartres sont recalés pour que leur somme sur le mois = l'objectif du mois
+// (avant, l'approximation « mois = 4,3 semaines » faisait ~7 % de moins → Chartres paraissait avoir moins à faire que Dreux)
+const _cacheRecalChartres = {};
 function objJourCalc(date) {
   if(BOUTIQUE_ID_ACTUEL==="boutique_2") return objJourDreux(date);
+  const brut = objJourCalcBrut(date); if(!brut) return 0;
+  const y = date.getFullYear(), m = date.getMonth(), k = y+"-"+m;
+  if(_cacheRecalChartres[k]==null) { let somme = 0; const nb = new Date(y, m+1, 0).getDate();
+    for(let j=1; j<=nb; j++) somme += objJourCalcBrut(new Date(y, m, j));
+    const caM = OBJECTIFS_MENSUEL[m]||0; _cacheRecalChartres[k] = (somme>0 && caM>0) ? caM/somme : 1; }
+  return Math.round(brut * _cacheRecalChartres[k]);
+}
+function objJourCalcBrut(date) {
   const m = date.getMonth();
   const dow = date.getDay(); // 0=dim, 1=lun, 2=mar, 3=mer, 4=jeu, 5=ven, 6=sam
   if(dow===0) return 0; // dimanche fermé
