@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "26/11 · v273 (mails : config EmailJS relue dans le cloud)";
+const APP_VERSION = "26/11 · v274 (nom article synchronise entre boutiques)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -10045,6 +10045,21 @@ function compresserImage(source, maxDim, qualite) {
 }
 
 // Enregistrer un produit
+// v274 : renommer la même fiche dans l'autre boutique (même identifiant, référence, code-barres ou fiche copiée)
+async function renommerDansAutreBoutique(p, nouveauNom) {
+  const bDest = (typeof BOUTIQUES!=="undefined") && BOUTIQUES.find(b=>b.id!==BOUTIQUE_ID_ACTUEL);
+  if(!bDest || !_fbDb) return;
+  const cle = cleFirestorePour(bDest.id, "bj_products");
+  const doc = await _fbDb.collection("bellejolie").doc(cle).get();
+  if(!doc.exists) return;
+  const liste = doc.data().value||[], maint = new Date().toISOString();
+  const memes = x => x.id===p.id || (p.ref && x.ref===p.ref) || (p.barcode && x.barcode===p.barcode) || (x.copieDe && x.copieDe.id===p.id) || (p.copieDe && p.copieDe.id===x.id);
+  let n = 0;
+  const nl = liste.map(x => { if(!memes(x) || x.name===nouveauNom) return x; n++; return {...x, name:nouveauNom, majLe:maint}; });
+  if(!n) return;
+  await _fbDb.collection("bellejolie").doc(cle).set({value:nl, maj:maint, device: DEVICE_ID+"@"+BOUTIQUE_ID_ACTUEL});
+  try { if(typeof toast==="function") toast("✅ Nom mis à jour aussi à "+bDest.nom); } catch(e) {}
+}
 window.saveProd = () => {
   const f = STATE.prodForm;
   if(!f.name||!f.name.trim())       {alert("Entrez un nom d'article.");   return;}
@@ -10123,6 +10138,9 @@ window.saveProd = () => {
   };
 
   if(STATE.editProdId) {
+    // v274 : nom (dénomination) changé → même changement sur la fiche jumelle de l'autre boutique
+    try { const avant = (STATE.products||[]).find(x=>x.id===STATE.editProdId);
+      if(avant && prod.name && avant.name !== prod.name) renommerDansAutreBoutique(avant, prod.name).catch(e=>console.error(e)); } catch(e) { console.error(e); }
     STATE.products = STATE.products.map(p=>p.id===STATE.editProdId?{...p, ...prod, ...((stockAugmente || (p.copieDe && !(p.etiqImpLe||"").startsWith(dateLocaleStr()) && !(p.dateEtiqJour||"").startsWith(dateLocaleStr()))) ? {dateEtiqJour:new Date().toISOString()} : {})}:p); // garde les infos propres à l'article (dépôt-vente, etc.) — v266 : article transféré modifié ou stock augmenté = « article du jour » pour les étiquettes
   } else {
     STATE.products = [...STATE.products, prod];
