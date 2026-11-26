@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "26/11 · v275 (stock : filtre Chaussettes / Bijoux / categorie)";
+const APP_VERSION = "26/11 · v276 (annuler un avoir emis par erreur)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -6038,6 +6038,16 @@ window.retourBcKeyDown = e => {
 };
 
 
+// v276 : annuler un avoir émis par erreur (ex. annulation de ticket encaissé dans la mauvaise boutique) — gardé pour la traçabilité, solde à 0
+window.annulerAvoirManuel = (id) => {
+  const a = (STATE.avoirs||[]).find(x=>x.id===id); if(!a) return;
+  if(STATE.vendeur?.id!=="V1") { alert("Seule Élodie peut annuler un avoir."); return; }
+  const motif = prompt("Annuler l'avoir "+a.code+" ("+eur(a.solde)+") ?\n\nMotif :", "Émis par erreur (ticket encaissé dans la mauvaise boutique)");
+  if(motif===null) return;
+  const maint = new Date().toISOString();
+  setState({avoirs:(STATE.avoirs||[]).map(x => x.id===id ? {...x, solde:0, utilise:true, annuleManuel:{le:maint, par:STATE.vendeur?.nom||"", motif:motif||"", soldeAvant:x.solde}, majLe:maint} : x)});
+  alert("✅ Avoir "+a.code+" annulé.");
+};
 window.creerAvoirSeul = () => {
   const {total} = calcPanier();
   const montant = parseFloat((-total).toFixed(2));
@@ -12038,6 +12048,7 @@ function renderClientDetail() {
                 +"<div style='text-align:right;'>"
                 +"<div style='font-size:11px;color:"+(urgence?"#a32d2d":"#888")+";font-weight:"+(urgence?"600":"400")+";'>Expire le "+expStr+"</div>"
                 +(joursRestants!==null?"<div style='font-size:10px;color:"+(urgence?"#a32d2d":"#aaa")+"'>"+joursRestants+"j restants</div>":"")
+                +(STATE.vendeur?.id==="V1"?"<button onclick=\"annulerAvoirManuel('"+a.id+"')\" style='margin-top:4px;font-size:11px;padding:3px 8px;border:1px solid #e24b4a;color:#a32d2d;background:#fff;border-radius:6px;cursor:pointer;'>🚫 Annuler l'avoir</button>":"")
                 +"</div>"
                 +"</div>";
             }).join("")
