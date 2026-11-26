@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "26/11 · v276 (annuler un avoir emis par erreur)";
+const APP_VERSION = "26/11 · v277 (comparatif : tickets autre boutique completes)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -12475,6 +12475,17 @@ function renderComparatifBoutiques() {
     ["Mois dernier", new Date(now.getFullYear(),now.getMonth()-1,1), new Date(now.getFullYear(),now.getMonth(),0,23,59,59)],
     ["Depuis le 1er janvier", new Date(now.getFullYear(),0,1), now],
   ];
+  // v277 : la copie locale des tickets de l'autre boutique peut être incomplète (tickets envoyés en retard) → on relit son journal (1×/heure) et on complète
+  BOUTIQUES.filter(b=>b.id!==BOUTIQUE_ID_ACTUEL).forEach(b => {
+    window._compRelu = window._compRelu || {};
+    if(window._compRelu[b.id] && Date.now()-window._compRelu[b.id] < 60*60*1000) return;
+    if(!_fbDb) return;
+    window._compRelu[b.id] = Date.now();
+    lireJournalVentesCache(b.id).then(l => {
+      integrerVentesAutres((l||[]).filter(v=>v&&v.id), b.id);
+      if(STATE.tab==="stats" && STATE.statPer==="boutiques") render();
+    }).catch(e => { console.error("Comparatif : relecture", e); window._compRelu[b.id] = 0; });
+  });
   const ventesDe = bId => (bId===BOUTIQUE_ID_ACTUEL ? (STATE.ventes||[]) : VENTES_AUTRES.filter(v=>v._boutique===bId)).filter(v=>!v.test && !v.annulee);
   const cols = BOUTIQUES.map(b => ({b, ventes: ventesDe(b.id)}));
   const cell = (st, autre, k, fmt) => { const v = st[k], w = autre ? autre[k] : null; const mieux = w!=null && v > w + 1e-9;
