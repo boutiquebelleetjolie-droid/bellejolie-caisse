@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "25/11 · v272 (ecart de caisse > 1 € : code Elodie)";
+const APP_VERSION = "26/11 · v273 (mails : config EmailJS relue dans le cloud)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -2989,6 +2989,31 @@ setInterval(() => {
     localStorage.setItem("bj_mig_blouse_2511", "ok");
   } catch(e) { console.error("Recréation blouse :", e); }
 }, 12000);
+// v273 : configuration EmailJS manquante sur un appareil (« The public key is required ») → relue dans le cloud avant chaque envoi
+async function assurerConfigEmailjs() {
+  if(STATE.emailjsServiceId && STATE.emailjsTemplateId && STATE.emailjsPublicKey) return true;
+  if(!_fbDb) return false;
+  try {
+    const [a,b,c] = await Promise.all(["bj_ejs_service","bj_ejs_template","bj_ejs_key"].map(k => _fbDb.collection("bellejolie").doc(k).get()));
+    const v = d => (d && d.exists && d.data().value) || "";
+    if(!STATE.emailjsServiceId && v(a))  { STATE.emailjsServiceId = v(a);  try { lsSet("bj_ejs_service", v(a)); } catch{} }
+    if(!STATE.emailjsTemplateId && v(b)) { STATE.emailjsTemplateId = v(b); try { lsSet("bj_ejs_template", v(b)); } catch{} }
+    if(!STATE.emailjsPublicKey && v(c))  { STATE.emailjsPublicKey = v(c);  try { lsSet("bj_ejs_key", v(c)); } catch{} }
+  } catch(e) { console.error("Config EmailJS (cloud) :", e); }
+  return !!(STATE.emailjsServiceId && STATE.emailjsTemplateId && STATE.emailjsPublicKey);
+}
+(function() {
+  try {
+    if(!window.emailjs || emailjs._bjPatch) return;
+    const orig = emailjs.send.bind(emailjs);
+    emailjs.send = async (svc, tpl, params, opt) => {
+      await assurerConfigEmailjs();
+      return orig(svc || STATE.emailjsServiceId, tpl || STATE.emailjsTemplateId, params, opt || {publicKey: STATE.emailjsPublicKey});
+    };
+    emailjs._bjPatch = true;
+  } catch(e) { console.error(e); }
+})();
+setTimeout(() => { assurerConfigEmailjs(); }, 9000);
 // v191 : on sort les photos du stockage local (plein) → IndexedDB, puis on les remet en mémoire
 try {
   for(let i=localStorage.length-1;i>=0;i--) { const k = localStorage.key(i);
@@ -4338,9 +4363,9 @@ window.sauvegarderEmailJS = async () => {
   try {
     const maintenant = new Date().toISOString();
     await Promise.all([
-      _fbDb.collection("bellejolie").doc("bj_ejs_service").set({ value: STATE.emailjsServiceId||"", maj: maintenant, device: DEVICE_ID }),
-      _fbDb.collection("bellejolie").doc("bj_ejs_template").set({ value: STATE.emailjsTemplateId||"", maj: maintenant, device: DEVICE_ID }),
-      _fbDb.collection("bellejolie").doc("bj_ejs_key").set({ value: STATE.emailjsPublicKey||"", maj: maintenant, device: DEVICE_ID }),
+      ...(STATE.emailjsServiceId ? [_fbDb.collection("bellejolie").doc("bj_ejs_service").set({ value: STATE.emailjsServiceId, maj: maintenant, device: DEVICE_ID })] : []),
+      ...(STATE.emailjsTemplateId ? [_fbDb.collection("bellejolie").doc("bj_ejs_template").set({ value: STATE.emailjsTemplateId, maj: maintenant, device: DEVICE_ID })] : []),
+      ...(STATE.emailjsPublicKey ? [_fbDb.collection("bellejolie").doc("bj_ejs_key").set({ value: STATE.emailjsPublicKey, maj: maintenant, device: DEVICE_ID })] : []),
     ]);
     alert("✅ Configuration EmailJS enregistrée et confirmée dans le cloud !\n\nElle va se propager automatiquement aux autres appareils.");
   } catch(err) {
