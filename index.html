@@ -116,7 +116,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "26/11 · v280 (objectifs jour Chartres recales sur le mois)";
+const APP_VERSION = "26/11 · v281 (pastille artisan, objectifs -5 %)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -1494,6 +1494,8 @@ const OBJECTIFS_CHARTRES = {
   10:19080, // Novembre — Black Friday/Noël
   11:25440, // Décembre — fêtes
 }; // CA annuel objectif (11 mois actifs) : 180 200€
+// v281 (26/11/2026) : objectifs baissés de 5 % pour les deux boutiques (Dreux suit Chartres × 0,95)
+for(const m in OBJECTIFS_CHARTRES) OBJECTIFS_CHARTRES[m] = Math.round(OBJECTIFS_CHARTRES[m]*0.95);
 // Objectifs secondaires (anciennement "boostés +17%") revus à +6% le 23/07/2026 (base précédente : 198 900€ → 210 834€)
 const OBJECTIFS_BOOST_CHARTRES = {
   0:17363,
@@ -1508,7 +1510,8 @@ const OBJECTIFS_BOOST_CHARTRES = {
   9:17363,
   10:22324,
   11:29765,
-}; // Total annuel objectif secondaire : 210 834€
+};
+for(const m in OBJECTIFS_BOOST_CHARTRES) OBJECTIFS_BOOST_CHARTRES[m] = Math.round(OBJECTIFS_BOOST_CHARTRES[m]*0.95); // Total annuel objectif secondaire : 210 834€
 
 // ── Objectifs de Dreux (ouverture le 25/11/2026) ──
 // Objectif = celui de Chartres −5 % (même saisonnalité, août fermé) ; boost = boost de Chartres −5 %.
@@ -9425,7 +9428,14 @@ window.diagnostiquerStockAberrant = () => {
 
 // Pastille « GT » (grande taille) affichée à côté du nom et de la référence, sans ouvrir la fiche
 function estGrandeTaille(x) { if(!x) return false; if(x.grandeTaille) return true; const p = (STATE.products||[]).find(q=>q.id===(x.prodIdOriginal||String(x.id||"").replace(/^R_/,""))); return !!(p && p.grandeTaille); }
-function badgeGT(x) { return estGrandeTaille(x) ? ' <span title="Grande taille" style="background:#f3e8ff;color:#6a3d9a;font-size:9px;padding:1px 6px;border-radius:7px;font-weight:700;vertical-align:middle;">GT</span>' : ''; }
+function badgeGTSeul(x) { return estGrandeTaille(x) ? ' <span title="Grande taille" style="background:#f3e8ff;color:#6a3d9a;font-size:9px;padding:1px 6px;border-radius:7px;font-weight:700;vertical-align:middle;">GT</span>' : ''; }
+// v281 : pastille rose « artisan » partout où s'affiche le badge GT (recherche caisse, panier, stock) — évite les erreurs
+function badgeGT(x) {
+  let art = false;
+  try { art = estProduitArtisan(x) || (x && estProduitArtisan((STATE.products||[]).find(p => p.id===(x.prodIdOriginal||x.id)))); } catch(e) {}
+  const nomA = art ? String(x.nomArtisan || ((STATE.products||[]).find(p => p.id===(x.prodIdOriginal||x.id))||{}).nomArtisan || "").trim() : "";
+  return badgeGTSeul(x) + (art ? ' <span title="Article d\'artisan'+(nomA?' — '+nomA.replace(/"/g,''):'')+'" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#e8559a;border:1.5px solid #fff;box-shadow:0 0 0 1px #e8559a;vertical-align:middle;margin-left:3px;"></span><span style="font-size:9px;color:#c2185b;font-weight:700;vertical-align:middle;margin-left:2px;">ARTISAN</span>' : '');
+}
 function renderStockTableau(prods, isV1) {
   const cols = ["","Photo","Réf.","Article","Catégorie"];
   if(isV1) cols.push("PV TTC","PV HT","PA HT","PA TTC","🔒 Coeff","🔒 Marge brute","🔒 Coeff final","🔒 Marge finale","Stock","Actions");
