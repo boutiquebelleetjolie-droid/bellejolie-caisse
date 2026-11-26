@@ -12,6 +12,8 @@
 <link rel="apple-touch-icon" href="icons/icon-192.png"/>
 <title>Belle&Jolie — Caisse</title>
 <style>
+@media (max-width:820px){ #app-header{flex-wrap:wrap;padding:4px 8px!important;} #nav-bar{order:3;flex:1 1 100%!important;} #header-droite{max-width:none!important;flex:1;justify-content:flex-end;} #header-droite button,#header-droite span{font-size:11px!important;padding:3px 6px!important;} }
+
 #nav-bar button{white-space:nowrap;flex-shrink:0;}
 
   *{box-sizing:border-box;margin:0;padding:0;}
@@ -116,7 +118,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "26/11 · v284 (objectifs Chartres 145 000 € / boost 170 000 €)";
+const APP_VERSION = "26/11 · v285 (en-tete telephone compact)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -3571,7 +3573,7 @@ function renderApp() {
         </button>
       `).join("")}
     </nav>
-    <div style="display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;max-width:46%;padding:4px 0;">
+    <div id="header-droite" style="display:flex;align-items:center;gap:6px;flex-shrink:0;flex-wrap:wrap;justify-content:flex-end;max-width:46%;padding:4px 0;">
       <div style="width:30px;height:30px;border-radius:50%;background:${STATE.vendeur.color};display:flex;align-items:center;justify-content:center;color:#fff;font-weight:500;font-size:13px;cursor:pointer;" onclick="logout()" title="Changer de vendeur">
         ${STATE.vendeur.nom[0]}
       </div>
