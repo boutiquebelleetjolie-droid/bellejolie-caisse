@@ -116,7 +116,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "26/11 · v281 (pastille artisan, objectifs -5 %)";
+const APP_VERSION = "26/11 · v282 (stats : ouverture sur le jour)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -2011,7 +2011,7 @@ let STATE = {
   invData: {},
   invDone: false,
   // Stats
-  statPer: "mois",
+  statPer: "jour",
   // Vendeur settings
   vendeurForm: JSON.parse(JSON.stringify(VENDEURS)),
   showEnvoiModal: false,
@@ -3643,7 +3643,10 @@ function renderApp() {
   `;
 }
 
-window.setTab = t => { if(STATE.vendeur?.role==="stagiaire" && !["caisse","crm","reservations"].includes(t)) t = "caisse"; setState({tab:t}); };
+window.setTab = t => { if(STATE.vendeur?.role==="stagiaire" && !["caisse","crm","reservations"].includes(t)) t = "caisse";
+  // v282 : en ouvrant les Stats, on arrive toujours sur « Jour » (aujourd'hui)
+  if(t==="stats" && STATE.tab!=="stats") { STATE.statPer = "jour"; STATE.statOffsetJour = 0; }
+  setState({tab:t}); };
 window.fermerInfoModal = () => {
   const m = document.getElementById('info-art-modal');
   if(m) m.remove();
