@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "26/11 · v277 (comparatif : tickets autre boutique completes)";
+const APP_VERSION = "26/11 · v278 (montant remis avec virgule)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -7679,7 +7679,7 @@ function renderPayModal() {
           ${mode1==="especes"?`
             <div style="margin-bottom:14px;">
               <label style="font-size:12px;color:#888;display:block;margin-bottom:4px;">Montant remis (€)</label>
-              <input type="number" step="0.01" value="${pays[0].montant}" oninput="pays0Montant(this.value)" placeholder="${total.toFixed(2)}" style="margin-bottom:8px;width:100%;box-sizing:border-box;"/>
+              <input type="text" inputmode="decimal" value="${pays[0].saisie!=null?pays[0].saisie:String(pays[0].montant||"").replace(".",",")}" oninput="pays0Montant(this.value)" placeholder="${total.toFixed(2)}" style="margin-bottom:8px;width:100%;box-sizing:border-box;"/>
               ${pays[0].montant&&cash1>=total?`<div style="background:#eaf3de;border-radius:8px;padding:10px 14px;font-size:15px;font-weight:500;color:#3b6d11;">💰 Rendu : ${eur(rendu1)}</div>`:""}
               ${pays[0].montant&&cash1<total?`<div style="background:#fcebeb;border-radius:8px;padding:8px 12px;font-size:13px;color:#a32d2d;">⚠️ Insuffisant (manque ${eur(total-cash1)})</div>`:""}
             </div>
@@ -7687,7 +7687,7 @@ function renderPayModal() {
           ${(mode1==="avoir"||mode1==="cadeau")?`
             <div style="margin-bottom:14px;">
               <label style="font-size:12px;color:#888;display:block;margin-bottom:4px;">Montant disponible sur le document (€)</label>
-              <input type="number" step="0.01" min="0" inputmode="decimal" value="${pays[0].montant}" oninput="pays0Montant(this.value)" placeholder="Montant du ${mode1==="avoir"?"bon d'avoir":"chèque cadeau"}" style="width:100%;box-sizing:border-box;margin-bottom:8px;"/>
+              <input type="text" inputmode="decimal" value="${pays[0].saisie!=null?pays[0].saisie:String(pays[0].montant||"").replace(".",",")}" oninput="pays0Montant(this.value)" placeholder="Montant du ${mode1==="avoir"?"bon d'avoir":"chèque cadeau"}" style="width:100%;box-sizing:border-box;margin-bottom:8px;"/>
               ${(()=>{
                 const m1v = parseFloat(pays[0].montant||0);
                 const nomDoc = mode1==="avoir"?"bon d'avoir":"chèque cadeau";
@@ -7710,7 +7710,7 @@ function renderPayModal() {
               <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
                 ${PAY_MODES.map(m=>`<div onclick="pays0Mode('${m.key}')" style="padding:7px 10px;border-radius:8px;cursor:pointer;border:${pays[0].mode===m.key?"2px solid #993556":"1px solid #ddd"};background:${pays[0].mode===m.key?"#fbeaf0":"#fff"};color:${pays[0].mode===m.key?"#993556":"#555"};font-size:12px;font-weight:${pays[0].mode===m.key?600:400};">${m.emoji} ${m.label}</div>`).join("")}
               </div>
-              <input type="number" step="0.01" value="${pays[0].montant}" oninput="pays0Montant(this.value)" placeholder="Montant (€)" style="width:100%;box-sizing:border-box;"/>
+              <input type="text" inputmode="decimal" value="${pays[0].saisie!=null?pays[0].saisie:String(pays[0].montant||"").replace(".",",")}" oninput="pays0Montant(this.value)" placeholder="Montant (€)" style="width:100%;box-sizing:border-box;"/>
             </div>
             <div style="text-align:center;font-size:13px;color:#888;padding:4px 0;">
               Reste à payer : <strong style="color:#993556;">${eur(Math.max(0,total-m1))}</strong>
@@ -7720,7 +7720,7 @@ function renderPayModal() {
               <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
                 ${PAY_MODES.map(m=>`<div onclick="pays1Mode('${m.key}')" style="padding:7px 10px;border-radius:8px;cursor:pointer;border:${pays[1].mode===m.key?"2px solid #993556":"1px solid #ddd"};background:${pays[1].mode===m.key?"#fbeaf0":"#fff"};color:${pays[1].mode===m.key?"#993556":"#555"};font-size:12px;font-weight:${pays[1].mode===m.key?600:400};">${m.emoji} ${m.label}</div>`).join("")}
               </div>
-              <input type="number" step="0.01" value="${pays[1].montant}" oninput="pays1Montant(this.value)" placeholder="${Math.max(0,total-m1).toFixed(2)}" style="width:100%;box-sizing:border-box;"/>
+              <input type="text" inputmode="decimal" value="${pays[1].saisie!=null?pays[1].saisie:String(pays[1].montant||"").replace(".",",")}" oninput="pays1Montant(this.value)" placeholder="${Math.max(0,total-m1).toFixed(2)}" style="width:100%;box-sizing:border-box;"/>
               ${pays[1].mode==="especes"&&pays[1].montant&&renduM2>0?`<div style="margin-top:8px;background:#eaf3de;border-radius:8px;padding:8px 12px;font-size:14px;font-weight:500;color:#3b6d11;">💰 Rendu : ${eur(renduM2)}</div>`:""}
             </div>
             ${totalMixed>0&&!mixedOK?`<div style="background:#fcebeb;border-radius:8px;padding:8px 12px;font-size:13px;color:#a32d2d;">⚠️ Total insuffisant (manque ${eur(total-totalMixed)})</div>`:""}
@@ -7747,16 +7747,20 @@ function renderPayModal() {
 
 window.pays0Mode    = m => { STATE.pays[0].mode=m; render(); };
 window.pays1Mode    = m => { STATE.pays[1].mode=m; render(); };
+// v278 : montants de paiement saisis avec virgule (8,50) acceptés
+const normMontantSaisi = v => String(v==null?"":v).replace(/\s/g,"").replace(",",".").replace(/[^0-9.]/g,"").replace(/(\..*)\./g,"$1");
 window.pays0Montant = v => {
+  STATE.pays[0].saisie = String(v);
+  v = normMontantSaisi(v);
   STATE.pays[0].montant = v;
   // En paiement mixte, on propose automatiquement le reste sur le 2e montant (l'utilisateur peut toujours le modifier ensuite)
   if(STATE.payMixed) {
     const reste = getCaisseTotal() - parseFloat(v||0);
-    STATE.pays[1].montant = reste>0.001 ? String(parseFloat(reste.toFixed(2))) : "";
+    STATE.pays[1].montant = reste>0.001 ? String(parseFloat(reste.toFixed(2))) : ""; STATE.pays[1].saisie = null;
   }
   render();
 };
-window.pays1Montant = v => { STATE.pays[1].montant=v; render(); };
+window.pays1Montant = v => { STATE.pays[1].saisie = String(v); STATE.pays[1].montant = normMontantSaisi(v); render(); };
 window.openPayModal = () => {
   if(!STATE.panier.length) return;
   const t = getCaisseTotal();
@@ -7827,7 +7831,7 @@ window.validerPaiement = () => {
     if(montantDoc < total) {
       alert("Montant insuffisant (\"" + eur(montantDoc) + "\"). Utilisez le paiement mixte pour combiner deux modes.");
       STATE.payMixed=true;
-      STATE.pays[0].montant=String(montantDoc);
+      STATE.pays[0].montant=String(montantDoc); STATE.pays[0].saisie=null;
       STATE.pays[1]={mode:"",montant:String(parseFloat((total-montantDoc).toFixed(2)))};
       render(); return;
     }
