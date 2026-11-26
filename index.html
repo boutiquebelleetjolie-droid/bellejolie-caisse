@@ -114,7 +114,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "26/11 · v274 (nom article synchronise entre boutiques)";
+const APP_VERSION = "26/11 · v275 (stock : filtre Chaussettes / Bijoux / categorie)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -9619,6 +9619,7 @@ function renderStock() {
   if(filtreDateStock) {
     filtered = filtered.filter(p => estArticleEtiqDuJour(p, filtreDateStock));
   }
+  if(STATE.stockCat) filtered = filtered.filter(p => p.category===STATE.stockCat); // v275 : filtre par catégorie
   const estOR = p => p.octobreRose===true || (Array.isArray(p.octobreRose) && p.octobreRose.length>0);
   if(STATE.filtreOctobreRose) filtered = filtered.filter(estOR);
   if(STATE.filtreArtisans) filtered = filtered.filter(p=>p.artisanat);
@@ -9630,6 +9631,9 @@ function renderStock() {
   // Barre de recherche + boutons (sticky pour rester visible pendant le scroll)
   html += '<div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center;position:sticky;top:52px;z-index:50;background:#f5f0f2;padding:8px 0 8px 0;border-radius:0 0 8px 8px;">';
   html += '<input value="'+(STATE.searchProd||"")+'" id="stock-search" oninput="STATE.searchProd=this.value;clearTimeout(window._spTimer);window._spTimer=setTimeout(renderStockOnly,300)" placeholder="Rechercher..." style="flex:1;min-width:160px;"/>';
+  // v275 : catégorie (raccourcis Chaussettes / Bijoux + liste complète)
+  html += ['Chaussettes','Bijoux'].map(c => '<button onclick="setState({stockCat:STATE.stockCat===\''+c+'\'?\'\':\''+c+'\'})" style="padding:7px 12px;border-radius:16px;cursor:pointer;font-size:13px;white-space:nowrap;border:1px solid #993556;'+(STATE.stockCat===c?'background:#993556;color:#fff;':'background:#fff;color:#993556;')+'">'+(c==='Chaussettes'?'🧦 ':'💍 ')+c+'</button>').join('');
+  html += '<select onchange="setState({stockCat:this.value})" style="padding:6px;border:1px solid #ddd;border-radius:8px;font-size:13px;"><option value="">Toutes catégories</option>'+CATEGORIES.map(c=>'<option value="'+c+'"'+(STATE.stockCat===c?' selected':'')+'>'+c+'</option>').join('')+'</select>';
   if(nbEtiq>0) html += renderBoutonLotEtiq(nbEtiq);
   { const nbArt = STATE.products.filter(p=>p.artisanat && !p.retire).length;
     html += '<button onclick="STATE.filtreArtisans=!STATE.filtreArtisans;STATE.filtreOctobreRose=false;render()" class="btn-ghost" style="white-space:nowrap;'+(STATE.filtreArtisans?'background:#6a3d9a;color:#fff;border-color:#6a3d9a;':'color:#6a3d9a;border-color:#d9c2ee;')+'">🎨 Artisans ('+nbArt+')</button>'; }
