@@ -118,7 +118,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "27/11 · v291 (objectifs Dreux mai-juillet)";
+const APP_VERSION = "27/11 · v292 (comparatif boutiques reserve a Elodie)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -3632,7 +3632,7 @@ function renderApp() {
     ${STATE.tab==="stock"     ? renderStock()      : ""}
 
     ${STATE.tab==="crm"       ? renderCRM()        : ""}
-    ${STATE.tab==="stats"     ? (STATE.statPer==="boutiques" ? renderComparatifBoutiques() : STATE.statPer==="operation" ? renderSuiviOperation() : renderStats()+renderCompteurTickets()) : ""}
+    ${STATE.tab==="stats"     ? (STATE.vendeur?.id==="V1" && STATE.statPer==="boutiques" ? renderComparatifBoutiques() : STATE.vendeur?.id==="V1" && STATE.statPer==="operation" ? renderSuiviOperation() : renderStats()+renderCompteurTickets()) : ""}
   ${STATE.tab==="historique" ? renderHistorique() : ""}
     ${STATE.tab==="journal"      ? renderJournal()        : ""}
     ${STATE.tab==="fidelite"     ? renderFidelite()       : ""}
@@ -3694,7 +3694,8 @@ function renderApp() {
   `;
 }
 
-window.setTab = t => { if(STATE.vendeur?.role==="stagiaire" && !["caisse","crm","reservations"].includes(t)) t = "caisse";
+window.setTab = t => {
+  if(STATE.vendeur?.id!=="V1" && ["boutiques","operation"].includes(STATE.statPer)) STATE.statPer = "jour"; // v292 if(STATE.vendeur?.role==="stagiaire" && !["caisse","crm","reservations"].includes(t)) t = "caisse";
   // v282 : en ouvrant les Stats, on arrive toujours sur « Jour » (aujourd'hui)
   if(t==="stats" && STATE.tab!=="stats") { STATE.statPer = "jour"; STATE.statOffsetJour = 0; }
   setState({tab:t}); };
