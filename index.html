@@ -118,7 +118,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "27/11 · v293 (challenge du jour : CA des deux boutiques)";
+const APP_VERSION = "27/11 · v294 (vendeuses : pas de CA des jours passes)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -13035,8 +13035,8 @@ function renderStats() {
     ${per==="semaine"?renderPaceWidget("semaine"):""}
     ${per==="mois"?renderPaceWidget("mois"):""}
 
-    ${(per==="jour"||per==="semaine"||per==="mois"||per==="annee"||per==="tout")?`
-    <!-- Graphiques -->
+    ${STATE.vendeur.id==="V1" && (per==="jour"||per==="semaine"||per==="mois"||per==="annee"||per==="tout")?`
+    <!-- Graphiques (v294 : réservés à Élodie — le graphique « 7 derniers jours » montrait le CA des jours passés) -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
       <div style="background:#fff;border:0.5px solid #e8e0e4;border-radius:12px;padding:14px;">
         <div style="font-weight:500;font-size:13px;margin-bottom:12px;">CA — 7 derniers jours</div>
