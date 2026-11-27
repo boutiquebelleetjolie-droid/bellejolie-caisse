@@ -118,7 +118,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "27/11 · v290 (objectif Dreux = 95 % de Chartres chaque jour)";
+const APP_VERSION = "27/11 · v291 (objectifs Dreux mai-juillet)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -1574,7 +1574,7 @@ function objectifMoisDreux(y, m, boost) {
   for(let j=1; j<=nb; j++) { const d = new Date(y, m, j); tout += poidsJourDreux(d, true); ouverts += poidsJourDreux(d); }
   return tout>0 ? Math.round(base * ouverts / tout) : 0;
 }
-function anneeObjectifDreux(m) { const now = new Date(); return now.getFullYear() + (m < now.getMonth()-6 ? 1 : 0); }
+function anneeObjectifDreux(m) { const now = new Date(); return now.getFullYear() + (m < now.getMonth()-2 ? 1 : 0); } // v291 : fenêtre « 2 mois passés → 9 mois à venir » (avant, mai-août tombaient sur l'année passée = 0)
 // Calcul paresseux (les calendriers vacances/soldes sont déclarés plus bas dans le fichier)
 function objectifsParesseux(boost) { const o = {}; for(let m=0;m<12;m++) Object.defineProperty(o, m, {enumerable:true, get:()=>objectifMoisDreux(anneeObjectifDreux(m), m, boost)}); return o; }
 const OBJECTIFS_MENSUEL = BOUTIQUE_ID_ACTUEL==="boutique_2" ? objectifsParesseux(false) : OBJECTIFS_CHARTRES;
