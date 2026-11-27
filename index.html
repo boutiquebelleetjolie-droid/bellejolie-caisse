@@ -118,7 +118,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "27/11 · v288 (boutique du lien retenue par l appareil)";
+const APP_VERSION = "27/11 · v289 (Leyna : changement de boutique ponctuel)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -3608,7 +3608,7 @@ function renderApp() {
       <div style="font-size:12px;color:#888;">${STATE.vendeur.nom}</div>
       ${STATE.vendeur.id==="V1"?`<button onclick="showVendeurSettings()" style="background:none;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px;color:#666;">⚙️ PIN</button>`:""}
       ${STATE.vendeur.id==="V1"?`<button onclick="setState({showRegistrePersonnel:true})" style="background:none;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px;color:#666;">👥 Personnel</button>`:""}
-      ${peutGererBoutiques()&&BOUTIQUES.length>1
+      ${(peutGererBoutiques()||peutBasculerPonctuel())&&BOUTIQUES.length>1
         ? `<span style="background:${BOUTIQUE_ID_ACTUEL==="boutique_1"?"#993556":"#185fa5"};color:#fff;border-radius:6px;padding:4px 10px;font-size:12px;font-weight:700;">📍 ${boutiqueActuelle().nom.replace("Belle & Jolie — ","").toUpperCase()}</span>
            <button onclick="basculerBoutique()" title="Passer sur l'autre boutique" style="background:none;border:1px solid #ddd;border-radius:6px;padding:3px 8px;font-size:11px;color:#666;cursor:pointer;">⇄ ${(BOUTIQUES.find(b=>b.id!==BOUTIQUE_ID_ACTUEL)||{nom:""}).nom.replace("Belle & Jolie — ","")}</button>`
         : (BOUTIQUE_ID_ACTUEL!=="boutique_1"?`<span style="background:#fbeaf0;color:#993556;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:600;">🏬 ${boutiqueActuelle().nom}</span>`:"")}
@@ -4169,8 +4169,20 @@ window.showVendeurSettings = () => { STATE.vendeurForm = JSON.parse(JSON.stringi
 // ─── PARAMÈTRES VENDEURS ────────────────────────────────────────
 
 // ─── Bascule rapide d'une boutique à l'autre (gérante) ───
+// v289 : Leyna peut changer UNE fois la boutique d'un appareil (27/11/2026, ordinateur de Dreux), puis c'est rebloqué
+function peutBasculerPonctuel() {
+  try { return STATE.vendeur?.id==="V6" && new Date() < new Date(2026,10,29) && !localStorage.getItem("bj_bascule_leyna_faite"); } catch(e) { return false; }
+}
 window.basculerBoutique = () => {
   const autre = BOUTIQUES.find(b=>b.id!==BOUTIQUE_ID_ACTUEL); if(!autre) return;
+  if(!peutGererBoutiques()) {
+    if(!peutBasculerPonctuel()) return;
+    if(!confirm("Cet appareil se trouve bien à la boutique de "+autre.nom.replace(/^Belle & Jolie — /,"")+" ?\n\nOK = régler cet appareil sur "+autre.nom+". (Changement possible une seule fois.)")) return;
+    try { localStorage.setItem("bj_boutique_id", autre.id); localStorage.setItem("bj_bascule_leyna_faite", new Date().toISOString()); } catch{}
+    const u0 = new URL(window.location.href);
+    if(u0.searchParams.has("boutique")) { u0.searchParams.set("boutique", autre.id); window.location.href = u0.toString(); } else window.location.reload();
+    return;
+  }
   if((STATE.panier||[]).length && !confirm("Un ticket est en cours ici. Il restera en attente dans cette boutique.\n\nPasser sur "+autre.nom+" ?")) return;
   try { localStorage.setItem("bj_boutique_id", autre.id); localStorage.setItem("bj_bascule_gerante", "1"); } catch{}
   const u = new URL(window.location.href);
