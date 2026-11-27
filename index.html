@@ -118,7 +118,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "27/11 · v294 (vendeuses : pas de CA des jours passes)";
+const APP_VERSION = "27/11 · v295 (challenge : boutique actuelle en premier)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -10287,7 +10287,7 @@ function renderDuelBoutiques() {
   const ca = bId => (bId===BOUTIQUE_ID_ACTUEL ? (STATE.ventes||[]) : VENTES_AUTRES.filter(v=>v._boutique===bId))
     .filter(v => !v.test && !v.annulee && dateLocaleStr(new Date(v.date))===jour).reduce((t,v)=>t+(v.total||0),0);
   const objDe = bId => { try { return bId==="boutique_2" ? objJourDreux(new Date()) : objJourChartres(new Date()); } catch(e) { return 0; } };
-  const cartes = BOUTIQUES.map(b => { const c = ca(b.id), o = objDe(b.id), pct = o>0 ? Math.round(c/o*100) : null, ici = b.id===BOUTIQUE_ID_ACTUEL;
+  const cartes = [...BOUTIQUES].sort((a,b)=>(b.id===BOUTIQUE_ID_ACTUEL)-(a.id===BOUTIQUE_ID_ACTUEL)).map(b => { const c = ca(b.id), o = objDe(b.id), pct = o>0 ? Math.round(c/o*100) : null, ici = b.id===BOUTIQUE_ID_ACTUEL;
     return `<div style="flex:1;min-width:140px;background:${ici?"#fbeaf0":"#f5f7fb"};border-radius:10px;padding:10px 12px;border:1px solid ${ici?"#e8b8c8":"#dde3ee"};">
       <div style="font-size:12px;color:#666;">${ici?"📍 ":""}${b.nom.replace(/^Belle & Jolie — /,"")}</div>
       <div style="font-size:20px;font-weight:700;color:${ici?"#993556":"#185fa5"};">${eur(c)}</div>
