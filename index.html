@@ -118,7 +118,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "26/11 · v285 (en-tete telephone compact)";
+const APP_VERSION = "27/11 · v286 (codes PIN : plus ecrases par un autre appareil)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -1266,7 +1266,8 @@ function demarrerSyncTempsReel() {
       try {
         localStorage.setItem(cleFirestore(storageKey), JSON.stringify(data.value));
         if(stateKey==="__vendeurs__") {
-          (data.value||[]).forEach((sv,i)=>{ if(VENDEURS[i]&&sv.code) VENDEURS[i].code=sv.code; });
+          if(appliquerCodes(data.value)) setTimeout(() => { try { lsSet("bj_vendeurs", serialiserCodes()); } catch(e) {} }, 1500); // cet appareil a plus récent → on corrige le cloud
+          try { localStorage.setItem(cleFirestore(storageKey), JSON.stringify(serialiserCodes())); } catch(e) {}
         } else {
           STATE[stateKey] = data.value;
         }
@@ -2437,11 +2438,25 @@ window.selectVendeur = (id) => {
   render();
 };
 
+// v286 : codes PIN fusionnés vendeuse par vendeuse, le plus RÉCENT gagne (un appareil pas à jour ne peut plus écraser un code changé)
+function serialiserCodes() { return VENDEURS.map(v => ({id:v.id, code:v.code, majLe:v.codeMajLe||""})); }
+function appliquerCodes(liste) {
+  let plusRecentIci = false;
+  (liste||[]).forEach((sv, i) => {
+    if(!sv || !sv.code) return;
+    const v = sv.id ? VENDEURS.find(x=>x.id===sv.id) : VENDEURS[i]; if(!v) return;
+    const a = sv.majLe||"", b = v.codeMajLe||"";
+    if(a > b || (!a && !b)) { v.code = sv.code; if(a) v.codeMajLe = a; }
+    else if(b > a && v.code !== sv.code) plusRecentIci = true;
+  });
+  VENDEURS.forEach(v => { if(v.codeMajLe && !(liste||[]).some(sv => sv && sv.id===v.id)) plusRecentIci = true; });
+  return plusRecentIci;
+}
 // Code refusé : on recharge une fois les codes depuis le cloud (appareil dont les données locales ont été vidées ou pas à jour)
 async function rechargerCodesDepuisCloud() {
   if(!_fbDb) return false;
   try { const d = await _fbDb.collection("bellejolie").doc(cleFirestore("bj_vendeurs")).get();
-    if(d.exists) { const val = d.data().value||[]; val.forEach((sv,i)=>{ if(VENDEURS[i]&&sv.code) VENDEURS[i].code=sv.code; }); try { localStorage.setItem(cleFirestore("bj_vendeurs"), JSON.stringify(val)); } catch{} return true; } } catch(e) { console.error(e); }
+    if(d.exists) { const val = d.data().value||[]; appliquerCodes(val); try { localStorage.setItem(cleFirestore("bj_vendeurs"), JSON.stringify(serialiserCodes())); } catch{} return true; } } catch(e) { console.error(e); }
   return false;
 }
 window.pinKey = (k) => {
@@ -4740,8 +4755,9 @@ window.importerDonnees = (input) => {
 window.saveVendeurs = () => {
   const vf = STATE.vendeurForm;
   if(!vf) return;
-  vf.forEach((v,i)=>{ VENDEURS[i].nom=v.nom; VENDEURS[i].code=v.code; });
-  lsSet("bj_vendeurs", VENDEURS.map(v=>({code:v.code})));
+  const maint = new Date().toISOString();
+  vf.forEach((v,i)=>{ VENDEURS[i].nom=v.nom; if(VENDEURS[i].code!==v.code) { VENDEURS[i].code=v.code; VENDEURS[i].codeMajLe=maint; } });
+  lsSet("bj_vendeurs", serialiserCodes());
   setState({showVendeurSettings:false});
   alert("✅ Vendeurs enregistrés !");
 };
@@ -20257,9 +20273,8 @@ setTimeout(() => {
 setTimeout(() => {
   try {
     if(localStorage.getItem("bj_fix_pin_noemie")==="ok") return;
-    const v2 = VENDEURS.find(v=>v.id==="V2"); if(!v2) return;
-    v2.nom = "Noémie"; v2.code = "0000";
-    lsSet("bj_vendeurs", VENDEURS.map(v=>({code:v.code})));
+    // v286 : NE PLUS RIEN ÉCRIRE ici — sur chaque nouvel appareil, cette ancienne migration renvoyait au cloud
+    // les codes PAR DÉFAUT de tout le monde (d'où les codes PIN qui « se défaisaient » régulièrement).
     localStorage.setItem("bj_fix_pin_noemie", "ok");
     render();
   } catch(e) { console.error(e); }
@@ -22924,7 +22939,7 @@ STATE.facturesClients = ls("bj_factures_clients", []);
   STATE.facturesFourn = ls("bj_factures_fourn", []);
 const savedVendeurs = ls("bj_vendeurs", null);
 // On ne restaure que le code PIN, pas le nom (le nom est défini dans VENDEURS)
-if(savedVendeurs) savedVendeurs.forEach((sv,i)=>{ if(VENDEURS[i]&&sv.code){VENDEURS[i].code=sv.code;} });
+if(savedVendeurs) appliquerCodes(savedVendeurs);
 // (Ne plus repousser bj_vendeurs ici : ça écrasait à chaque démarrage la valeur des autres appareils
 // avec l'éventuelle valeur locale obsolète de CET appareil, avant même que la synchro temps réel
 // ait eu la chance de récupérer la vraie valeur à jour depuis le cloud.)
