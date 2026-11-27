@@ -118,7 +118,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "27/11 · v286 (codes PIN : plus ecrases par un autre appareil)";
+const APP_VERSION = "27/11 · v287 (code Elodie 0103)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -2452,6 +2452,16 @@ function appliquerCodes(liste) {
   VENDEURS.forEach(v => { if(v.codeMajLe && !(liste||[]).some(sv => sv && sv.id===v.id)) plusRecentIci = true; });
   return plusRecentIci;
 }
+// v287 (27/11/2026 10 h 20) : déblocage — code d'Élodie fixé à 0103, daté (les autres codes ne bougent pas).
+// Un code changé APRÈS ce moment reste prioritaire (date plus récente).
+(function() { try {
+  if(localStorage.getItem("bj_reset_pins_2711")) return;
+  const DATE = "2026-11-27T09:20:00.000Z", ORIG = {V1:"0103"};
+  VENDEURS.forEach(v => { if(ORIG[v.id] && (v.codeMajLe||"") < DATE) { v.code = ORIG[v.id]; v.codeMajLe = DATE; } });
+  try { localStorage.setItem(cleFirestore("bj_vendeurs"), JSON.stringify(serialiserCodes())); } catch(e) {}
+  localStorage.setItem("bj_reset_pins_2711", "1");
+  setTimeout(() => { try { lsSet("bj_vendeurs", serialiserCodes()); } catch(e) {} }, 6000);
+} catch(e) { console.error(e); } })();
 // Code refusé : on recharge une fois les codes depuis le cloud (appareil dont les données locales ont été vidées ou pas à jour)
 async function rechargerCodesDepuisCloud() {
   if(!_fbDb) return false;
