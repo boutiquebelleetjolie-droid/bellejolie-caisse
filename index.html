@@ -118,7 +118,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "27/11 · v287 (code Elodie 0103)";
+const APP_VERSION = "27/11 · v288 (boutique du lien retenue par l appareil)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -130,6 +130,9 @@ const BOUTIQUES = [
 const _paramsURL = new URLSearchParams(window.location.search);
 const _boutiqueDepuisURL = _paramsURL.get("boutique");
 let BOUTIQUE_ID_ACTUEL = _boutiqueDepuisURL || localStorage.getItem("bj_boutique_id") || "boutique_1";
+// v288 : la caisse installée comme application s'ouvre SANS le « ?boutique=… » → on retient la boutique du lien
+// comme boutique par défaut de l'appareil (sinon un ordinateur de Dreux s'ouvrait sur Chartres)
+try { if(_boutiqueDepuisURL && localStorage.getItem("bj_boutique_id")!==_boutiqueDepuisURL) localStorage.setItem("bj_boutique_id", _boutiqueDepuisURL); } catch(e) {}
 function boutiqueActuelle() { return BOUTIQUES.find(b=>b.id===BOUTIQUE_ID_ACTUEL) || BOUTIQUES[0]; }
 // Clé Firestore réellement utilisée pour une donnée "locale" à une boutique : suffixée par la boutique
 // sauf pour boutique_1 (garde les mêmes clés qu'avant, pour ne jamais rien casser sur la boutique existante).
