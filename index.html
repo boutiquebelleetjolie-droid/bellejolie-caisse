@@ -118,7 +118,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "27/11 · v289 (Leyna : changement de boutique ponctuel)";
+const APP_VERSION = "27/11 · v290 (objectif Dreux = 95 % de Chartres chaque jour)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -1561,6 +1561,11 @@ function poidsJourDreux(d, ignorerOuverture) {
 }
 // Objectif du mois à Dreux : Chartres −5 %, au prorata des jours ouverts le mois de l'ouverture
 function objectifMoisDreux(y, m, boost) {
+  // v290 : somme des objectifs du jour de Dreux (boost : même rapport boost/normal que Chartres)
+  if(!(OBJECTIFS_CHARTRES[m]||0)) return 0;
+  let tot = 0; const nbJ = new Date(y, m+1, 0).getDate();
+  for(let j=1; j<=nbJ; j++) tot += objJourDreux(new Date(y, m, j));
+  return boost ? Math.round(tot * (OBJECTIFS_BOOST_CHARTRES[m]||0) / (OBJECTIFS_CHARTRES[m]||1)) : tot;
   const base = Math.round(((boost ? OBJECTIFS_BOOST_CHARTRES : OBJECTIFS_CHARTRES)[m]||0) * DREUX_COEFF);
   if(!base) return 0;
   const fin = new Date(y, m+1, 0);
@@ -1574,13 +1579,11 @@ function anneeObjectifDreux(m) { const now = new Date(); return now.getFullYear(
 function objectifsParesseux(boost) { const o = {}; for(let m=0;m<12;m++) Object.defineProperty(o, m, {enumerable:true, get:()=>objectifMoisDreux(anneeObjectifDreux(m), m, boost)}); return o; }
 const OBJECTIFS_MENSUEL = BOUTIQUE_ID_ACTUEL==="boutique_2" ? objectifsParesseux(false) : OBJECTIFS_CHARTRES;
 const OBJECTIFS_BOOST = BOUTIQUE_ID_ACTUEL==="boutique_2" ? objectifsParesseux(true) : OBJECTIFS_BOOST_CHARTRES;
+// v290 : objectif du jour de Dreux = 95 % de celui de Chartres le même jour (les jours où Dreux est ouvert).
+// Avant, le mois de Dreux était réparti sur moins de jours (lundis fermés, pause midi) → certains jours Dreux avait PLUS à faire que Chartres.
 function objJourDreux(date) {
-  const w = poidsJourDreux(date); if(!w) return 0;
-  const y = date.getFullYear(), m = date.getMonth();
-  const caM = objectifMoisDreux(y, m); if(!caM) return 0;
-  let somme = 0; const nb = new Date(y, m+1, 0).getDate();
-  for(let j=1; j<=nb; j++) somme += poidsJourDreux(new Date(y, m, j));
-  return somme>0 ? Math.round(caM * w / somme) : 0;
+  if(!poidsJourDreux(date)) return 0;
+  return Math.round(objJourChartres(date) * DREUX_COEFF);
 }
 // % du CA hebdo par jour — samedi à 28%, semaine réduite en conséquence
 // Total = 100% (dimanche fermé)
@@ -1706,18 +1709,21 @@ function objSemCalc(dateQuelconque) {
 const _cacheRecalChartres = {};
 function objJourCalc(date) {
   if(BOUTIQUE_ID_ACTUEL==="boutique_2") return objJourDreux(date);
+  return objJourChartres(date);
+}
+function objJourChartres(date) {
   const brut = objJourCalcBrut(date); if(!brut) return 0;
   const y = date.getFullYear(), m = date.getMonth(), k = y+"-"+m;
   if(_cacheRecalChartres[k]==null) { let somme = 0; const nb = new Date(y, m+1, 0).getDate();
     for(let j=1; j<=nb; j++) somme += objJourCalcBrut(new Date(y, m, j));
-    const caM = OBJECTIFS_MENSUEL[m]||0; _cacheRecalChartres[k] = (somme>0 && caM>0) ? caM/somme : 1; }
+    const caM = OBJECTIFS_CHARTRES[m]||0; _cacheRecalChartres[k] = (somme>0 && caM>0) ? caM/somme : 1; }
   return Math.round(brut * _cacheRecalChartres[k]);
 }
 function objJourCalcBrut(date) {
   const m = date.getMonth();
   const dow = date.getDay(); // 0=dim, 1=lun, 2=mar, 3=mer, 4=jeu, 5=ven, 6=sam
   if(dow===0) return 0; // dimanche fermé
-  const caM = OBJECTIFS_MENSUEL[m]||0;
+  const caM = OBJECTIFS_CHARTRES[m]||0;
   if(!caM) return 0;
 
   // Poids de base par jour (total = 100, dimanche = 0)
