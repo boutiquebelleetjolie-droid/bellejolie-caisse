@@ -118,7 +118,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "27/11 · v295 (challenge : boutique actuelle en premier)";
+const APP_VERSION = "27/11 · v296 (cheque/carte cadeau hors Black Friday)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -4846,6 +4846,13 @@ function barreFideliteHtml(clientId) {
 
 // ─── CAISSE ─────────────────────────────────────────────────────
 // Articles en dépôt-vente : jamais de remise globale (réseaux, fidélité, remise panier, remise progressive, promo chaussures)
+// v296 : chèques / cartes cadeaux (et prestations) jamais comptés dans les offres (Black Friday, remise progressive…)
+function estLigneCadeauOuService(x) {
+  if(!x) return false;
+  if(x.isChequeCadeau || x.isService || String(x.ref||"").startsWith("CHQCAD-") || /ch[eè]que cadeau|carte cadeau/i.test(x.category||"")) return true;
+  const p = (STATE.products||[]).find(q => q.id===(x.prodIdOriginal||x.id));
+  return !!(p && (p.isChequeCadeau || p.isService || /ch[eè]que cadeau|carte cadeau/i.test(p.category||"")));
+}
 function estLigneDepot(x) { return !!x && (!!x.depotVente || /^DEPOT-/.test(String(x.ref||""))); }
 function calcPanier() {
   const panier = STATE.panier;
@@ -4930,6 +4937,7 @@ function calcPanier() {
         if(x.retour || x.avoirId) return;
         if(x.ref==="SAC-CAISSE" || x.name==="Sac" || x.ref==="RETOUCHE-CAISSE" || estArticleSac(x) || (parseFloat(x.price)||0) < 1) return; // sacs et petits articles à moins d'1 € : jamais dans l'offre
         if(estLigneDepot(x)) return; // dépôt-vente : pas de remise progressive
+        if(estLigneCadeauOuService(x)) return; // chèques / cartes cadeaux : jamais dans l'offre
         if(x.coffretDe) return; // coffrets : prix déjà fixé, pas de remise progressive
         { const pA = (STATE.products||[]).find(p=>p.id===(x.prodIdOriginal||x.id)) || {}; if(estLigneArtisan(x, pA)) return; } // artisans : exclus
         const remManuelle = parseFloat(x.remise||0)>0 && !x._promoAuto;
@@ -4961,7 +4969,7 @@ function calcPanier() {
     const finOk = pc.testMode || !pc.dateFin || now <= new Date(pc.dateFin+"T23:59:59");
     if(debutOk && finOk) {
       const prodMapPC = {}; STATE.products.forEach(pr=>prodMapPC[pr.id]=pr);
-      const achatsPC = panier.filter(x=>!x.retour && !x.avoirId && x.ref!=="SAC-CAISSE" && x.name!=="Sac" && x.ref!=="RETOUCHE-CAISSE");
+      const achatsPC = panier.filter(x=>!x.retour && !x.avoirId && x.ref!=="SAC-CAISSE" && x.name!=="Sac" && x.ref!=="RETOUCHE-CAISSE" && !estLigneCadeauOuService(x));
       const aChaussure = achatsPC.some(x => prodMapPC[x.prodIdOriginal||x.id]?.category==="Chaussures");
       if(aChaussure) {
         // Article le plus cher hors chaussures, pas déjà en promo/remise
@@ -6022,7 +6030,7 @@ function calculerPrixPayeReel(venteOrigine, ligneOrigine) {
     return s+Math.max(0,i.price-r)*i.qty;
   },0);
   // Remise progressive (Black Friday) : répartie uniquement sur les articles qui y ont droit (pas le sac, ni les artisans, ni les articles déjà remisés)
-  const eligibleProg = l => !l.retour && !l.avoirId && !estLigneDepot(l) && !estArticleSac(l) && (parseFloat(l.price)||0)>=1 && l.ref!=="SAC-CAISSE" && l.ref!=="RETOUCHE-CAISSE"
+  const eligibleProg = l => !l.retour && !l.avoirId && !estLigneDepot(l) && !estLigneCadeauOuService(l) && !estArticleSac(l) && (parseFloat(l.price)||0)>=1 && l.ref!=="SAC-CAISSE" && l.ref!=="RETOUCHE-CAISSE"
     && !((parseFloat(l.remise||0)>0 && venteOrigine.vendeur?.id!=="V1") || l._promoAuto) && !estLigneArtisan(l, (STATE.products||[]).find(p=>p.id===(l.prodIdOriginal||l.id))||{});
   const puNetLigne = i => { const r = i.remiseType==="pct" ? i.price*(parseFloat(i.remise||0)/100) : i.remiseType==="eur" ? parseFloat(i.remise||0)/(i.qty||1) : 0; return Math.max(0, i.price-r); };
   const remProg = parseFloat(venteOrigine.remiseProg)||0;
