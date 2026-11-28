@@ -118,7 +118,7 @@ const BOUTIQUE_CONFIG = {
 // Registre des boutiques existantes (multi-site) — ajouter une entrée ici pour chaque nouveau site.
 // L'appareil choisit la sienne une seule fois (réglage local, jamais synchronisé, propre à chaque appareil).
 // Version affichée à l'écran pour vérifier qu'un appareil a bien la dernière mise à jour
-const APP_VERSION = "27/11 · v296 (cheque/carte cadeau hors Black Friday)";
+const APP_VERSION = "28/11 · v297 (Dreux : stock provisoire sacs et foulards)";
 const BOUTIQUES = [
   { id: "boutique_1", nom: "Belle & Jolie — Chartres" },
   { id: "boutique_2", nom: "Belle & Jolie — Dreux" }, // (anciennement Maurepas : projet abandonné le 06/11/2026)
@@ -3081,6 +3081,27 @@ async function assurerConfigEmailjs() {
   } catch(e) { console.error(e); }
 })();
 setTimeout(() => { assurerConfigEmailjs(); }, 9000);
+// 28/11/2026 (v297) : Dreux — stock provisoire (10 pièces) sur les sacs à 25/30/35 € et les foulards à 5/10 € à 0, en attendant l'inventaire
+setInterval(() => {
+  try {
+    if(BOUTIQUE_ID_ACTUEL!=="boutique_2" || localStorage.getItem("bj_mig_stock_dreux_2811")) return;
+    const prods = STATE.products||[]; if(prods.length < 20) return;
+    const maint = new Date().toISOString(); let n = 0;
+    const estSac = p => (p.category==="Sacs" || /\bsacs?\b/i.test(p.name||"")) && [25,30,35].includes(Math.round(parseFloat(p.price)||0)) && p.ref!=="SAC-CAISSE";
+    const estFoulard = p => (p.category==="Foulards" || /foulard|carr[ée] de soie/i.test(p.name||"")) && [5,10].includes(Math.round(parseFloat(p.price)||0));
+    const nl = prods.map(p => {
+      if(p.depotVente || p.isChequeCadeau || (parseFloat(p.stock)||0) > 0 || !(estSac(p) || estFoulard(p))) return p;
+      n++;
+      const sv = {...(p.stockVariantes||{})}; const cles = Object.keys(sv);
+      if(cles.length) { cles.forEach(k => { if(!(parseInt(sv[k])>0)) sv[k] = Math.max(1, Math.floor(10/cles.length)); }); }
+      const total = cles.length ? Object.values(sv).reduce((t,x)=>t+(parseInt(x)||0),0) : 10;
+      return {...p, stock: total, ...(cles.length?{stockVariantes:sv}:{}), stockProvisoire: "2026-11-28", majLe: maint};
+    });
+    if(n) setState({products:nl});
+    localStorage.setItem("bj_mig_stock_dreux_2811", String(n));
+    console.log("Stock provisoire Dreux :", n, "articles");
+  } catch(e) { console.error("Stock provisoire Dreux :", e); }
+}, 14000);
 // v191 : on sort les photos du stockage local (plein) → IndexedDB, puis on les remet en mémoire
 try {
   for(let i=localStorage.length-1;i>=0;i--) { const k = localStorage.key(i);
